@@ -100,3 +100,10 @@ Initial planning session:
 - Split project concerns into product, rule, frontend, test, and review agents
 - Created the first rule-question checklist and roadmap
 
+Rule clarification session:
+
+- Confirmed the project should target Leshan eight-chicken Mahjong first
+- Confirmed `1 bamboo` and `1 dot` are both yao ji / laizi
+- Confirmed laizi can be used as wildcard tiles
+- Documented minimum 2-point win rule, self-draw doubling, 64-point hu cap,
+  chicken payments, gen logic, gang payments, and cha jiao settlement

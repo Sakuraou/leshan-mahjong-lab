@@ -1,7 +1,8 @@
 # Leshan Mahjong Lab
 
 An interactive Leshan Mahjong training app focused on local-rule modeling,
-single-player practice, explainable hand evaluation, and AI-assisted development.
+eight-chicken laizi rules, single-player practice, explainable hand evaluation,
+and AI-assisted development.
 
 ## Project Positioning
 
@@ -15,12 +16,13 @@ game engine becomes stable.
 
 ## MVP Scope
 
-- Rule guide for Leshan Mahjong
+- Rule guide for eight-chicken Leshan Mahjong
 - Single-player practice table
 - Tile draw, discard, sort, and action history
-- Basic winning-hand detection
+- Laizi-aware winning-hand detection
 - Hand explanation: why a hand can or cannot win
 - Listening-tile hints
+- Chicken, gen, gang, and cha jiao settlement notes
 - Simple AI discard suggestion
 - Round replay timeline
 - Case study page for the AI and multi-agent development workflow
@@ -83,6 +85,5 @@ This project is designed to showcase a vibe-coding workflow:
 
 Planning and repository setup.
 
-Next milestone: confirm the Leshan Mahjong rule set and implement the first
-playable table prototype.
-
+Next milestone: turn the confirmed eight-chicken rule set into a tested rule
+engine and implement the first playable table prototype.
