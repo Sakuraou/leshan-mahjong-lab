@@ -82,6 +82,7 @@ Examples:
 
 - Discard qing yi se + xiao qi dui: `1 * 4 * 4 = 16`.
 - Self-draw qing yi se + xiao qi dui: `1 * 4 * 4 * 2 = 32`.
+- Self-draw wu ji + qing yi se: `1 * 2 * 4 * 4 = 32`.
 
 Dan diao is only possible when all sets except the final waiting tile have been
 exposed through peng or gang, leaving exactly one tile in hand as the wait. It is
@@ -97,6 +98,11 @@ original `1 bamboo` and no original `1 dot`, the hand has wu ji.
 
 Because `1 bamboo` and `1 dot` are the eight-chicken laizi tiles, wu ji is judged
 by original printed tiles rather than resolved wildcard values.
+
+If a player has any original `1 bamboo` or `1 dot` in their own final settlement
+tiles, the hand is not wu ji, even if that laizi is resolved as another tile.
+
+Wu ji can stack with other scoring patterns such as qing yi se.
 
 ## Gen
 
@@ -120,6 +126,8 @@ In eight-chicken mode:
 - `1 bamboo` is yao ji.
 - `1 dot` is yao ji.
 - Both are laizi and may be used as wildcard tiles for hand formation.
+- The app MVP should forbid actively discarding yao ji, because normal play does
+  not discard these laizi tiles.
 
 Chicken payments are settled at hu or draw settlement, not immediately.
 
@@ -206,11 +214,6 @@ engine for legal actions and settlement results.
 - Dan diao is 1 fan and cannot overlap with seven pairs.
 - One-discard multiple wins are paid separately by the discarder.
 - Gang payments are settled together at the final settlement screen.
-- Wu ji is 2 fan and checks whether the final 14-tile winning structure has no
-  original `1 bamboo` or `1 dot`.
-
-## Still Pending
-
-- For wu ji, if a player has a gang, should the fourth gang tile outside the
-  normal 14-tile winning structure also break wu ji when it is `1 bamboo` or
-  `1 dot`?
+- Wu ji is 2 fan, can stack with other patterns, and is broken by any original
+  `1 bamboo` or `1 dot` in the player's own final settlement tiles.
+- The MVP should enforce a no-active-yao-ji-discard rule.
