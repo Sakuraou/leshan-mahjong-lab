@@ -1,0 +1,88 @@
+# Leshan Mahjong Lab
+
+An interactive Leshan Mahjong training app focused on local-rule modeling,
+single-player practice, explainable hand evaluation, and AI-assisted development.
+
+## Project Positioning
+
+This project is not only a Mahjong game. It is a portfolio-oriented product that
+shows how a local card-game rule system can be translated into a tested,
+explainable, and playable web application.
+
+The first version will be a Web/PWA app so recruiters and interviewers can open a
+link and try it immediately. A mobile app version can be added after the core
+game engine becomes stable.
+
+## MVP Scope
+
+- Rule guide for Leshan Mahjong
+- Single-player practice table
+- Tile draw, discard, sort, and action history
+- Basic winning-hand detection
+- Hand explanation: why a hand can or cannot win
+- Listening-tile hints
+- Simple AI discard suggestion
+- Round replay timeline
+- Case study page for the AI and multi-agent development workflow
+
+## Recommended Tech Stack
+
+- Next.js + React + TypeScript
+- Tailwind CSS
+- Zustand for local game state
+- Vitest for rule-engine tests
+- Playwright for browser flow tests
+- Vercel for deployment
+
+## Architecture Direction
+
+The app should keep the game logic independent from the UI.
+
+```text
+src/
+  app/              Next.js pages and routes
+  components/       Tile, hand, table, action panel, replay timeline
+  game/             Pure TypeScript Mahjong rules and game engine
+  store/            Local state management
+tests/
+  game/             Rule and scoring tests
+  e2e/              Browser interaction tests
+docs/
+  rules.md          Leshan Mahjong rules and pending questions
+  roadmap.md        Development phases
+  agent-workflow.md Multi-agent collaboration record
+```
+
+## Multi-Agent Collaboration
+
+This project is designed to showcase a vibe-coding workflow:
+
+| Agent Role | Responsibility | Output |
+| --- | --- | --- |
+| Product Agent | Define MVP and portfolio story | Product scope, feature priorities |
+| Rule Agent | Model Leshan Mahjong rules | Rule questions, engine boundaries |
+| Frontend Agent | Build the playable interface | Table UI, hand interaction |
+| Test Agent | Generate rule test cases | Vitest examples and edge cases |
+| Review Agent | Audit implementation quality | Bug risks and improvement notes |
+
+## Resume Pitch
+
+**Leshan Mahjong Lab | Local Mahjong Rule Training App**
+
+- Designed and built an interactive Leshan Mahjong training app with hand
+  operation, winning-hand detection, scoring hints, discard suggestions, and
+  replay timeline.
+- Modeled local Mahjong rules as testable TypeScript modules, separating hand
+  validation, pattern detection, scoring, and UI state.
+- Used a multi-agent AI-assisted workflow to split product planning, rule
+  modeling, frontend implementation, test generation, and code review.
+- Built a portfolio case study to demonstrate the full development loop from
+  ambiguous local rules to a deployed playable product.
+
+## Current Status
+
+Planning and repository setup.
+
+Next milestone: confirm the Leshan Mahjong rule set and implement the first
+playable table prototype.
+
