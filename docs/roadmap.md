@@ -2,10 +2,10 @@
 
 ## Phase 0: Repository Setup
 
-- Create portfolio-oriented README
-- Record rule assumptions and pending questions
-- Record multi-agent workflow
-- Initialize Git and connect to GitHub
+- [x] Create portfolio-oriented README
+- [x] Record rule assumptions and pending questions
+- [x] Record multi-agent workflow
+- [x] Initialize Git and connect to GitHub
 
 ## Phase 1: Playable Prototype
 
@@ -21,12 +21,17 @@ Goal: one person can open the app and interact with a Mahjong table.
 
 Goal: move from visual demo to real rule logic.
 
-- Define tile and hand data structures
+- [x] Define tile and hand data structures
+- [x] Implement eight-chicken yao ji / laizi recognition
+- [x] Implement dingque discard constraints
+- [x] Implement no-active-yao-ji-discard MVP rule
+- [x] Implement wu ji and chicken settlement helpers
+- [x] Implement gang point table
+- [x] Implement basic score multiplier and cap helper
 - Build wall shuffle and dealing logic
-- Implement dingque constraints
-- Implement legal discard checking
 - Implement basic win detection
-- Add Vitest rule tests
+- Add laizi-aware hand decomposition
+- Add broader rule tests
 
 ## Phase 3: Explainable Training
 
@@ -58,4 +63,3 @@ Optional after the MVP:
 - WebSocket backend
 - User accounts and match history
 - Expo mobile version
-

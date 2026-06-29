@@ -32,7 +32,7 @@ game engine becomes stable.
 - Next.js + React + TypeScript
 - Tailwind CSS
 - Zustand for local game state
-- Vitest for rule-engine tests
+- Node test runner for the first rule-engine tests; Vitest can be added later
 - Playwright for browser flow tests
 - Vercel for deployment
 
@@ -83,7 +83,24 @@ This project is designed to showcase a vibe-coding workflow:
 
 ## Current Status
 
-Planning and repository setup.
+Planning, repository setup, and the first tested rule-core layer.
 
-Next milestone: turn the confirmed eight-chicken rule set into a tested rule
-engine and implement the first playable table prototype.
+Implemented rule-core basics:
+
+- Tile model and 108-tile wall
+- Eight-chicken yao ji / laizi recognition
+- Dingque discard legality
+- No-active-yao-ji-discard MVP rule
+- Wu ji detection
+- Three-chicken and four-chicken settlement
+- Gang point table
+- Basic hu score multiplier, self-draw, minimum win, and 64-point cap
+
+Run tests:
+
+```bash
+npm test
+```
+
+Next milestone: implement laizi-aware hand decomposition and the first playable
+table prototype.

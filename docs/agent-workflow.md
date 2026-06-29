@@ -107,3 +107,10 @@ Rule clarification session:
 - Confirmed laizi can be used as wildcard tiles
 - Documented minimum 2-point win rule, self-draw doubling, 64-point hu cap,
   chicken payments, gen logic, gang payments, and cha jiao settlement
+
+Rule-core implementation session:
+
+- Added a pure TypeScript `src/game` module for rule logic
+- Added tests for yao ji recognition, dingque discard order, no active yao ji
+  discard, wu ji, chicken settlement, gang points, and basic hu scoring
+- Kept the first engine layer independent from any frontend framework
