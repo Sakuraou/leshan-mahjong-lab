@@ -74,6 +74,7 @@ Scoring is multiplier-based.
 | Each gen | 1 each | 2x each |
 | Qing yi se | 2 | 4x |
 | Xiao qi dui | 2 | 4x |
+| Wu ji | 2 | 4x |
 | Long qi dui | 3 | 8x |
 | Shuang long qi dui | 4 | 16x |
 
@@ -86,6 +87,16 @@ Dan diao is only possible when all sets except the final waiting tile have been
 exposed through peng or gang, leaving exactly one tile in hand as the wait. It is
 mutually exclusive with seven-pair hands because seven pairs must stay concealed
 in hand.
+
+## Wu Ji
+
+Wu ji is worth 2 fan, or 4x.
+
+At final settlement, if the player's 14-tile winning structure contains no
+original `1 bamboo` and no original `1 dot`, the hand has wu ji.
+
+Because `1 bamboo` and `1 dot` are the eight-chicken laizi tiles, wu ji is judged
+by original printed tiles rather than resolved wildcard values.
 
 ## Gen
 
@@ -195,3 +206,11 @@ engine for legal actions and settlement results.
 - Dan diao is 1 fan and cannot overlap with seven pairs.
 - One-discard multiple wins are paid separately by the discarder.
 - Gang payments are settled together at the final settlement screen.
+- Wu ji is 2 fan and checks whether the final 14-tile winning structure has no
+  original `1 bamboo` or `1 dot`.
+
+## Still Pending
+
+- For wu ji, if a player has a gang, should the fourth gang tile outside the
+  normal 14-tile winning structure also break wu ji when it is `1 bamboo` or
+  `1 dot`?
