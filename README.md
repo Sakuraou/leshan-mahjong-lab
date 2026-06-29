@@ -96,6 +96,7 @@ Implemented rule-core basics:
 - Gang point table
 - Basic hu score multiplier, self-draw, minimum win, and 64-point cap
 - Laizi-aware standard hu decomposition for 4 melds + 1 pair
+- Seeded shuffle, four-player dealing, dealer state, and remaining wall tracking
 
 Run tests:
 
@@ -103,5 +104,5 @@ Run tests:
 npm test
 ```
 
-Next milestone: build a seeded round state and the first playable table
-prototype.
+Next milestone: build the first playable table prototype using the seeded round
+state.

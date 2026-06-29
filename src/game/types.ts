@@ -27,3 +27,19 @@ export type PatternScore = {
   multiplier: number;
 };
 
+export type PlayerId = 0 | 1 | 2 | 3;
+
+export type PlayerState = {
+  id: PlayerId;
+  hand: Tile[];
+  discards: Tile[];
+  hasWon: boolean;
+};
+
+export type RoundState = {
+  seed: string;
+  dealer: PlayerId;
+  players: PlayerState[];
+  wall: Tile[];
+  currentPlayer: PlayerId;
+};

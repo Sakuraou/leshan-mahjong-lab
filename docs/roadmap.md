@@ -14,7 +14,7 @@ Goal: one person can open the app and interact with a Mahjong table.
 - Create Next.js app structure
 - Build Tile, Hand, TableBoard, ActionPanel, and ReplayTimeline components
 - Render four seats, player hand, discard areas, and remaining tile count
-- Support a seeded mock round
+- [x] Support a seeded mock round
 - Support draw and discard actions
 
 ## Phase 2: Rule Engine
@@ -30,7 +30,7 @@ Goal: move from visual demo to real rule logic.
 - [x] Implement basic score multiplier and cap helper
 - [x] Add laizi-aware standard hand decomposition
 - [x] Add focused tests for laizi sequence, pair, triplet, and failed hands
-- Build wall shuffle and dealing logic
+- [x] Build wall shuffle and dealing logic
 - Implement basic win detection
 - Add broader rule tests
 

@@ -123,3 +123,11 @@ Laizi hu-decomposition session:
   detection
 - Covered no-laizi hu, laizi completing a sequence, laizi completing a pair,
   laizi completing a triplet, two-laizi pair, and failed decomposition cases
+
+Round-state session:
+
+- Added seeded shuffle so demos and tests can reproduce the same round
+- Added round initialization with four players, dealer hand, non-dealer hands,
+  current player, empty discards, and remaining wall tracking
+- Added tests for shuffle reproducibility, deal counts, dealer selection, and
+  initial player state
