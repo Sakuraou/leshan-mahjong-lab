@@ -1,5 +1,6 @@
 import type { PlayerId, PlayerState, RoundState, Tile } from "./types.ts";
-import { createWall } from "./tiles.ts";
+import { checkDiscardLegal, type DiscardCheckResult } from "./rules.ts";
+import { createWall, sameTile } from "./tiles.ts";
 
 const playerCount = 4;
 const dealerHandSize = 14;
@@ -9,6 +10,17 @@ export type StartRoundInput = {
   seed: string;
   dealer?: PlayerId;
 };
+
+export type DrawTileResult =
+  | { ok: true; round: RoundState; tile: Tile }
+  | { ok: false; reason: "wallEmpty" | "playerAlreadyWon" };
+
+export type DiscardTileResult =
+  | { ok: true; round: RoundState; nextPlayer: PlayerId }
+  | {
+      ok: false;
+      reason: "notCurrentPlayer" | "playerAlreadyWon" | "missingSuitNotSet" | DiscardCheckResult["reason"];
+    };
 
 export function seededShuffle<T>(values: readonly T[], seed: string): T[] {
   const shuffled = [...values];
@@ -50,7 +62,107 @@ function createPlayers(): PlayerState[] {
     hand: [],
     discards: [],
     hasWon: false,
+    missingSuit: null,
   }));
+}
+
+export function drawTile(round: RoundState): DrawTileResult {
+  const player = round.players[round.currentPlayer];
+
+  if (player.hasWon) {
+    return { ok: false, reason: "playerAlreadyWon" };
+  }
+
+  const [drawnTile, ...remainingWall] = round.wall;
+
+  if (drawnTile === undefined) {
+    return { ok: false, reason: "wallEmpty" };
+  }
+
+  const players = replacePlayer(round.players, round.currentPlayer, {
+    ...player,
+    hand: [...player.hand, drawnTile],
+  });
+
+  return {
+    ok: true,
+    tile: drawnTile,
+    round: {
+      ...round,
+      players,
+      wall: remainingWall,
+    },
+  };
+}
+
+export function discardTile(round: RoundState, playerId: PlayerId, discard: Tile): DiscardTileResult {
+  if (playerId !== round.currentPlayer) {
+    return { ok: false, reason: "notCurrentPlayer" };
+  }
+
+  const player = round.players[playerId];
+
+  if (player.hasWon) {
+    return { ok: false, reason: "playerAlreadyWon" };
+  }
+
+  if (player.missingSuit === null) {
+    return { ok: false, reason: "missingSuitNotSet" };
+  }
+
+  const legalCheck = checkDiscardLegal({
+    hand: player.hand,
+    discard,
+    missingSuit: player.missingSuit,
+  });
+
+  if (!legalCheck.legal) {
+    return { ok: false, reason: legalCheck.reason };
+  }
+
+  const nextHand = removeFirstMatchingTile(player.hand, discard);
+  const nextPlayer = findNextActivePlayer(round, playerId);
+  const players = replacePlayer(round.players, playerId, {
+    ...player,
+    hand: nextHand,
+    discards: [...player.discards, discard],
+  });
+
+  return {
+    ok: true,
+    nextPlayer,
+    round: {
+      ...round,
+      players,
+      currentPlayer: nextPlayer,
+    },
+  };
+}
+
+function findNextActivePlayer(round: RoundState, fromPlayer: PlayerId): PlayerId {
+  for (let offset = 1; offset <= playerCount; offset += 1) {
+    const candidate = ((fromPlayer + offset) % playerCount) as PlayerId;
+
+    if (!round.players[candidate].hasWon) {
+      return candidate;
+    }
+  }
+
+  return fromPlayer;
+}
+
+function replacePlayer(players: PlayerState[], playerId: PlayerId, nextPlayer: PlayerState): PlayerState[] {
+  return players.map((player) => (player.id === playerId ? nextPlayer : player));
+}
+
+function removeFirstMatchingTile(hand: Tile[], target: Tile): Tile[] {
+  const index = hand.findIndex((value) => sameTile(value, target));
+
+  if (index === -1) {
+    return hand;
+  }
+
+  return [...hand.slice(0, index), ...hand.slice(index + 1)];
 }
 
 function createSeededRandom(seed: string): () => number {
@@ -75,4 +187,3 @@ function hashSeed(seed: string): number {
 
   return hash >>> 0;
 }
-

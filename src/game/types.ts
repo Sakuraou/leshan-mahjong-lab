@@ -34,6 +34,7 @@ export type PlayerState = {
   hand: Tile[];
   discards: Tile[];
   hasWon: boolean;
+  missingSuit: Suit | null;
 };
 
 export type RoundState = {

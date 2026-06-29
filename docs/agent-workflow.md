@@ -131,3 +131,11 @@ Round-state session:
   current player, empty discards, and remaining wall tracking
 - Added tests for shuffle reproducibility, deal counts, dealer selection, and
   initial player state
+
+Draw/discard transition session:
+
+- Added immutable round transitions for drawing from the wall and discarding
+  from the current player's hand
+- Reused dingque and no-active-yao-ji-discard checks in round-level discard
+  validation
+- Added turn switching to the next player who has not already won
