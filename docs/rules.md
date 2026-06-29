@@ -27,11 +27,25 @@ The first playable version implements **eight chicken Leshan Mahjong**.
 - Players can peng, ming gang, an gang, and ba gang.
 - The round uses xuezhan daodi.
 
+## Dingque And Laizi
+
+After dingque:
+
+- A player cannot win while holding ordinary tiles from the missing suit.
+- If a player still has ordinary missing-suit tiles, they must discard all of
+  them before discarding other suits.
+- `1 bamboo` and `1 dot` are laizi, so their original printed suit does not
+  force them to be treated as bamboo or dot for dingque.
+- A laizi may resolve to any suit/value during hand formation.
+- If qing yi se is claimed, each laizi used in the winning structure must resolve
+  into that pure suit.
+
 ## Win Rules
 
 - Self-draw is allowed.
 - Discard win is allowed.
-- Multiple players may win from one discard.
+- Multiple players may win from one discard. The discarder pays each winner
+  separately, and each winner has their own 64-point hu-score cap.
 - Qiang gang hu is allowed.
 - Gang shang hua is allowed.
 - Gang shang pao is allowed.
@@ -67,6 +81,11 @@ Examples:
 
 - Discard qing yi se + xiao qi dui: `1 * 4 * 4 = 16`.
 - Self-draw qing yi se + xiao qi dui: `1 * 4 * 4 * 2 = 32`.
+
+Dan diao is only possible when all sets except the final waiting tile have been
+exposed through peng or gang, leaving exactly one tile in hand as the wait. It is
+mutually exclusive with seven-pair hands because seven pairs must stay concealed
+in hand.
 
 ## Gen
 
@@ -119,6 +138,7 @@ chicken payments.
 ## Gang Score
 
 Gang payments are separate from the hu score cap.
+Gang payments are recorded and settled together at final settlement.
 
 | Gang Type | Without laizi | With laizi |
 | --- | ---: | ---: |
@@ -168,18 +188,10 @@ The implementation should separate these modules:
 The UI should never decide rule legality by itself. It should ask the game
 engine for legal actions and settlement results.
 
-## Still Pending
+## Confirmed Clarifications
 
-These details still need confirmation before the engine becomes strict:
-
-1. Does dingque forbid using laizi as the missing suit, or can laizi resolve into
-   any suit after dingque?
-2. When a player has both qing yi se and laizi, does the resolved laizi value
-   need to match the pure suit?
-3. Is dan diao always 1 fan, including seven-pair-like structures, or only
-   standard four-sets-one-pair hands?
-4. For one-discard multiple wins, does the discarder pay each winner separately
-   with each winner's own 64-point cap?
-5. Are gang payments paid immediately in real play but recorded for final UI
-   settlement, or should the app display them only at final settlement?
-
+- Dingque checks ordinary missing-suit tiles, while laizi can resolve as needed.
+- Qing yi se requires all resolved laizi to match the pure suit.
+- Dan diao is 1 fan and cannot overlap with seven pairs.
+- One-discard multiple wins are paid separately by the discarder.
+- Gang payments are settled together at the final settlement screen.
