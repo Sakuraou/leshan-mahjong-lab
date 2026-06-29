@@ -28,9 +28,10 @@ Goal: move from visual demo to real rule logic.
 - [x] Implement wu ji and chicken settlement helpers
 - [x] Implement gang point table
 - [x] Implement basic score multiplier and cap helper
+- [x] Add laizi-aware standard hand decomposition
+- [x] Add focused tests for laizi sequence, pair, triplet, and failed hands
 - Build wall shuffle and dealing logic
 - Implement basic win detection
-- Add laizi-aware hand decomposition
 - Add broader rule tests
 
 ## Phase 3: Explainable Training

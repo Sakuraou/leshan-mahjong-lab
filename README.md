@@ -95,6 +95,7 @@ Implemented rule-core basics:
 - Three-chicken and four-chicken settlement
 - Gang point table
 - Basic hu score multiplier, self-draw, minimum win, and 64-point cap
+- Laizi-aware standard hu decomposition for 4 melds + 1 pair
 
 Run tests:
 
@@ -102,5 +103,5 @@ Run tests:
 npm test
 ```
 
-Next milestone: implement laizi-aware hand decomposition and the first playable
-table prototype.
+Next milestone: build a seeded round state and the first playable table
+prototype.

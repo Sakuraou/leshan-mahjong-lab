@@ -114,3 +114,12 @@ Rule-core implementation session:
 - Added tests for yao ji recognition, dingque discard order, no active yao ji
   discard, wu ji, chicken settlement, gang points, and basic hu scoring
 - Kept the first engine layer independent from any frontend framework
+
+Laizi hu-decomposition session:
+
+- Used three parallel agent roles for rule boundaries, implementation strategy,
+  and test-case design
+- Added a standalone `src/game/hu.ts` module for standard 4-melds-1-pair hu
+  detection
+- Covered no-laizi hu, laizi completing a sequence, laizi completing a pair,
+  laizi completing a triplet, two-laizi pair, and failed decomposition cases
