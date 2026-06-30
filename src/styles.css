@@ -111,7 +111,10 @@ button {
 
 .seat[data-current="true"] {
   border-color: #247a48;
-  box-shadow: inset 0 0 0 2px rgba(36, 122, 72, 0.12);
+  background: #f4fbef;
+  box-shadow:
+    inset 0 0 0 2px rgba(36, 122, 72, 0.16),
+    0 10px 24px rgba(36, 122, 72, 0.12);
 }
 
 .seat-title,
@@ -152,7 +155,7 @@ button {
 .discard-tile {
   display: inline-grid;
   place-items: center;
-  width: 28px;
+  width: 34px;
   height: 32px;
   border: 1px solid #d6d0c5;
   border-radius: 5px;
@@ -178,23 +181,49 @@ button {
   cursor: pointer;
 }
 
+.actions button:disabled {
+  background: #adb5aa;
+  color: #eef1eb;
+  cursor: not-allowed;
+}
+
 .actions button + button {
   background: #36403a;
 }
 
+.turn-hint {
+  grid-column: 1 / -1;
+  min-height: 38px;
+  border: 1px solid #d6d0c5;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fffdf8;
+  color: #36403a;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.turn-hint[data-phase="discard"] {
+  border-color: #247a48;
+  background: #e3f1df;
+  color: #1f663e;
+}
+
 .hu-status {
   grid-column: 1 / -1;
-  min-height: 34px;
+  min-height: 42px;
   border-radius: 8px;
-  padding: 9px 10px;
+  padding: 12px;
   background: #f4e7d2;
   color: #7b4c18;
-  font-size: 13px;
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .hu-status[data-ready="true"] {
   background: #e3f1df;
   color: #247a48;
+  box-shadow: inset 0 0 0 2px rgba(36, 122, 72, 0.18);
 }
 
 .hand {
@@ -232,6 +261,11 @@ button {
 .tile:hover {
   border-color: #247a48;
   transform: translateY(-1px);
+}
+
+.tile[data-yaoji="true"] {
+  border-color: #b88a24;
+  background: linear-gradient(180deg, #fff9df, #f0dfad);
 }
 
 .log-panel {
@@ -284,4 +318,3 @@ button {
     border-width: 1px 0 0;
   }
 }
-

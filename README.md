@@ -67,6 +67,17 @@ This project is designed to showcase a vibe-coding workflow:
 | Test Agent | Generate rule test cases | Vitest examples and edge cases |
 | Review Agent | Audit implementation quality | Bug risks and improvement notes |
 
+## Screenshots
+
+Screenshots will be added after the table interaction flow stabilizes.
+
+Planned portfolio shots:
+
+- Main table view with four players, highlighted current player, wall count, and hand tiles
+- Draw/discard interaction with Chinese illegal-action feedback
+- Hu-ready state showing score and detected patterns
+- Development case-study view showing the multi-agent workflow and rule-engine tests
+
 ## Resume Pitch
 
 **Leshan Mahjong Lab | Local Mahjong Rule Training App**
