@@ -279,6 +279,12 @@ Each client receives a redacted state view:
 - Wall count is visible.
 - Public discards and public melds are visible.
 
+The current frontend room mode follows this shape even before real networking:
+`RoundState` remains the local simulation execution layer, while the table view
+is rendered from `toClientVisibleRoomState`. This keeps the UI contract close to
+the future server-authoritative version: local hand tiles are visible, opponent
+hands are represented only by counts and covered tiles.
+
 ## Event Model
 
 Every accepted action should produce an append-only event:

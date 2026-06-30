@@ -10,6 +10,7 @@ import {
   startRound,
   takeSeat,
   toggleReady,
+  toClientVisibleRoomState,
   type PlayerId,
   type PlayerState,
   type RoomState,
@@ -17,6 +18,7 @@ import {
   type RoundState,
   type Suit,
   type Tile,
+  type VisiblePlayerState,
 } from "./game/index.ts";
 
 const seed = "portfolio-demo-001";
@@ -69,17 +71,25 @@ export function App() {
 
   const tableStarted = tableMode === "standalone" || room.round !== null;
   const round = tableMode === "room" && room.round !== null ? room.round : standaloneRound;
+  const visibleRoom = tableMode === "room" ? toClientVisibleRoomState(room, localPlayerId) : null;
+  const visibleRound = visibleRoom?.round ?? null;
+  const visiblePlayers =
+    tableMode === "room" && visibleRound !== null
+      ? visibleRound.players
+      : round.players.map((player) => toVisiblePlayerState(player));
   const currentPlayer = round.players[round.currentPlayer];
   const localPlayer = round.players[localSeatId];
+  const visibleLocalPlayer = visiblePlayers[localSeatId];
+  const visibleLocalHand = visibleLocalPlayer?.hand ?? localPlayer.hand;
   const currentPhase = getTurnPhase(currentPlayer);
   const localPhase = getTurnPhase(localPlayer);
   const isLocalTurn = round.currentPlayer === localSeatId;
   const currentHu = isLocalTurn ? checkCurrentPlayerHu(round) : null;
-  const sortedLocalHand = useMemo(() => sortHand(localPlayer.hand), [localPlayer.hand]);
+  const sortedLocalHand = useMemo(() => sortHand(visibleLocalHand), [visibleLocalHand]);
 
   const totalDiscards = useMemo(
-    () => round.players.reduce((sum, player) => sum + player.discards.length, 0),
-    [round.players],
+    () => visiblePlayers.reduce((sum, player) => sum + player.discards.length, 0),
+    [visiblePlayers],
   );
 
   useEffect(() => {
@@ -314,13 +324,16 @@ export function App() {
             <Stat label="房间" value={tableMode === "room" ? room.id : "单机"} />
             <Stat label="我的座位" value={`玩家 ${localSeatId + 1}`} />
             <Stat label="当前回合" value={tableStarted ? `玩家 ${round.currentPlayer + 1}` : "待开局"} />
-            <Stat label="牌墙" value={tableStarted ? round.wall.length.toString() : "-"} />
+            <Stat
+              label="牌墙"
+              value={tableStarted ? (visibleRound?.wallCount ?? round.wall.length).toString() : "-"}
+            />
           </div>
         </header>
 
         <div className="mode-banner">
           <strong>本地模拟联机</strong>
-          <span>这个页面已经接入 room reducer，但还没有真实网络；所有加入、占座、准备和开局都在本机模拟。</span>
+          <span>这个页面已经接入 room reducer，但还没有真实网络；房间牌桌按红acted 客户端视图展示，其他玩家只露出手牌数量。</span>
         </div>
 
         {tableMode === "room" && room.round === null ? (
@@ -337,7 +350,7 @@ export function App() {
         ) : (
           <>
             <div className="seats">
-              {round.players.map((player) => (
+              {visiblePlayers.map((player) => (
                 <PlayerSeat
                   key={player.id}
                   player={player}
@@ -526,7 +539,7 @@ function MissingSuitPanel({ player, onChoose }: { player: PlayerState; onChoose:
   );
 }
 
-function PlayerSeat({ player, current, local }: { player: PlayerState; current: boolean; local: boolean }) {
+function PlayerSeat({ player, current, local }: { player: VisiblePlayerState; current: boolean; local: boolean }) {
   return (
     <article className="seat" data-current={current} data-local={local}>
       <div className="seat-title">
@@ -534,12 +547,12 @@ function PlayerSeat({ player, current, local }: { player: PlayerState; current: 
         <span>{current ? "当前回合" : "等待"}</span>
       </div>
       <div className="seat-meta">
-        <span>{player.hand.length} 张手牌</span>
+        <span>{player.handCount} 张手牌</span>
         <span>定缺 {suitText(player.missingSuit)}</span>
       </div>
       {!local && (
         <div className="hand-backs" aria-label={`玩家 ${player.id + 1} 盖住的手牌`}>
-          {Array.from({ length: Math.min(player.hand.length, 14) }, (_, index) => (
+          {Array.from({ length: Math.min(player.handCount, 14) }, (_, index) => (
             <span key={index} />
           ))}
         </div>
@@ -557,6 +570,17 @@ function PlayerSeat({ player, current, local }: { player: PlayerState; current: 
       </div>
     </article>
   );
+}
+
+function toVisiblePlayerState(player: PlayerState): VisiblePlayerState {
+  return {
+    id: player.id,
+    hand: player.hand,
+    handCount: player.hand.length,
+    discards: player.discards,
+    hasWon: player.hasWon,
+    missingSuit: player.missingSuit,
+  };
 }
 
 function TileFace({ tile, compact = false }: { tile: Tile; compact?: boolean }) {

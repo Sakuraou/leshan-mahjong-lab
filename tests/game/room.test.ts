@@ -173,6 +173,19 @@ test("redacts other players' hands in client-visible room state", () => {
   assert.equal(visible.round?.players[1].hand?.length, 13);
   assert.equal(visible.round?.players[0].hand, null);
   assert.equal(visible.round?.players[0].handCount, 14);
+  assert.deepEqual(
+    visible.round?.players.map((player) => ({
+      id: player.id,
+      handIsVisible: player.hand !== null,
+      handCount: player.handCount,
+    })),
+    [
+      { id: 0, handIsVisible: false, handCount: 14 },
+      { id: 1, handIsVisible: true, handCount: 13 },
+      { id: 2, handIsVisible: false, handCount: 13 },
+      { id: 3, handIsVisible: false, handCount: 13 },
+    ],
+  );
 });
 
 test("rejects room mutations after the round has started", () => {

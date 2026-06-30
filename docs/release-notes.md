@@ -24,6 +24,8 @@ than a complete production game.
   seat, while other seats represent future remote players.
 - Local simulated room mode backed by pure room reducer functions for joining,
   taking seats, toggling ready, and starting a round before entering the table.
+- Redacted client-visible room state is now used by the frontend table in room
+  mode, so opponent hands render from hand counts instead of hidden tile arrays.
 - Player-selected dingque with heavenly-missing-suit default when the local
   hand naturally lacks exactly one ordinary suit.
 - Automatic system draw at the start of draw phases.

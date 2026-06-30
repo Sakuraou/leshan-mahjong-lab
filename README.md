@@ -79,6 +79,9 @@ and AI-assisted development.
 - Local simulated room mode backed by the room reducer, including room number,
   player joining, seat assignment, ready state, and round start before entering
   the table
+- Redacted client-visible room state: the local player sees their own hand,
+  while other players expose only hand counts, discards, and public state to the
+  table UI
 - Real multiplayer room design covering room creation, joining, seat assignment,
   readiness, dingque, server dealing, turn actions, reconnect, and
   server-authoritative validation
@@ -145,7 +148,7 @@ src/
     tiles.ts        Tile model, wall generation, yao ji detection
     hu.ts           Laizi-aware standard hu decomposition
     rules.ts        Dingque, score helpers, chicken/gang/wu ji helpers
-    room.ts         Local room reducer for joining, seating, ready, and start flow
+    room.ts         Local room reducer and redacted client-visible room state
     round.ts        Seeded shuffle, dealing, draw/discard state transitions
     win.ts          Self-draw and discard hu checks
 tests/
