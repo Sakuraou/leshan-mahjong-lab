@@ -13,6 +13,7 @@ import {
   toClientVisibleRoomState,
   type PlayerId,
   type PlayerState,
+  type RoomEvent,
   type RoomState,
   type SeatState,
   type RoundState,
@@ -61,10 +62,10 @@ export function App() {
   const [room, setRoom] = useState(createDemoRoom);
   const [tableMode, setTableMode] = useState<TableMode>("room");
   const [standaloneRound, setStandaloneRound] = useState(createDemoRound);
-  const [logs, setLogs] = useState<LogEntry[]>([
+  const [gameLogs, setGameLogs] = useState<LogEntry[]>([
     {
       id: 1,
-      text: "已创建本地模拟联机房间。这里先不接真实网络，用 reducer 演示加入、占座、准备和开局。",
+      text: "等待房间开局。开局后这里会记录摸牌、定缺、出牌和胡牌提示。",
     },
   ]);
   const autoDrawKeys = useRef(new Set<string>());
@@ -114,16 +115,16 @@ export function App() {
     const result = drawTile(round);
 
     if (!result.ok) {
-      addLog(`系统摸牌失败：${reasonText(result.reason)}。`);
+      addGameLog(`系统摸牌失败：${reasonText(result.reason)}。`);
       return;
     }
 
     commitRound(result.round);
-    addLog(`系统给玩家 ${player.id + 1} 发了一张牌。${player.id === localSeatId ? "轮到你出牌。" : "等待该玩家出牌。"}`);
+    addGameLog(`系统给玩家 ${player.id + 1} 发了一张牌。${player.id === localSeatId ? "轮到你出牌。" : "等待该玩家出牌。"}`);
   }, [round, tableMode, tableStarted]);
 
-  function addLog(text: string) {
-    setLogs((items) => [{ id: (items.at(-1)?.id ?? 0) + 1, text }, ...items].slice(0, 9));
+  function addGameLog(text: string) {
+    setGameLogs((items) => [...items, { id: (items.at(-1)?.id ?? 0) + 1, text }].slice(-12));
   }
 
   function commitRound(nextRound: RoundState) {
@@ -139,24 +140,22 @@ export function App() {
     const result = joinRoom(room, demoPlayers[0]);
 
     if (!result.ok) {
-      addLog(`加入房间失败：${roomReasonText(result.reason)}。`);
+      addGameLog(`房间操作失败：${roomReasonText(result.reason)}。`);
       return;
     }
 
     setRoom(result.room);
-    addLog("你已加入本地模拟房间。");
   }
 
   function handleTakeLocalSeat() {
     const result = takeSeat(room, localPlayerId, localSeatId);
 
     if (!result.ok) {
-      addLog(`占座失败：${roomReasonText(result.reason)}。`);
+      addGameLog(`房间操作失败：${roomReasonText(result.reason)}。`);
       return;
     }
 
     setRoom(result.room);
-    addLog("你已坐到玩家 1 座位。");
   }
 
   function handleFillDemoPlayers() {
@@ -177,20 +176,17 @@ export function App() {
     }, room);
 
     setRoom(result);
-    addLog("已补齐四个本地演示玩家并分配座位。");
   }
 
   function handleToggleReady(playerId: string) {
     const result = toggleReady(room, playerId);
 
     if (!result.ok) {
-      addLog(`准备状态更新失败：${roomReasonText(result.reason)}。`);
+      addGameLog(`房间操作失败：${roomReasonText(result.reason)}。`);
       return;
     }
 
-    const seat = result.room.seats.find((value) => value.playerId === playerId);
     setRoom(result.room);
-    addLog(`${seat?.displayName ?? "玩家"} ${seat?.ready ? "已准备" : "取消准备"}。`);
   }
 
   function handleReadyAll() {
@@ -206,28 +202,27 @@ export function App() {
     }, room);
 
     setRoom(result);
-    addLog("四个本地演示玩家已全部准备。");
   }
 
   function handleStartRoomRound() {
     const result = startRoomRound(room, localSeatId);
 
     if (!result.ok) {
-      addLog(`房间开局失败：${roomReasonText(result.reason)}。`);
+      addGameLog(`房间开局失败：${roomReasonText(result.reason)}。`);
       return;
     }
 
     setRoom(result.room);
     setTableMode("room");
     autoDrawKeys.current.clear();
-    addLog("房间已开局。下面进入牌桌体验，仍然是本地模拟联机，还没有真实网络。");
+    addGameLog("房间已开局。下面进入牌桌体验，仍然是本地模拟联机，还没有真实网络。");
   }
 
   function handleStandaloneDemo() {
     setTableMode("standalone");
     setStandaloneRound(createDemoRound());
     autoDrawKeys.current.clear();
-    addLog("已进入单机演示牌桌。这个模式绕过房间流程，只用于快速展示。");
+    addGameLog("已进入单机演示牌桌。这个模式绕过房间流程，只用于快速展示。");
   }
 
   function handleReset() {
@@ -236,7 +231,7 @@ export function App() {
     if (tableMode === "room") {
       setRoom(createDemoRoom());
       setTableMode("room");
-      setLogs((items) => [
+      setGameLogs((items) => [
         {
           id: (items.at(-1)?.id ?? 0) + 1,
           text: "本地模拟房间已重置。请重新加入、占座、准备并开局。",
@@ -246,7 +241,7 @@ export function App() {
     }
 
     setStandaloneRound(createDemoRound());
-    setLogs((items) => [
+    setGameLogs((items) => [
       {
         id: (items.at(-1)?.id ?? 0) + 1,
         text: "单机演示牌局已重置。你需要先选择定缺，除非起手天缺。",
@@ -256,29 +251,29 @@ export function App() {
 
   function handleChooseMissingSuit(suit: Suit) {
     commitRound(updatePlayer(round, localSeatId, { ...round.players[localSeatId], missingSuit: suit }));
-    addLog(`你选择定缺 ${suitText(suit)}。`);
+    addGameLog(`你选择定缺 ${suitText(suit)}。`);
   }
 
   function handleDiscard(tile: Tile) {
     if (!isLocalTurn) {
-      addLog(`现在是玩家 ${round.currentPlayer + 1} 的回合，联机模式下只能操作自己的座位。`);
+      addGameLog(`现在是玩家 ${round.currentPlayer + 1} 的回合，联机模式下只能操作自己的座位。`);
       return;
     }
 
     if (localPhase === "chooseMissingSuit") {
-      addLog("请先选择定缺，再开始出牌。");
+      addGameLog("请先选择定缺，再开始出牌。");
       return;
     }
 
     if (localPhase === "draw") {
-      addLog("系统会自动给你摸牌，请稍等。");
+      addGameLog("系统会自动给你摸牌，请稍等。");
       return;
     }
 
     const result = discardTile(round, localSeatId, tile);
 
     if (!result.ok) {
-      addLog(`打出 ${tileText(tile)} 失败：${reasonText(result.reason)}。`);
+      addGameLog(`打出 ${tileText(tile)} 失败：${reasonText(result.reason)}。`);
       return;
     }
 
@@ -290,7 +285,7 @@ export function App() {
     commitRound(result.round);
 
     if (discardChecks.length > 0) {
-      addLog(
+      addGameLog(
         `你打出 ${tileText(tile)}。${discardChecks
           .map(({ player, check }) => `玩家 ${player.id + 1} 可胡 ${check.canHu ? check.score.cappedPoints : 0} 分`)
           .join("；")}。`,
@@ -298,18 +293,18 @@ export function App() {
       return;
     }
 
-    addLog(`你打出 ${tileText(tile)}。轮到玩家 ${result.nextPlayer + 1}。`);
+    addGameLog(`你打出 ${tileText(tile)}。轮到玩家 ${result.nextPlayer + 1}。`);
   }
 
   function handleAdvanceRemoteTurn() {
     if (isLocalTurn) {
-      addLog("现在轮到你，不需要模拟远端玩家。");
+      addGameLog("现在轮到你，不需要模拟远端玩家。");
       return;
     }
 
     const result = advanceRemoteTurn(round);
     commitRound(result.round);
-    result.logs.forEach(addLog);
+    result.logs.forEach(addGameLog);
   }
 
   return (
@@ -412,13 +407,30 @@ export function App() {
         )}
       </section>
 
-      <aside className="log-panel" aria-label="牌局记录">
-        <h2>房间与牌局记录</h2>
-        <div className="log-list">
-          {logs.map((log) => (
-            <p key={log.id}>{log.text}</p>
-          ))}
-        </div>
+      <aside className="log-panel" aria-label="事件记录">
+        <h2>事件记录</h2>
+        <section className="log-section" aria-label="房间日志">
+          <h3>房间日志</h3>
+          <div className="log-list">
+            {room.eventLog.map((event, index) => (
+              <p key={`${event.type}-${index}`}>
+                <span>#{index + 1}</span>
+                {roomEventText(event, room)}
+              </p>
+            ))}
+          </div>
+        </section>
+        <section className="log-section" aria-label="牌局日志">
+          <h3>牌局日志</h3>
+          <div className="log-list">
+            {gameLogs.map((log, index) => (
+              <p key={log.id}>
+                <span>#{index + 1}</span>
+                {log.text}
+              </p>
+            ))}
+          </div>
+        </section>
       </aside>
     </main>
   );
@@ -776,6 +788,25 @@ function tileText(tile: Tile): string {
 
 function isYaoJiTile(tile: Tile): boolean {
   return tile.rank === 1 && (tile.suit === "bamboos" || tile.suit === "dots");
+}
+
+function roomEventText(event: RoomEvent, room: RoomState): string {
+  switch (event.type) {
+    case "roomCreated":
+      return `创建房间 ${event.roomId}。`;
+    case "playerJoined":
+      return `${event.displayName} 加入房间。`;
+    case "seatTaken":
+      return `${roomPlayerName(room, event.playerId)} 坐到玩家 ${event.seatId + 1}。`;
+    case "readyChanged":
+      return `${roomPlayerName(room, event.playerId)} ${event.ready ? "已准备" : "取消准备"}。`;
+    case "roundStarted":
+      return `房间开局，庄家是玩家 ${event.dealer + 1}。`;
+  }
+}
+
+function roomPlayerName(room: RoomState, playerId: string): string {
+  return room.members.find((member) => member.playerId === playerId)?.displayName ?? playerId;
 }
 
 function chineseNumber(rank: Tile["rank"]): string {
