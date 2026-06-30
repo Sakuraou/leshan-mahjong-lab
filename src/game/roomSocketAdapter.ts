@@ -1,0 +1,360 @@
+import {
+  createRoomSession,
+  getClientRoomView,
+  handleRoomAction,
+  joinRoomSession,
+  resumeRoomSession,
+  type RoomAction,
+  type RoomServiceError,
+  type RoomServiceState,
+} from "./roomService.ts";
+import type { ClientVisibleRoomState, RoomEvent } from "./room.ts";
+import type { PlayerId } from "./types.ts";
+
+export type RoomSocketAdapterState = {
+  rooms: RoomSocketRoomState[];
+};
+
+export type RoomSocketRoomState = {
+  roomId: string;
+  service: RoomServiceState;
+};
+
+export type RoomSocketClientMessage =
+  | {
+      protocolVersion: 1;
+      clientMessageId: string;
+      type: "createRoom";
+      payload: { roomId: string; seed: string; displayName: string };
+    }
+  | {
+      protocolVersion: 1;
+      clientMessageId: string;
+      roomId: string;
+      type: "joinRoom";
+      payload: { displayName: string };
+    }
+  | {
+      protocolVersion: 1;
+      clientMessageId: string;
+      roomId: string;
+      sessionToken: string;
+      type: "takeSeat";
+      payload: { seatId: PlayerId };
+    }
+  | {
+      protocolVersion: 1;
+      clientMessageId: string;
+      roomId: string;
+      sessionToken: string;
+      type: "toggleReady";
+      payload: Record<string, never>;
+    }
+  | {
+      protocolVersion: 1;
+      clientMessageId: string;
+      roomId: string;
+      sessionToken: string;
+      type: "startRound";
+      payload: { dealer?: PlayerId };
+    }
+  | {
+      protocolVersion: 1;
+      clientMessageId: string;
+      roomId: string;
+      sessionToken: string;
+      type: "resumeSession";
+      payload: { lastSeenEventId?: number };
+    };
+
+export type RoomSocketServerMessage =
+  | {
+      protocolVersion: 1;
+      serverEventId: number;
+      roomId: string;
+      recipientSessionToken: string;
+      type: "roomSnapshot";
+      payload: RoomSnapshotPayload;
+    }
+  | {
+      protocolVersion: 1;
+      serverEventId: number;
+      roomId: string;
+      recipientSessionToken: string;
+      type: "actionAccepted";
+      payload: { clientMessageId: string };
+    }
+  | {
+      protocolVersion: 1;
+      serverEventId: number;
+      roomId: string;
+      recipientSessionToken: string | null;
+      type: "actionRejected";
+      payload: { clientMessageId: string; code: RoomSocketErrorCode; message: string };
+    };
+
+export type RoomSnapshotPayload = {
+  view: ClientVisibleRoomState;
+  sessionToken: string;
+  playerId: string;
+  lastEventId: number;
+  events: RoomEvent[];
+};
+
+export type RoomSocketErrorCode = "roomNotFound" | "roomAlreadyExists" | RoomServiceError;
+
+export type RoomSocketAdapterResult = {
+  adapter: RoomSocketAdapterState;
+  messages: RoomSocketServerMessage[];
+};
+
+export function createRoomSocketAdapterState(): RoomSocketAdapterState {
+  return { rooms: [] };
+}
+
+export function handleRoomSocketMessage(
+  adapter: RoomSocketAdapterState,
+  message: RoomSocketClientMessage,
+): RoomSocketAdapterResult {
+  if (message.type === "createRoom") {
+    return handleCreateRoom(adapter, message);
+  }
+
+  const room = findRoom(adapter, message.roomId);
+
+  if (room === undefined) {
+    return {
+      adapter,
+      messages: [rejectedMessage(message, message.roomId, sessionTokenFromMessage(message), "roomNotFound")],
+    };
+  }
+
+  if (message.type === "joinRoom") {
+    return handleJoinRoom(adapter, room.service, message);
+  }
+
+  if (message.type === "resumeSession") {
+    return handleResumeSession(adapter, room.service, message);
+  }
+
+  return handleRoomServiceAction(adapter, room.service, message, clientMessageToRoomAction(message));
+}
+
+function handleCreateRoom(
+  adapter: RoomSocketAdapterState,
+  message: Extract<RoomSocketClientMessage, { type: "createRoom" }>,
+): RoomSocketAdapterResult {
+  if (findRoom(adapter, message.payload.roomId) !== undefined) {
+    return {
+      adapter,
+      messages: [rejectedMessage(message, message.payload.roomId, null, "roomAlreadyExists")],
+    };
+  }
+
+  const result = createRoomSession(message.payload);
+  const nextAdapter = upsertRoom(adapter, result.service);
+
+  return {
+    adapter: nextAdapter,
+    messages: [
+      acceptedMessage(message, result.service.room.id, result.session.sessionToken, result.lastEventId),
+      snapshotMessage(result.service, result.session.sessionToken, result.events),
+    ],
+  };
+}
+
+function handleJoinRoom(
+  adapter: RoomSocketAdapterState,
+  service: RoomServiceState,
+  message: Extract<RoomSocketClientMessage, { type: "joinRoom" }>,
+): RoomSocketAdapterResult {
+  const result = joinRoomSession(service, message.payload);
+
+  if (!result.ok) {
+    return {
+      adapter,
+      messages: [rejectedMessage(message, service.room.id, null, result.reason)],
+    };
+  }
+
+  const nextAdapter = upsertRoom(adapter, result.service);
+
+  return {
+    adapter: nextAdapter,
+    messages: [
+      acceptedMessage(message, result.service.room.id, result.session.sessionToken, result.lastEventId),
+      ...snapshotMessagesForSessions(result.service, result.events),
+    ],
+  };
+}
+
+function handleResumeSession(
+  adapter: RoomSocketAdapterState,
+  service: RoomServiceState,
+  message: Extract<RoomSocketClientMessage, { type: "resumeSession" }>,
+): RoomSocketAdapterResult {
+  const result = resumeRoomSession(service, {
+    sessionToken: message.sessionToken,
+    lastSeenEventId: message.payload.lastSeenEventId,
+  });
+
+  if (!result.ok) {
+    return {
+      adapter,
+      messages: [rejectedMessage(message, service.room.id, message.sessionToken, result.reason)],
+    };
+  }
+
+  const nextAdapter = upsertRoom(adapter, result.service);
+
+  return {
+    adapter: nextAdapter,
+    messages: [
+      acceptedMessage(message, result.service.room.id, message.sessionToken, result.lastEventId),
+      snapshotMessage(result.service, message.sessionToken, result.missedEvents),
+    ],
+  };
+}
+
+function handleRoomServiceAction(
+  adapter: RoomSocketAdapterState,
+  service: RoomServiceState,
+  message: Extract<RoomSocketClientMessage, { type: "takeSeat" | "toggleReady" | "startRound" }>,
+  action: RoomAction,
+): RoomSocketAdapterResult {
+  const result = handleRoomAction(service, message.sessionToken, action);
+
+  if (!result.ok) {
+    return {
+      adapter,
+      messages: [rejectedMessage(message, service.room.id, message.sessionToken, result.reason)],
+    };
+  }
+
+  const nextAdapter = upsertRoom(adapter, result.service);
+
+  return {
+    adapter: nextAdapter,
+    messages: [
+      acceptedMessage(message, result.service.room.id, message.sessionToken, result.lastEventId),
+      ...snapshotMessagesForSessions(result.service, result.events),
+    ],
+  };
+}
+
+function clientMessageToRoomAction(
+  message: Extract<RoomSocketClientMessage, { type: "takeSeat" | "toggleReady" | "startRound" }>,
+): RoomAction {
+  if (message.type === "takeSeat") {
+    return { type: "takeSeat", seatId: message.payload.seatId };
+  }
+
+  if (message.type === "toggleReady") {
+    return { type: "toggleReady" };
+  }
+
+  return { type: "startRound", dealer: message.payload.dealer };
+}
+
+function snapshotMessagesForSessions(service: RoomServiceState, events: RoomEvent[]): RoomSocketServerMessage[] {
+  return service.sessions.map((session) => snapshotMessage(service, session.sessionToken, events));
+}
+
+function snapshotMessage(
+  service: RoomServiceState,
+  sessionToken: string,
+  events: RoomEvent[],
+): RoomSocketServerMessage {
+  const view = getClientRoomView(service, sessionToken);
+
+  if (!view.ok) {
+    throw new Error(view.reason);
+  }
+
+  return {
+    protocolVersion: 1,
+    serverEventId: service.lastEventId,
+    roomId: service.room.id,
+    recipientSessionToken: sessionToken,
+    type: "roomSnapshot",
+    payload: {
+      view: view.view,
+      sessionToken,
+      playerId: view.session.playerId,
+      lastEventId: service.lastEventId,
+      events,
+    },
+  };
+}
+
+function acceptedMessage(
+  message: RoomSocketClientMessage,
+  roomId: string,
+  sessionToken: string,
+  serverEventId: number,
+): RoomSocketServerMessage {
+  return {
+    protocolVersion: 1,
+    serverEventId,
+    roomId,
+    recipientSessionToken: sessionToken,
+    type: "actionAccepted",
+    payload: { clientMessageId: message.clientMessageId },
+  };
+}
+
+function rejectedMessage(
+  message: RoomSocketClientMessage,
+  roomId: string,
+  sessionToken: string | null,
+  code: RoomSocketErrorCode,
+): RoomSocketServerMessage {
+  return {
+    protocolVersion: 1,
+    serverEventId: 0,
+    roomId,
+    recipientSessionToken: sessionToken,
+    type: "actionRejected",
+    payload: {
+      clientMessageId: message.clientMessageId,
+      code,
+      message: errorMessage(code),
+    },
+  };
+}
+
+function errorMessage(code: RoomSocketErrorCode): string {
+  const messages: Record<RoomSocketErrorCode, string> = {
+    roomNotFound: "Room was not found.",
+    roomAlreadyExists: "Room already exists.",
+    invalidSession: "Session is invalid.",
+    roomAlreadyStarted: "Room has already started.",
+    playerAlreadyJoined: "Player already joined.",
+    playerNotInRoom: "Player is not in the room.",
+    seatOccupied: "Seat is already occupied.",
+    playerAlreadySeated: "Player is already seated.",
+    playerNotSeated: "Player is not seated.",
+    notEnoughPlayers: "Not enough players are seated.",
+    notAllPlayersReady: "Not all players are ready.",
+  };
+  return messages[code];
+}
+
+function sessionTokenFromMessage(message: RoomSocketClientMessage): string | null {
+  return "sessionToken" in message ? message.sessionToken : null;
+}
+
+function findRoom(adapter: RoomSocketAdapterState, roomId: string): RoomSocketRoomState | undefined {
+  return adapter.rooms.find((room) => room.roomId === roomId);
+}
+
+function upsertRoom(adapter: RoomSocketAdapterState, service: RoomServiceState): RoomSocketAdapterState {
+  const roomState = { roomId: service.room.id, service };
+  const exists = adapter.rooms.some((room) => room.roomId === service.room.id);
+
+  return {
+    rooms: exists
+      ? adapter.rooms.map((room) => (room.roomId === service.room.id ? roomState : room))
+      : [...adapter.rooms, roomState],
+  };
+}
