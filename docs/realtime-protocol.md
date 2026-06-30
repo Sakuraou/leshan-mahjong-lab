@@ -439,6 +439,11 @@ The current implemented API is documented in
 - `resumeRoomSession`
 - `getClientRoomView`
 
+The first pure-function socket adapter is documented in
+[`docs/socket-adapter.md`](socket-adapter.md). It maps protocol-like client
+messages to `roomService` calls and returns `ServerMessage`-style outputs
+without starting a real server.
+
 Validation should call the same rule modules that power the current tests:
 
 - `startRound` for seeded wall and dealing.
@@ -451,11 +456,12 @@ Validation should call the same rule modules that power the current tests:
 1. Add shared protocol and DTO types under `src/game` or `src/realtime`.
 2. Build an in-memory `RoomService` with unit tests. Done in
    `src/game/roomService.ts`.
-3. Add a small WebSocket adapter in a separate server entry.
-4. Replace local reducer calls in the frontend with socket messages.
-5. Keep the local demo mode as a portfolio fallback.
-6. Add reconnect using `sessionToken` and `lastSeenEventId`.
+3. Add a pure-function WebSocket adapter around `roomService`. Done in
+   `src/game/roomSocketAdapter.ts`.
+4. Connect the frontend to a local mock transport or real WebSocket server.
+5. Replace local reducer calls in the frontend with socket messages.
+6. Keep the local demo mode as a portfolio fallback.
+7. Add reconnect using `sessionToken` and `lastSeenEventId`.
 
-The next milestone is a WebSocket adapter for the completed server-authoritative
-room service, so one real four-player table can run while preserving the
-existing local prototype.
+The next milestone is either a local mock transport for the frontend or a real
+WebSocket server entry that wraps the completed socket adapter.

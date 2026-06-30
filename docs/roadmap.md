@@ -72,8 +72,11 @@ server authoritative.
   interface contract
 - [x] Build the first server-authoritative in-memory room service
 - [x] Document the room service API and its WebSocket adapter boundary
+- [x] Build a pure-function WebSocket adapter around `roomService`
+- [x] Document the socket adapter message flow and frontend integration plan
 - Choose the concrete WebSocket runtime or provider
-- Build a WebSocket adapter around `roomService`
+- Connect the frontend to a local mock transport backed by `roomSocketAdapter`
+- Or wrap `roomSocketAdapter` with a real WebSocket server entry
 - Connect table UI to WebSocket room snapshots
 - Add reconnect with a local session token
 

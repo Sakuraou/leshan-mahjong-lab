@@ -18,6 +18,7 @@ after the GitHub repository is imported in Vercel.
 - Multiplayer design: [docs/multiplayer-design.md](docs/multiplayer-design.md)
 - Real-time protocol draft: [docs/realtime-protocol.md](docs/realtime-protocol.md)
 - Room service interface: [docs/room-service.md](docs/room-service.md)
+- Socket adapter interface: [docs/socket-adapter.md](docs/socket-adapter.md)
 
 ## Deploy To Vercel
 
@@ -95,6 +96,9 @@ and AI-assisted development.
 - Pure TypeScript server-authoritative room service with session tokens,
   `lastEventId`, reconnect recovery, and redacted client views before adding
   the WebSocket adapter
+- Pure-function WebSocket adapter that maps protocol-like messages to
+  `roomService` and returns `ServerMessage`-style accepted, rejected, and
+  redacted snapshot messages without starting a real server
 
 ## Screenshots
 
@@ -160,6 +164,7 @@ src/
     rules.ts        Dingque, score helpers, chicken/gang/wu ji helpers
     room.ts         Local room reducer and redacted client-visible room state
     roomService.ts  Server-authoritative room session service
+    roomSocketAdapter.ts Pure WebSocket-shaped message adapter
     round.ts        Seeded shuffle, dealing, draw/discard state transitions
     win.ts          Self-draw and discard hu checks
 tests/
@@ -172,6 +177,7 @@ tests/
     multiplayer-design.md Real-time room product and technical plan
     realtime-protocol.md WebSocket room protocol and server interface draft
     room-service.md Server-authoritative room service interface
+    socket-adapter.md Pure socket adapter interface and frontend integration plan
 ```
 
 ## AI-Assisted Workflow
@@ -205,6 +211,9 @@ roles were used to split work into reviewable concerns:
   legal, redacted state.
 - Implemented and documented a pure TypeScript room service as the future
   WebSocket adapter's authoritative state layer.
+- Added a tested pure-function socket adapter, preparing the frontend to consume
+  server-shaped room snapshots through either a local mock transport or a real
+  WebSocket server.
 - Used a multi-agent AI-assisted workflow to split product planning, rule
   modeling, implementation, test-case design, and review.
 - Prepared the repository as a portfolio case study with rule documentation,
