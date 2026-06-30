@@ -212,7 +212,9 @@ button {
 }
 
 .actions button,
-.missing-options button {
+.missing-options button,
+.room-actions button,
+.room-seat-card button {
   min-width: 84px;
   height: 38px;
   border: 0;
@@ -222,8 +224,97 @@ button {
   cursor: pointer;
 }
 
+.actions button:disabled,
+.missing-options button:disabled,
+.room-actions button:disabled,
+.room-seat-card button:disabled {
+  background: #adb5aa;
+  color: #eef1eb;
+  cursor: not-allowed;
+}
+
 .actions button + button {
   background: #36403a;
+}
+
+.room-panel {
+  display: grid;
+  gap: 14px;
+  border: 1px solid #d6d0c5;
+  border-radius: 8px;
+  padding: 16px;
+  background: #fffaf1;
+}
+
+.room-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.room-header h2,
+.room-header p,
+.room-seat-card h2 {
+  margin: 0;
+}
+
+.room-header h2 {
+  font-size: 18px;
+}
+
+.room-header p {
+  margin-top: 4px;
+  color: #657064;
+  font-size: 13px;
+}
+
+.room-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(68px, 1fr));
+  gap: 8px;
+  min-width: 240px;
+}
+
+.room-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.room-actions button:nth-last-child(1) {
+  background: #36403a;
+}
+
+.room-seat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.room-seat-card {
+  display: grid;
+  gap: 12px;
+  min-height: 128px;
+  border: 1px solid #d6d0c5;
+  border-radius: 8px;
+  padding: 14px;
+  background: #fffdf8;
+}
+
+.room-seat-card[data-occupied="true"] {
+  border-color: #c6b17d;
+  background: #fff8e9;
+}
+
+.room-seat-card[data-ready="true"] {
+  border-color: #247a48;
+  background: #f4fbef;
+  box-shadow: inset 0 0 0 2px rgba(36, 122, 72, 0.14);
+}
+
+.room-seat-card button {
+  justify-self: start;
 }
 
 .missing-panel,
@@ -569,6 +660,7 @@ button {
 
   .top-bar,
   .action-panel,
+  .room-header,
   .mode-banner,
   .missing-panel {
     grid-template-columns: 1fr;
@@ -577,11 +669,14 @@ button {
   }
 
   .round-stats,
-  .seats {
+  .seats,
+  .room-summary,
+  .room-seat-grid {
     grid-template-columns: 1fr;
   }
 
-  .actions {
+  .actions,
+  .room-actions {
     flex-direction: column;
     align-items: stretch;
   }

@@ -2,25 +2,41 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   checkCurrentPlayerHu,
   checkDiscardHu,
+  createRoom,
   discardTile,
   drawTile,
+  joinRoom,
+  startRoomRound,
   startRound,
+  takeSeat,
+  toggleReady,
   type PlayerId,
   type PlayerState,
+  type RoomState,
+  type SeatState,
   type RoundState,
   type Suit,
   type Tile,
 } from "./game/index.ts";
 
 const seed = "portfolio-demo-001";
-const localPlayerId: PlayerId = 0;
+const roomId = "LSMJ-001";
+const localPlayerId = "player-1";
+const localSeatId: PlayerId = 0;
 const suitOrder: Suit[] = ["bamboos", "dots", "characters"];
+const demoPlayers = [
+  { playerId: "player-1", displayName: "我" },
+  { playerId: "player-2", displayName: "演示玩家 2" },
+  { playerId: "player-3", displayName: "演示玩家 3" },
+  { playerId: "player-4", displayName: "演示玩家 4" },
+];
 
 type LogEntry = {
   id: number;
   text: string;
 };
 
+type TableMode = "room" | "standalone";
 type TurnPhase = "chooseMissingSuit" | "draw" | "discard";
 
 function createDemoRound(): RoundState {
@@ -30,26 +46,34 @@ function createDemoRound(): RoundState {
     ...round,
     players: round.players.map((player) => ({
       ...player,
-      missingSuit: player.id === localPlayerId ? detectHeavenlyMissingSuit(player.hand) : null,
+      missingSuit: player.id === localSeatId ? detectHeavenlyMissingSuit(player.hand) : null,
     })),
   };
 }
 
+function createDemoRoom(): RoomState {
+  return createRoom({ id: roomId, seed });
+}
+
 export function App() {
-  const [round, setRound] = useState(createDemoRound);
+  const [room, setRoom] = useState(createDemoRoom);
+  const [tableMode, setTableMode] = useState<TableMode>("room");
+  const [standaloneRound, setStandaloneRound] = useState(createDemoRound);
   const [logs, setLogs] = useState<LogEntry[]>([
     {
       id: 1,
-      text: `牌局已按固定种子 ${seed} 开始。当前原型只操作自己的座位，其他座位代表未来联机玩家。`,
+      text: "已创建本地模拟联机房间。这里先不接真实网络，用 reducer 演示加入、占座、准备和开局。",
     },
   ]);
   const autoDrawKeys = useRef(new Set<string>());
 
+  const tableStarted = tableMode === "standalone" || room.round !== null;
+  const round = tableMode === "room" && room.round !== null ? room.round : standaloneRound;
   const currentPlayer = round.players[round.currentPlayer];
-  const localPlayer = round.players[localPlayerId];
+  const localPlayer = round.players[localSeatId];
   const currentPhase = getTurnPhase(currentPlayer);
   const localPhase = getTurnPhase(localPlayer);
-  const isLocalTurn = round.currentPlayer === localPlayerId;
+  const isLocalTurn = round.currentPlayer === localSeatId;
   const currentHu = isLocalTurn ? checkCurrentPlayerHu(round) : null;
   const sortedLocalHand = useMemo(() => sortHand(localPlayer.hand), [localPlayer.hand]);
 
@@ -59,13 +83,17 @@ export function App() {
   );
 
   useEffect(() => {
+    if (!tableStarted) {
+      return;
+    }
+
     const player = round.players[round.currentPlayer];
 
     if (getTurnPhase(player) !== "draw") {
       return;
     }
 
-    const autoDrawKey = `${round.currentPlayer}:${round.wall.length}:${player.hand.length}:${player.discards.length}`;
+    const autoDrawKey = `${tableMode}:${round.currentPlayer}:${round.wall.length}:${player.hand.length}:${player.discards.length}`;
 
     if (autoDrawKeys.current.has(autoDrawKey)) {
       return;
@@ -80,27 +108,144 @@ export function App() {
       return;
     }
 
-    setRound(result.round);
-    addLog(`系统给玩家 ${player.id + 1} 发了一张牌。${player.id === localPlayerId ? "轮到你出牌。" : "等待该玩家出牌。"}`);
-  }, [round]);
+    commitRound(result.round);
+    addLog(`系统给玩家 ${player.id + 1} 发了一张牌。${player.id === localSeatId ? "轮到你出牌。" : "等待该玩家出牌。"}`);
+  }, [round, tableMode, tableStarted]);
 
   function addLog(text: string) {
     setLogs((items) => [{ id: (items.at(-1)?.id ?? 0) + 1, text }, ...items].slice(0, 9));
   }
 
+  function commitRound(nextRound: RoundState) {
+    if (tableMode === "room" && room.round !== null) {
+      setRoom((value) => ({ ...value, round: nextRound }));
+      return;
+    }
+
+    setStandaloneRound(nextRound);
+  }
+
+  function handleJoinLocalPlayer() {
+    const result = joinRoom(room, demoPlayers[0]);
+
+    if (!result.ok) {
+      addLog(`加入房间失败：${roomReasonText(result.reason)}。`);
+      return;
+    }
+
+    setRoom(result.room);
+    addLog("你已加入本地模拟房间。");
+  }
+
+  function handleTakeLocalSeat() {
+    const result = takeSeat(room, localPlayerId, localSeatId);
+
+    if (!result.ok) {
+      addLog(`占座失败：${roomReasonText(result.reason)}。`);
+      return;
+    }
+
+    setRoom(result.room);
+    addLog("你已坐到玩家 1 座位。");
+  }
+
+  function handleFillDemoPlayers() {
+    const result = demoPlayers.reduce((nextRoom, player, index) => {
+      let memberRoom = nextRoom;
+
+      if (!memberRoom.members.some((member) => member.playerId === player.playerId)) {
+        const joinResult = joinRoom(memberRoom, player);
+        memberRoom = joinResult.ok ? joinResult.room : memberRoom;
+      }
+
+      if (memberRoom.seats.some((seat) => seat.playerId === player.playerId)) {
+        return memberRoom;
+      }
+
+      const seatResult = takeSeat(memberRoom, player.playerId, index as PlayerId);
+      return seatResult.ok ? seatResult.room : memberRoom;
+    }, room);
+
+    setRoom(result);
+    addLog("已补齐四个本地演示玩家并分配座位。");
+  }
+
+  function handleToggleReady(playerId: string) {
+    const result = toggleReady(room, playerId);
+
+    if (!result.ok) {
+      addLog(`准备状态更新失败：${roomReasonText(result.reason)}。`);
+      return;
+    }
+
+    const seat = result.room.seats.find((value) => value.playerId === playerId);
+    setRoom(result.room);
+    addLog(`${seat?.displayName ?? "玩家"} ${seat?.ready ? "已准备" : "取消准备"}。`);
+  }
+
+  function handleReadyAll() {
+    const result = demoPlayers.reduce((nextRoom, player) => {
+      const seat = nextRoom.seats.find((value) => value.playerId === player.playerId);
+
+      if (seat === undefined || seat.ready) {
+        return nextRoom;
+      }
+
+      const readyResult = toggleReady(nextRoom, player.playerId);
+      return readyResult.ok ? readyResult.room : nextRoom;
+    }, room);
+
+    setRoom(result);
+    addLog("四个本地演示玩家已全部准备。");
+  }
+
+  function handleStartRoomRound() {
+    const result = startRoomRound(room, localSeatId);
+
+    if (!result.ok) {
+      addLog(`房间开局失败：${roomReasonText(result.reason)}。`);
+      return;
+    }
+
+    setRoom(result.room);
+    setTableMode("room");
+    autoDrawKeys.current.clear();
+    addLog("房间已开局。下面进入牌桌体验，仍然是本地模拟联机，还没有真实网络。");
+  }
+
+  function handleStandaloneDemo() {
+    setTableMode("standalone");
+    setStandaloneRound(createDemoRound());
+    autoDrawKeys.current.clear();
+    addLog("已进入单机演示牌桌。这个模式绕过房间流程，只用于快速展示。");
+  }
+
   function handleReset() {
     autoDrawKeys.current.clear();
-    setRound(createDemoRound());
+
+    if (tableMode === "room") {
+      setRoom(createDemoRoom());
+      setTableMode("room");
+      setLogs((items) => [
+        {
+          id: (items.at(-1)?.id ?? 0) + 1,
+          text: "本地模拟房间已重置。请重新加入、占座、准备并开局。",
+        },
+      ]);
+      return;
+    }
+
+    setStandaloneRound(createDemoRound());
     setLogs((items) => [
       {
         id: (items.at(-1)?.id ?? 0) + 1,
-        text: `牌局已重置。你需要先选择定缺，除非起手天缺。`,
+        text: "单机演示牌局已重置。你需要先选择定缺，除非起手天缺。",
       },
     ]);
   }
 
   function handleChooseMissingSuit(suit: Suit) {
-    setRound((value) => updatePlayer(value, localPlayerId, { ...value.players[localPlayerId], missingSuit: suit }));
+    commitRound(updatePlayer(round, localSeatId, { ...round.players[localSeatId], missingSuit: suit }));
     addLog(`你选择定缺 ${suitText(suit)}。`);
   }
 
@@ -120,7 +265,7 @@ export function App() {
       return;
     }
 
-    const result = discardTile(round, localPlayerId, tile);
+    const result = discardTile(round, localSeatId, tile);
 
     if (!result.ok) {
       addLog(`打出 ${tileText(tile)} 失败：${reasonText(result.reason)}。`);
@@ -128,11 +273,11 @@ export function App() {
     }
 
     const discardChecks = result.round.players
-      .filter((player) => player.id !== localPlayerId && !player.hasWon)
+      .filter((player) => player.id !== localSeatId && !player.hasWon)
       .map((player) => ({ player, check: checkDiscardHu(round, player.id, tile) }))
       .filter(({ check }) => check.canHu);
 
-    setRound(result.round);
+    commitRound(result.round);
 
     if (discardChecks.length > 0) {
       addLog(
@@ -153,7 +298,7 @@ export function App() {
     }
 
     const result = advanceRemoteTurn(round);
-    setRound(result.round);
+    commitRound(result.round);
     result.logs.forEach(addLog);
   }
 
@@ -163,84 +308,99 @@ export function App() {
         <header className="top-bar">
           <div>
             <h1>乐山麻将 Lab</h1>
-            <p>八鸡赖子规则的联机桌原型</p>
+            <p>八鸡赖子规则的本地模拟联机桌</p>
           </div>
           <div className="round-stats">
-            <Stat label="我的座位" value={`玩家 ${localPlayerId + 1}`} />
-            <Stat label="当前回合" value={`玩家 ${round.currentPlayer + 1}`} />
-            <Stat label="牌墙" value={round.wall.length.toString()} />
-            <Stat label="弃牌" value={totalDiscards.toString()} />
+            <Stat label="房间" value={tableMode === "room" ? room.id : "单机"} />
+            <Stat label="我的座位" value={`玩家 ${localSeatId + 1}`} />
+            <Stat label="当前回合" value={tableStarted ? `玩家 ${round.currentPlayer + 1}` : "待开局"} />
+            <Stat label="牌墙" value={tableStarted ? round.wall.length.toString() : "-"} />
           </div>
         </header>
 
         <div className="mode-banner">
-          <strong>联机设计方向</strong>
-          <span>你只控制自己的座位；摸牌由系统自动发；其他玩家未来由远端真人操作。</span>
+          <strong>本地模拟联机</strong>
+          <span>这个页面已经接入 room reducer，但还没有真实网络；所有加入、占座、准备和开局都在本机模拟。</span>
         </div>
 
-        <div className="seats">
-          {round.players.map((player) => (
-            <PlayerSeat
-              key={player.id}
-              player={player}
-              current={player.id === round.currentPlayer}
-              local={player.id === localPlayerId}
-            />
-          ))}
-        </div>
+        {tableMode === "room" && room.round === null ? (
+          <RoomPanel
+            room={room}
+            onJoinLocalPlayer={handleJoinLocalPlayer}
+            onTakeLocalSeat={handleTakeLocalSeat}
+            onFillDemoPlayers={handleFillDemoPlayers}
+            onToggleReady={handleToggleReady}
+            onReadyAll={handleReadyAll}
+            onStartRound={handleStartRoomRound}
+            onStandaloneDemo={handleStandaloneDemo}
+          />
+        ) : (
+          <>
+            <div className="seats">
+              {round.players.map((player) => (
+                <PlayerSeat
+                  key={player.id}
+                  player={player}
+                  current={player.id === round.currentPlayer}
+                  local={player.id === localSeatId}
+                />
+              ))}
+            </div>
 
-        <section className="action-panel" aria-label="我的操作区">
-          <div>
-            <h2>我的手牌</h2>
-            <p>
-              座位：玩家 {localPlayerId + 1} · 定缺：{suitText(localPlayer.missingSuit)}
-            </p>
-          </div>
-          <div className="actions">
-            {!isLocalTurn && (
-              <button type="button" onClick={handleAdvanceRemoteTurn}>
-                模拟远端一手
-              </button>
-            )}
-            <button type="button" onClick={handleReset}>
-              重置牌局
-            </button>
-          </div>
+            <section className="action-panel" aria-label="我的操作区">
+              <div>
+                <h2>我的手牌</h2>
+                <p>
+                  座位：玩家 {localSeatId + 1} · 定缺：{suitText(localPlayer.missingSuit)} · 弃牌：{totalDiscards}
+                </p>
+              </div>
+              <div className="actions">
+                {!isLocalTurn && (
+                  <button type="button" onClick={handleAdvanceRemoteTurn}>
+                    模拟远端一手
+                  </button>
+                )}
+                <button type="button" onClick={handleReset}>
+                  {tableMode === "room" ? "重置房间" : "重置牌局"}
+                </button>
+              </div>
 
-          <MissingSuitPanel player={localPlayer} onChoose={handleChooseMissingSuit} />
+              <MissingSuitPanel player={localPlayer} onChoose={handleChooseMissingSuit} />
 
-          <div className="turn-hint" data-phase={currentPhase} data-local={isLocalTurn}>
-            {turnHintText(isLocalTurn, currentPhase)}
-          </div>
+              <div className="turn-hint" data-phase={currentPhase} data-local={isLocalTurn}>
+                {turnHintText(isLocalTurn, currentPhase, tableMode)}
+              </div>
 
-          <div className="hu-status" data-ready={currentHu?.canHu ?? false}>
-            {currentHu === null
-              ? `当前是玩家 ${round.currentPlayer + 1} 的回合，等待远端玩家操作。`
-              : currentHu.canHu
-                ? `可以自摸胡：${currentHu.score.cappedPoints} 分，牌型 ${currentHu.patterns.map(patternText).join("、")}`
-                : `暂不能自摸：${reasonText(currentHu.reason)}`}
-          </div>
+              <div className="hu-status" data-ready={currentHu?.canHu ?? false}>
+                {currentHu === null
+                  ? `当前是玩家 ${round.currentPlayer + 1} 的回合，等待远端玩家操作。`
+                  : currentHu.canHu
+                    ? `可以自摸胡：${currentHu.score.cappedPoints} 分，牌型 ${currentHu.patterns.map(patternText).join("、")}`
+                    : `暂不能自摸：${reasonText(currentHu.reason)}`}
+              </div>
 
-          <div className="hand" aria-label="按条筒万排序的我的手牌">
-            {sortedLocalHand.map((tile, index) => (
-              <button
-                className="tile-button"
-                key={`${tileText(tile)}-${index}`}
-                type="button"
-                onClick={() => handleDiscard(tile)}
-                title={isLocalTurn && localPhase === "discard" ? `打出 ${tileText(tile)}` : tileText(tile)}
-                disabled={!isLocalTurn || localPhase !== "discard"}
-                data-yaoji={isYaoJiTile(tile)}
-              >
-                <TileFace tile={tile} />
-              </button>
-            ))}
-          </div>
-        </section>
+              <div className="hand" aria-label="按条筒万排序的我的手牌">
+                {sortedLocalHand.map((tile, index) => (
+                  <button
+                    className="tile-button"
+                    key={`${tileText(tile)}-${index}`}
+                    type="button"
+                    onClick={() => handleDiscard(tile)}
+                    title={isLocalTurn && localPhase === "discard" ? `打出 ${tileText(tile)}` : tileText(tile)}
+                    disabled={!isLocalTurn || localPhase !== "discard"}
+                    data-yaoji={isYaoJiTile(tile)}
+                  >
+                    <TileFace tile={tile} />
+                  </button>
+                ))}
+              </div>
+            </section>
+          </>
+        )}
       </section>
 
       <aside className="log-panel" aria-label="牌局记录">
-        <h2>牌局记录</h2>
+        <h2>房间与牌局记录</h2>
         <div className="log-list">
           {logs.map((log) => (
             <p key={log.id}>{log.text}</p>
@@ -248,6 +408,94 @@ export function App() {
         </div>
       </aside>
     </main>
+  );
+}
+
+function RoomPanel({
+  room,
+  onJoinLocalPlayer,
+  onTakeLocalSeat,
+  onFillDemoPlayers,
+  onToggleReady,
+  onReadyAll,
+  onStartRound,
+  onStandaloneDemo,
+}: {
+  room: RoomState;
+  onJoinLocalPlayer: () => void;
+  onTakeLocalSeat: () => void;
+  onFillDemoPlayers: () => void;
+  onToggleReady: (playerId: string) => void;
+  onReadyAll: () => void;
+  onStartRound: () => void;
+  onStandaloneDemo: () => void;
+}) {
+  const localJoined = room.members.some((member) => member.playerId === localPlayerId);
+  const localSeated = room.seats.some((seat) => seat.playerId === localPlayerId);
+  const occupiedSeats = room.seats.filter((seat) => seat.playerId !== null).length;
+  const readySeats = room.seats.filter((seat) => seat.ready).length;
+
+  return (
+    <section className="room-panel" aria-label="本地模拟联机房间">
+      <div className="room-header">
+        <div>
+          <h2>房间模式</h2>
+          <p>房间号 {room.id} · 本地 reducer 模拟 · 暂无真实网络连接</p>
+        </div>
+        <div className="room-summary">
+          <Stat label="成员" value={room.members.length.toString()} />
+          <Stat label="座位" value={`${occupiedSeats}/4`} />
+          <Stat label="准备" value={`${readySeats}/4`} />
+        </div>
+      </div>
+
+      <div className="room-actions">
+        <button type="button" onClick={onJoinLocalPlayer} disabled={localJoined}>
+          加入我
+        </button>
+        <button type="button" onClick={onTakeLocalSeat} disabled={!localJoined || localSeated}>
+          坐到玩家 1
+        </button>
+        <button type="button" onClick={onFillDemoPlayers}>
+          补齐演示玩家
+        </button>
+        <button type="button" onClick={onReadyAll}>
+          全员准备
+        </button>
+        <button type="button" onClick={onStartRound}>
+          开始牌局
+        </button>
+        <button type="button" onClick={onStandaloneDemo}>
+          直接单机演示
+        </button>
+      </div>
+
+      <div className="room-seat-grid">
+        {room.seats.map((seat) => (
+          <RoomSeatCard key={seat.seatId} seat={seat} onToggleReady={onToggleReady} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function RoomSeatCard({ seat, onToggleReady }: { seat: SeatState; onToggleReady: (playerId: string) => void }) {
+  return (
+    <article className="room-seat-card" data-occupied={seat.playerId !== null} data-ready={seat.ready}>
+      <div className="seat-title">
+        <h2>玩家 {seat.seatId + 1}</h2>
+        <span>{seat.ready ? "已准备" : seat.playerId === null ? "空座" : "未准备"}</span>
+      </div>
+      <div className="seat-meta">
+        <span>{seat.displayName ?? "等待加入"}</span>
+        <span>{seat.connected ? "在线" : "未连接"}</span>
+      </div>
+      {seat.playerId !== null && (
+        <button type="button" onClick={() => onToggleReady(seat.playerId!)}>
+          {seat.ready ? "取消准备" : "准备"}
+        </button>
+      )}
+    </article>
   );
 }
 
@@ -376,7 +624,7 @@ function advanceRemoteTurn(round: RoundState): { round: RoundState; logs: string
   let nextRound = round;
   let nextPlayer = player;
 
-  if (nextPlayer.id === localPlayerId) {
+  if (nextPlayer.id === localSeatId) {
     return { round, logs: ["现在轮到你操作。"] };
   }
 
@@ -467,9 +715,11 @@ function getTurnPhase(player: PlayerState): TurnPhase {
   return player.hand.length % 3 === 1 ? "draw" : "discard";
 }
 
-function turnHintText(isLocalTurn: boolean, phase: TurnPhase): string {
+function turnHintText(isLocalTurn: boolean, phase: TurnPhase, tableMode: TableMode): string {
   if (!isLocalTurn) {
-    return "等待其他玩家操作。当前原型可用模拟按钮推进远端回合。";
+    return tableMode === "room"
+      ? "等待其他玩家操作。当前仍是本地模拟，可用按钮推进远端回合。"
+      : "等待其他玩家操作。当前单机演示可用模拟按钮推进。";
   }
 
   if (phase === "chooseMissingSuit") {
@@ -517,6 +767,20 @@ function chineseNumber(rank: Tile["rank"]): string {
     9: "九",
   };
   return numbers[rank];
+}
+
+function roomReasonText(reason: string): string {
+  const reasons: Record<string, string> = {
+    roomAlreadyStarted: "房间已经开局",
+    playerAlreadyJoined: "玩家已经加入",
+    playerNotInRoom: "玩家还没有加入房间",
+    seatOccupied: "座位已经有人",
+    playerAlreadySeated: "玩家已经入座",
+    playerNotSeated: "玩家还没有入座",
+    notEnoughPlayers: "还没有坐满四人",
+    notAllPlayersReady: "还有玩家没有准备",
+  };
+  return reasons[reason] ?? "原因待确认";
 }
 
 function reasonText(reason: string | undefined): string {
