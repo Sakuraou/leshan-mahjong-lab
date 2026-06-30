@@ -98,6 +98,7 @@ Implemented rule-core basics:
 - Laizi-aware standard hu decomposition for 4 melds + 1 pair
 - Seeded shuffle, four-player dealing, dealer state, and remaining wall tracking
 - Basic draw and discard transitions with dingque and no-yao-ji-discard checks
+- Self-draw and discard hu checks with minimum-score validation
 
 Run tests:
 
@@ -106,4 +107,4 @@ npm test
 ```
 
 Next milestone: build the first playable table prototype using the seeded round
-state and basic draw/discard transitions.
+state, draw/discard transitions, and hu checks.

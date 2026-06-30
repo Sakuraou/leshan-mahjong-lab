@@ -139,3 +139,12 @@ Draw/discard transition session:
 - Reused dingque and no-active-yao-ji-discard checks in round-level discard
   validation
 - Added turn switching to the next player who has not already won
+
+Basic hu-check session:
+
+- Added pure win-check functions for current-player self-draw and discard hu
+- Reused laizi-aware hand decomposition and score calculation
+- Enforced the local minimum-score rule where self-draw ping hu can win but
+  discard ping hu cannot
+- Added tests for self-draw ping hu, rejected discard ping hu, higher-value
+  discard hu, and failed hand structures

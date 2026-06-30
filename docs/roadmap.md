@@ -32,7 +32,7 @@ Goal: move from visual demo to real rule logic.
 - [x] Add focused tests for laizi sequence, pair, triplet, and failed hands
 - [x] Build wall shuffle and dealing logic
 - [x] Implement basic draw and discard state transitions
-- Implement basic win detection
+- [x] Implement basic win detection
 - Add broader rule tests
 
 ## Phase 3: Explainable Training
