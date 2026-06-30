@@ -1,128 +1,138 @@
 # Leshan Mahjong Lab
 
-An interactive Leshan Mahjong training app focused on local-rule modeling,
-eight-chicken laizi rules, single-player practice, explainable hand evaluation,
-and AI-assisted development.
+An interactive Web prototype for learning and testing Leshan eight-chicken
+Mahjong rules. The project turns a local, oral rule set into a tested TypeScript
+game engine and a playable browser table.
 
-## Project Positioning
+## Online Demo
 
-This project is not only a Mahjong game. It is a portfolio-oriented product that
-shows how a local card-game rule system can be translated into a tested,
-explainable, and playable web application.
+Deployment is planned for Vercel.
 
-The first version will be a Web/PWA app so recruiters and interviewers can open a
-link and try it immediately. A mobile app version can be added after the core
-game engine becomes stable.
+- Live URL: `TBD`
+- Repository: `https://github.com/Sakuraou/leshan-mahjong-lab`
+- Case study: [docs/case-study.md](docs/case-study.md)
 
-## MVP Scope
+## Why This Project
 
-- Rule guide for eight-chicken Leshan Mahjong
-- Single-player practice table
-- Tile draw, discard, sort, and action history
-- Laizi-aware winning-hand detection
-- Hand explanation: why a hand can or cannot win
-- Listening-tile hints
-- Chicken, gen, gang, and cha jiao settlement notes
-- Simple AI discard suggestion
-- Round replay timeline
-- Case study page for the AI and multi-agent development workflow
+This is not a generic Mahjong clone. Leshan eight-chicken Mahjong has local
+rules that are easy to describe at the table but hard to encode correctly:
 
-## Recommended Tech Stack
+- `1 bamboo` and `1 dot` are yao ji / laizi.
+- Laizi can complete pairs, triplets, and sequences.
+- Discard ping hu is not allowed because it is only 1 point.
+- Self-draw ping hu is allowed because self-draw doubles to 2 points.
+- Wu ji, qing yi se, chicken payments, gang points, dingque, and cha jiao all
+  affect the rule model.
 
-- Next.js + React + TypeScript
-- Tailwind CSS
-- Zustand for local game state
-- Node test runner for the first rule-engine tests; Vitest can be added later
-- Playwright for browser flow tests
-- Vercel for deployment
+The project is designed as a portfolio piece: it shows product framing, rule
+modeling, tested engineering, frontend interaction, and AI-assisted development.
 
-## Architecture Direction
+## Current Features
 
-The app should keep the game logic independent from the UI.
-
-```text
-src/
-  app/              Next.js pages and routes
-  components/       Tile, hand, table, action panel, replay timeline
-  game/             Pure TypeScript Mahjong rules and game engine
-  store/            Local state management
-tests/
-  game/             Rule and scoring tests
-  e2e/              Browser interaction tests
-docs/
-  rules.md          Leshan Mahjong rules and pending questions
-  roadmap.md        Development phases
-  agent-workflow.md Multi-agent collaboration record
-```
-
-## Multi-Agent Collaboration
-
-This project is designed to showcase a vibe-coding workflow:
-
-| Agent Role | Responsibility | Output |
-| --- | --- | --- |
-| Product Agent | Define MVP and portfolio story | Product scope, feature priorities |
-| Rule Agent | Model Leshan Mahjong rules | Rule questions, engine boundaries |
-| Frontend Agent | Build the playable interface | Table UI, hand interaction |
-| Test Agent | Generate rule test cases | Vitest examples and edge cases |
-| Review Agent | Audit implementation quality | Bug risks and improvement notes |
+- Seeded four-player round setup
+- 108-tile wall generation and reproducible shuffle
+- Dealer receives 14 tiles, other players receive 13
+- Current-player draw and discard flow
+- Dingque-aware discard validation
+- No-active-yao-ji-discard MVP rule
+- Laizi-aware standard hu decomposition for `4 melds + 1 pair`
+- Self-draw and discard hu checks with the local minimum-score rule
+- Basic score helpers for ping hu, wu ji, qing yi se, gen, and caps
+- Web table prototype with Chinese tile labels, current-player highlight, wall
+  count, discard areas, action hints, and round log
 
 ## Screenshots
 
-Screenshots will be added after the table interaction flow stabilizes.
+Screenshots will be added after deployment.
 
 Planned portfolio shots:
 
-- Main table view with four players, highlighted current player, wall count, and hand tiles
+- Main table view with four players, highlighted current player, wall count, and
+  Chinese hand tiles
 - Draw/discard interaction with Chinese illegal-action feedback
 - Hu-ready state showing score and detected patterns
-- Development case-study view showing the multi-agent workflow and rule-engine tests
+- Development case-study view showing the multi-agent workflow and rule-engine
+  tests
 
-## Resume Pitch
-
-**Leshan Mahjong Lab | Local Mahjong Rule Training App**
-
-- Designed and built an interactive Leshan Mahjong training app with hand
-  operation, winning-hand detection, scoring hints, discard suggestions, and
-  replay timeline.
-- Modeled local Mahjong rules as testable TypeScript modules, separating hand
-  validation, pattern detection, scoring, and UI state.
-- Used a multi-agent AI-assisted workflow to split product planning, rule
-  modeling, frontend implementation, test generation, and code review.
-- Built a portfolio case study to demonstrate the full development loop from
-  ambiguous local rules to a deployed playable product.
-
-## Current Status
-
-Planning, repository setup, and the first tested rule-core layer.
-
-Implemented rule-core basics:
-
-- Tile model and 108-tile wall
-- Eight-chicken yao ji / laizi recognition
-- Dingque discard legality
-- No-active-yao-ji-discard MVP rule
-- Wu ji detection
-- Three-chicken and four-chicken settlement
-- Gang point table
-- Basic hu score multiplier, self-draw, minimum win, and 64-point cap
-- Laizi-aware standard hu decomposition for 4 melds + 1 pair
-- Seeded shuffle, four-player dealing, dealer state, and remaining wall tracking
-- Basic draw and discard transitions with dingque and no-yao-ji-discard checks
-- Self-draw and discard hu checks with minimum-score validation
-- First Vite + React table prototype wired to seeded round state
-
-Run tests:
+## Run Locally
 
 ```bash
-npm test
-```
-
-Run the web prototype:
-
-```bash
+npm install
 npm run dev
 ```
 
-Next milestone: add a clearer action timeline and improve the table interaction
-flow for peng/gang/hu prompts.
+Then open:
+
+```text
+http://127.0.0.1:5173
+```
+
+## Scripts
+
+```bash
+npm test
+npm run build
+npm run dev
+```
+
+## Tech Stack
+
+- Vite
+- React
+- TypeScript
+- Node test runner
+- Pure TypeScript game engine under `src/game`
+- GitHub for project history and portfolio presentation
+- Planned deployment: Vercel
+
+## Architecture
+
+The game logic is framework-independent. The React app imports pure TypeScript
+functions from `src/game`, which keeps rule tests fast and makes future mobile
+reuse possible.
+
+```text
+src/
+  App.tsx           Browser table prototype
+  styles.css        Prototype UI styling
+  game/
+    tiles.ts        Tile model, wall generation, yao ji detection
+    hu.ts           Laizi-aware standard hu decomposition
+    rules.ts        Dingque, score helpers, chicken/gang/wu ji helpers
+    round.ts        Seeded shuffle, dealing, draw/discard state transitions
+    win.ts          Self-draw and discard hu checks
+tests/
+  game/             Rule, round, hu, and win tests
+docs/
+  rules.md          Source-of-truth local rule document
+  roadmap.md        Development plan
+  agent-workflow.md AI collaboration log
+  case-study.md     Portfolio write-up
+```
+
+## AI-Assisted Workflow
+
+This project intentionally documents the vibe-coding process. Different agent
+roles were used to split work into reviewable concerns:
+
+| Agent Role | Responsibility | Output |
+| --- | --- | --- |
+| Product Agent | MVP and portfolio positioning | Scope, README language, resume pitch |
+| Rule Agent | Local rule clarification | Rule questions, edge cases, docs |
+| Implementation Agent | TypeScript game-core design | Pure functions, module boundaries |
+| Test Agent | Rule examples and regressions | Node test cases |
+| Review Agent | Quality and risk checks | Missing tests, UX improvements |
+
+## Resume Pitch
+
+**Leshan Mahjong Lab | Local Mahjong Rule Training Web App**
+
+- Built a playable Web prototype for Leshan eight-chicken Mahjong, supporting
+  seeded rounds, draw/discard flow, rule-aware validation, and basic hu checks.
+- Modeled local Mahjong rules as tested TypeScript modules, separating tile
+  modeling, laizi-aware hand decomposition, scoring helpers, round state, and UI.
+- Used a multi-agent AI-assisted workflow to split product planning, rule
+  modeling, implementation, test-case design, and review.
+- Prepared the repository as a portfolio case study with rule documentation,
+  roadmap, development log, and deployment-ready Vite build.
+
