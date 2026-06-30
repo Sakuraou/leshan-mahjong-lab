@@ -7,15 +7,21 @@
 - [x] Record multi-agent workflow
 - [x] Initialize Git and connect to GitHub
 
-## Phase 1: Playable Prototype
+## Phase 1: Frontend Multiplayer-Table Prototype
 
-Goal: one person can open the app and interact with a Mahjong table.
+Goal: one person can open the app and experience the intended multiplayer table
+flow before the real-time backend exists.
 
 - [x] Create Vite + React app structure
 - [x] Build first Tile, Hand, TableBoard, ActionPanel, and log UI
 - [x] Render four seats, player hand, discard areas, and remaining tile count
 - [x] Support a seeded mock round
 - [x] Support draw and discard actions
+- [x] Limit interaction to the local player's seat
+- [x] Hide other players' hands as future remote seats
+- [x] Let the local player choose dingque
+- [x] Auto-draw tiles through the system instead of a manual draw button
+- [x] Render self-drawn bamboo, dot, and character tile faces
 - Add clearer peng/gang/hu prompts
 - Add a fuller replay timeline
 
@@ -47,7 +53,24 @@ Goal: make the product useful instead of only playable.
 - Add round timeline and replay
 - Add debug panel for state inspection
 
-## Phase 4: Portfolio Polish
+## Phase 4: Real-Time Room Design And Backend
+
+Goal: connect the frontend table to a real multiplayer room while keeping the
+server authoritative.
+
+- [x] Document room creation and joining flow
+- [x] Document seat assignment and readiness flow
+- [x] Document player dingque and system dealing flow
+- [x] Document turn actions and server validation
+- [x] Document reconnect behavior and redacted client state
+- Define shared room event and state types
+- Build an in-memory room reducer with tests
+- Choose real-time transport or provider
+- Add room create/join UI
+- Connect table UI to room snapshots
+- Add reconnect with a local session token
+
+## Phase 5: Portfolio Polish
 
 Goal: make the project easy to understand in a resume or personal homepage.
 
@@ -57,13 +80,11 @@ Goal: make the project easy to understand in a resume or personal homepage.
 - Deploy to Vercel
 - Link from personal homepage
 
-## Phase 5: Advanced Features
+## Phase 6: Advanced Features
 
 Optional after the MVP:
 
 - More accurate Leshan local scoring
 - AI opponents
-- Multiplayer room prototype
-- WebSocket backend
 - User accounts and match history
 - Expo mobile version

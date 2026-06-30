@@ -1,8 +1,9 @@
 # Leshan Mahjong Lab
 
-An interactive Web prototype for learning and testing Leshan eight-chicken
-Mahjong rules. The project turns a local, oral rule set into a tested TypeScript
-game engine and a playable browser table.
+An interactive frontend multiplayer-table prototype for learning and testing
+Leshan eight-chicken Mahjong rules. The project turns a local, oral rule set
+into a tested TypeScript game engine and a browser table that is ready for a
+future real-time room layer.
 
 ## Online Demo
 
@@ -14,6 +15,7 @@ after the GitHub repository is imported in Vercel.
 - Repository: `https://github.com/Sakuraou/leshan-mahjong-lab`
 - Case study: [docs/case-study.md](docs/case-study.md)
 - Release notes: [docs/release-notes.md](docs/release-notes.md)
+- Multiplayer design: [docs/multiplayer-design.md](docs/multiplayer-design.md)
 
 ## Deploy To Vercel
 
@@ -56,7 +58,8 @@ rules that are easy to describe at the table but hard to encode correctly:
   affect the rule model.
 
 The project is designed as a portfolio piece: it shows product framing, rule
-modeling, tested engineering, frontend interaction, and AI-assisted development.
+modeling, tested engineering, frontend interaction, multiplayer room planning,
+and AI-assisted development.
 
 ## Current Features
 
@@ -69,9 +72,13 @@ modeling, tested engineering, frontend interaction, and AI-assisted development.
 - Laizi-aware standard hu decomposition for `4 melds + 1 pair`
 - Self-draw and discard hu checks with the local minimum-score rule
 - Basic score helpers for ping hu, wu ji, qing yi se, gen, and caps
-- Web table prototype with seat-limited player control, self-selected dingque,
-  automatic system draws, Chinese tile faces, current-player highlight, wall
-  count, discard areas, action hints, and round log
+- Frontend multiplayer-table prototype with seat-limited player control,
+  self-selected dingque, automatic system draws, hidden opponent hands, Chinese
+  tile faces, current-player highlight, wall count, discard areas, action hints,
+  and round log
+- Real multiplayer room design covering room creation, joining, seat assignment,
+  readiness, dingque, server dealing, turn actions, reconnect, and
+  server-authoritative validation
 
 ## Screenshots
 
@@ -82,9 +89,9 @@ Planned portfolio shots:
 | Shot | Status | What it should show |
 | --- | --- | --- |
 | Main table | Pending | Four players, local seat, hidden opponent hands, highlighted current player, and wall count |
-| Dingque flow | Pending | Local player chooses 条/筒/万 instead of receiving a random missing suit |
+| Dingque flow | Pending | Local player chooses bamboos/dots/characters instead of receiving a random missing suit |
 | Draw/discard flow | Pending | System auto-draws; local player only chooses a discard on their own turn |
-| Tile visuals | Pending | Self-drawn 条/筒/万 tile faces sorted by 条、筒、万 |
+| Tile visuals | Pending | Self-drawn bamboo/dot/character tile faces sorted by suit |
 | Illegal action feedback | Pending | Chinese reason text for dingque or yao ji discard rejection |
 | Hu-ready prompt | Pending | Visible hu result, score, and detected patterns |
 | Portfolio context | Pending | README/case-study view showing the multi-agent workflow and tested rule engine |
@@ -143,6 +150,7 @@ docs/
   roadmap.md        Development plan
   agent-workflow.md AI collaboration log
   case-study.md     Portfolio write-up
+  multiplayer-design.md Real-time room product and technical plan
 ```
 
 ## AI-Assisted Workflow
@@ -160,12 +168,17 @@ roles were used to split work into reviewable concerns:
 
 ## Resume Pitch
 
-**Leshan Mahjong Lab | Local Mahjong Rule Training Web App**
+**Leshan Mahjong Lab | Local Mahjong Multiplayer Table Prototype**
 
-- Built a playable Web prototype for Leshan eight-chicken Mahjong, supporting
-  seeded rounds, draw/discard flow, rule-aware validation, and basic hu checks.
+- Built a frontend multiplayer-table prototype for Leshan eight-chicken Mahjong,
+  supporting seeded rounds, seat-limited control, player-selected dingque,
+  system auto-draw, draw/discard flow, rule-aware validation, and basic hu
+  checks.
 - Modeled local Mahjong rules as tested TypeScript modules, separating tile
   modeling, laizi-aware hand decomposition, scoring helpers, round state, and UI.
+- Designed the next real-time room architecture, including room creation,
+  joining, seat ownership, readiness, reconnect, redacted state, and
+  server-authoritative validation.
 - Used a multi-agent AI-assisted workflow to split product planning, rule
   modeling, implementation, test-case design, and review.
 - Prepared the repository as a portfolio case study with rule documentation,
