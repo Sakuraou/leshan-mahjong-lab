@@ -63,11 +63,16 @@ server authoritative.
 - [x] Document player dingque and system dealing flow
 - [x] Document turn actions and server validation
 - [x] Document reconnect behavior and redacted client state
-- Define shared room event and state types
-- Build an in-memory room reducer with tests
-- Choose real-time transport or provider
-- Add room create/join UI
-- Connect table UI to room snapshots
+- [x] Define shared room event and state types
+- [x] Build an in-memory room reducer with tests
+- [x] Add room create/join UI
+- [x] Render the table from redacted client-visible room state
+- [x] Add client perspective switching to demonstrate per-player visibility
+- [x] Draft the WebSocket protocol, reconnect flow, error codes, and server
+  interface contract
+- Choose the concrete WebSocket runtime or provider
+- Build the first server-authoritative in-memory room service
+- Connect table UI to WebSocket room snapshots
 - Add reconnect with a local session token
 
 ## Phase 5: Portfolio Polish

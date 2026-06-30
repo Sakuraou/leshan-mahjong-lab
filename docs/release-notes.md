@@ -26,6 +26,11 @@ than a complete production game.
   taking seats, toggling ready, and starting a round before entering the table.
 - Redacted client-visible room state is now used by the frontend table in room
   mode, so opponent hands render from hand counts instead of hidden tile arrays.
+- Client perspective switching demonstrates the redacted state contract from
+  each player's viewpoint while keeping gameplay execution local-only.
+- WebSocket room protocol draft documents the next server-authoritative room
+  step, including client actions, broadcasts, errors, reconnect, legal actions,
+  and client-visible state payloads.
 - Player-selected dingque with heavenly-missing-suit default when the local
   hand naturally lacks exactly one ordinary suit.
 - Automatic system draw at the start of draw phases.
@@ -48,6 +53,8 @@ than a complete production game.
   real-time room backend is added.
 - The room mode is local-only and deterministic; it demonstrates product flow
   before real networking is introduced.
+- The WebSocket protocol is documentation only; no real server connection has
+  been implemented yet.
 - Screenshot assets are still pending until the first production deployment is
   captured.
 
@@ -62,8 +69,8 @@ than a complete production game.
 6. Add a clearer portfolio page or route for case-study presentation.
 7. Design the real multiplayer room flow with seat assignment, readiness,
    reconnect behavior, and server-authoritative actions.
-8. Connect the local room reducer to a real-time transport after room event
-   boundaries are stable.
+8. Build the first WebSocket server-authoritative in-memory room service and
+   connect the table UI to server room snapshots.
 
 ## 2026-06-30
 

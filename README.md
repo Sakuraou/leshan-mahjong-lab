@@ -16,6 +16,7 @@ after the GitHub repository is imported in Vercel.
 - Case study: [docs/case-study.md](docs/case-study.md)
 - Release notes: [docs/release-notes.md](docs/release-notes.md)
 - Multiplayer design: [docs/multiplayer-design.md](docs/multiplayer-design.md)
+- Real-time protocol draft: [docs/realtime-protocol.md](docs/realtime-protocol.md)
 
 ## Deploy To Vercel
 
@@ -82,9 +83,14 @@ and AI-assisted development.
 - Redacted client-visible room state: the local player sees their own hand,
   while other players expose only hand counts, discards, and public state to the
   table UI
+- Client perspective switcher for demonstrating that each player receives a
+  different redacted view while the local execution layer remains simulated
 - Real multiplayer room design covering room creation, joining, seat assignment,
   readiness, dingque, server dealing, turn actions, reconnect, and
   server-authoritative validation
+- First WebSocket protocol draft for the next server-authoritative room step,
+  including client actions, server broadcasts, error codes, reconnect recovery,
+  legal actions, and client-visible state payloads
 
 ## Screenshots
 
@@ -153,12 +159,13 @@ src/
     win.ts          Self-draw and discard hu checks
 tests/
   game/             Rule, round, hu, and win tests
-docs/
-  rules.md          Source-of-truth local rule document
-  roadmap.md        Development plan
-  agent-workflow.md AI collaboration log
-  case-study.md     Portfolio write-up
-  multiplayer-design.md Real-time room product and technical plan
+  docs/
+    rules.md          Source-of-truth local rule document
+    roadmap.md        Development plan
+    agent-workflow.md AI collaboration log
+    case-study.md     Portfolio write-up
+    multiplayer-design.md Real-time room product and technical plan
+    realtime-protocol.md WebSocket room protocol and server interface draft
 ```
 
 ## AI-Assisted Workflow
@@ -187,6 +194,9 @@ roles were used to split work into reviewable concerns:
 - Designed the next real-time room architecture, including room creation,
   joining, seat ownership, readiness, reconnect, redacted state, and
   server-authoritative validation.
+- Drafted the WebSocket protocol and service interface for the next milestone:
+  a server-authoritative real-time room that sends each client only its own
+  legal, redacted state.
 - Used a multi-agent AI-assisted workflow to split product planning, rule
   modeling, implementation, test-case design, and review.
 - Prepared the repository as a portfolio case study with rule documentation,
