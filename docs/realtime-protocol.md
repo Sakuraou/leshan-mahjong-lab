@@ -414,7 +414,11 @@ client can rejoin as a new member if the room is still joinable.
 
 ## Server Interface Draft
 
-The first backend can be a thin adapter around the existing pure functions:
+The repository now includes a first pure TypeScript implementation in
+`src/game/roomService.ts`. It is not connected to WebSocket yet, but it already
+owns `RoomState`, `sessionToken`, `playerId`, `lastEventId`, reconnect recovery,
+and redacted client views. The WebSocket backend should be a thin adapter around
+that service.
 
 ```ts
 type RoomService = {
@@ -426,6 +430,15 @@ type RoomService = {
 };
 ```
 
+The current implemented API is documented in
+[`docs/room-service.md`](room-service.md):
+
+- `createRoomSession`
+- `joinRoomSession`
+- `handleRoomAction`
+- `resumeRoomSession`
+- `getClientRoomView`
+
 Validation should call the same rule modules that power the current tests:
 
 - `startRound` for seeded wall and dealing.
@@ -436,11 +449,13 @@ Validation should call the same rule modules that power the current tests:
 ## First Implementation Order
 
 1. Add shared protocol and DTO types under `src/game` or `src/realtime`.
-2. Build an in-memory `RoomService` with unit tests.
-3. Add a small WebSocket server in a separate package or server entry.
+2. Build an in-memory `RoomService` with unit tests. Done in
+   `src/game/roomService.ts`.
+3. Add a small WebSocket adapter in a separate server entry.
 4. Replace local reducer calls in the frontend with socket messages.
 5. Keep the local demo mode as a portfolio fallback.
 6. Add reconnect using `sessionToken` and `lastSeenEventId`.
 
-The next milestone is a WebSocket server-authoritative room that can run one
-real four-player table while preserving the existing local prototype.
+The next milestone is a WebSocket adapter for the completed server-authoritative
+room service, so one real four-player table can run while preserving the
+existing local prototype.

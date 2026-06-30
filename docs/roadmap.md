@@ -70,8 +70,10 @@ server authoritative.
 - [x] Add client perspective switching to demonstrate per-player visibility
 - [x] Draft the WebSocket protocol, reconnect flow, error codes, and server
   interface contract
+- [x] Build the first server-authoritative in-memory room service
+- [x] Document the room service API and its WebSocket adapter boundary
 - Choose the concrete WebSocket runtime or provider
-- Build the first server-authoritative in-memory room service
+- Build a WebSocket adapter around `roomService`
 - Connect table UI to WebSocket room snapshots
 - Add reconnect with a local session token
 

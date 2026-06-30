@@ -17,6 +17,7 @@ after the GitHub repository is imported in Vercel.
 - Release notes: [docs/release-notes.md](docs/release-notes.md)
 - Multiplayer design: [docs/multiplayer-design.md](docs/multiplayer-design.md)
 - Real-time protocol draft: [docs/realtime-protocol.md](docs/realtime-protocol.md)
+- Room service interface: [docs/room-service.md](docs/room-service.md)
 
 ## Deploy To Vercel
 
@@ -91,6 +92,9 @@ and AI-assisted development.
 - First WebSocket protocol draft for the next server-authoritative room step,
   including client actions, server broadcasts, error codes, reconnect recovery,
   legal actions, and client-visible state payloads
+- Pure TypeScript server-authoritative room service with session tokens,
+  `lastEventId`, reconnect recovery, and redacted client views before adding
+  the WebSocket adapter
 
 ## Screenshots
 
@@ -155,6 +159,7 @@ src/
     hu.ts           Laizi-aware standard hu decomposition
     rules.ts        Dingque, score helpers, chicken/gang/wu ji helpers
     room.ts         Local room reducer and redacted client-visible room state
+    roomService.ts  Server-authoritative room session service
     round.ts        Seeded shuffle, dealing, draw/discard state transitions
     win.ts          Self-draw and discard hu checks
 tests/
@@ -166,6 +171,7 @@ tests/
     case-study.md     Portfolio write-up
     multiplayer-design.md Real-time room product and technical plan
     realtime-protocol.md WebSocket room protocol and server interface draft
+    room-service.md Server-authoritative room service interface
 ```
 
 ## AI-Assisted Workflow
@@ -197,6 +203,8 @@ roles were used to split work into reviewable concerns:
 - Drafted the WebSocket protocol and service interface for the next milestone:
   a server-authoritative real-time room that sends each client only its own
   legal, redacted state.
+- Implemented and documented a pure TypeScript room service as the future
+  WebSocket adapter's authoritative state layer.
 - Used a multi-agent AI-assisted workflow to split product planning, rule
   modeling, implementation, test-case design, and review.
 - Prepared the repository as a portfolio case study with rule documentation,
