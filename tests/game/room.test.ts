@@ -47,6 +47,15 @@ test("joins players as room members before they take seats", () => {
   });
 });
 
+test("rejects joining the same player twice", () => {
+  const room = joinPlayer(createRoom({ id: "room-duplicate-join", seed: "duplicate-join-seed" }), "p1", "Player One");
+
+  assert.deepEqual(joinRoom(room, { playerId: "p1", displayName: "Player One Again" }), {
+    ok: false,
+    reason: "playerAlreadyJoined",
+  });
+});
+
 test("lets a joined player take an empty seat", () => {
   const joined = joinPlayer(createRoom({ id: "room-seat", seed: "seat-seed" }), "p1", "Player One");
   const result = takeSeat(joined, "p1", 2);
@@ -65,6 +74,28 @@ test("lets a joined player take an empty seat", () => {
     ready: false,
   });
   assert.deepEqual(result.room.eventLog.at(-1), { type: "seatTaken", seatId: 2, playerId: "p1" });
+});
+
+test("rejects taking a seat before joining the room", () => {
+  const room = createRoom({ id: "room-seat-before-join", seed: "seat-before-join-seed" });
+
+  assert.deepEqual(takeSeat(room, "p1", 0), {
+    ok: false,
+    reason: "playerNotInRoom",
+  });
+});
+
+test("rejects seating a player twice", () => {
+  const room = takeSeatOk(
+    joinPlayer(createRoom({ id: "room-duplicate-seat", seed: "duplicate-seat-seed" }), "p1", "Player One"),
+    "p1",
+    0,
+  );
+
+  assert.deepEqual(takeSeat(room, "p1", 1), {
+    ok: false,
+    reason: "playerAlreadySeated",
+  });
 });
 
 test("toggles ready state for a seated player", () => {
@@ -142,6 +173,27 @@ test("redacts other players' hands in client-visible room state", () => {
   assert.equal(visible.round?.players[1].hand?.length, 13);
   assert.equal(visible.round?.players[0].hand, null);
   assert.equal(visible.round?.players[0].handCount, 14);
+});
+
+test("rejects room mutations after the round has started", () => {
+  const room = startReadyRoom();
+
+  assert.deepEqual(joinRoom(room, { playerId: "p5", displayName: "Player Five" }), {
+    ok: false,
+    reason: "roomAlreadyStarted",
+  });
+  assert.deepEqual(takeSeat(room, "p1", 0), {
+    ok: false,
+    reason: "roomAlreadyStarted",
+  });
+  assert.deepEqual(toggleReady(room, "p1"), {
+    ok: false,
+    reason: "roomAlreadyStarted",
+  });
+  assert.deepEqual(startRoomRound(room), {
+    ok: false,
+    reason: "roomAlreadyStarted",
+  });
 });
 
 function startReadyRoom(): RoomState {

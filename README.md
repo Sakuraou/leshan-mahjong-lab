@@ -76,6 +76,9 @@ and AI-assisted development.
   self-selected dingque, automatic system draws, hidden opponent hands, Chinese
   tile faces, current-player highlight, wall count, discard areas, action hints,
   and round log
+- Local simulated room mode backed by the room reducer, including room number,
+  player joining, seat assignment, ready state, and round start before entering
+  the table
 - Real multiplayer room design covering room creation, joining, seat assignment,
   readiness, dingque, server dealing, turn actions, reconnect, and
   server-authoritative validation
@@ -88,6 +91,7 @@ Planned portfolio shots:
 
 | Shot | Status | What it should show |
 | --- | --- | --- |
+| Room mode | Pending | Local simulated room number, four seats, join/take-seat/ready/start controls |
 | Main table | Pending | Four players, local seat, hidden opponent hands, highlighted current player, and wall count |
 | Dingque flow | Pending | Local player chooses bamboos/dots/characters instead of receiving a random missing suit |
 | Draw/discard flow | Pending | System auto-draws; local player only chooses a discard on their own turn |
@@ -141,6 +145,7 @@ src/
     tiles.ts        Tile model, wall generation, yao ji detection
     hu.ts           Laizi-aware standard hu decomposition
     rules.ts        Dingque, score helpers, chicken/gang/wu ji helpers
+    room.ts         Local room reducer for joining, seating, ready, and start flow
     round.ts        Seeded shuffle, dealing, draw/discard state transitions
     win.ts          Self-draw and discard hu checks
 tests/
@@ -171,9 +176,9 @@ roles were used to split work into reviewable concerns:
 **Leshan Mahjong Lab | Local Mahjong Multiplayer Table Prototype**
 
 - Built a frontend multiplayer-table prototype for Leshan eight-chicken Mahjong,
-  supporting seeded rounds, seat-limited control, player-selected dingque,
-  system auto-draw, draw/discard flow, rule-aware validation, and basic hu
-  checks.
+  supporting a local simulated room flow, seeded rounds, seat-limited control,
+  player-selected dingque, system auto-draw, draw/discard flow, rule-aware
+  validation, and basic hu checks.
 - Modeled local Mahjong rules as tested TypeScript modules, separating tile
   modeling, laizi-aware hand decomposition, scoring helpers, round state, and UI.
 - Designed the next real-time room architecture, including room creation,

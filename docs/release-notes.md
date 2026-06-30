@@ -22,6 +22,8 @@ than a complete production game.
   hints, and round log in the Web UI
 - Seat-limited interaction model: the local player can only operate their own
   seat, while other seats represent future remote players.
+- Local simulated room mode backed by pure room reducer functions for joining,
+  taking seats, toggling ready, and starting a round before entering the table.
 - Player-selected dingque with heavenly-missing-suit default when the local
   hand naturally lacks exactly one ordinary suit.
 - Automatic system draw at the start of draw phases.
@@ -42,6 +44,8 @@ than a complete production game.
   synchronization yet.
 - Remote turns are still simulated locally for demo progression until a
   real-time room backend is added.
+- The room mode is local-only and deterministic; it demonstrates product flow
+  before real networking is introduced.
 - Screenshot assets are still pending until the first production deployment is
   captured.
 
@@ -56,6 +60,8 @@ than a complete production game.
 6. Add a clearer portfolio page or route for case-study presentation.
 7. Design the real multiplayer room flow with seat assignment, readiness,
    reconnect behavior, and server-authoritative actions.
+8. Connect the local room reducer to a real-time transport after room event
+   boundaries are stable.
 
 ## 2026-06-30
 
@@ -66,3 +72,5 @@ than a complete production game.
 - Reworked the Web prototype toward a multiplayer table: local-only seat
   control, self-selected dingque, automatic system draws, hidden opponent hands,
   and self-drawn Mahjong tile faces.
+- Added a local simulated room mode to the frontend, including room number,
+  joining, seat assignment, ready state, and reducer-driven round start.
