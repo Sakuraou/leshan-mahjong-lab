@@ -96,17 +96,43 @@ button {
 .mode-banner {
   display: flex;
   align-items: center;
-  gap: 10px;
+  justify-content: space-between;
+  gap: 14px;
   border: 1px solid #d6d0c5;
   border-radius: 8px;
   padding: 10px 12px;
   background: #fffaf1;
 }
 
+.mode-banner > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .mode-banner strong {
   color: #247a48;
   font-size: 13px;
   white-space: nowrap;
+}
+
+.view-switcher {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  color: #657064;
+  font-size: 13px;
+}
+
+.view-switcher select {
+  min-width: 146px;
+  height: 34px;
+  border: 1px solid #d6d0c5;
+  border-radius: 8px;
+  padding: 0 10px;
+  background: #ffffff;
+  color: #17211b;
 }
 
 .seats {
@@ -215,6 +241,16 @@ button {
   grid-template-columns: minmax(180px, auto) auto;
   gap: 14px;
   padding: 16px;
+}
+
+.view-only-note {
+  grid-column: 1 / -1;
+  border: 1px solid #d7caa9;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fff6dc;
+  color: #6d5120;
+  font-size: 13px;
 }
 
 .actions button,

@@ -61,6 +61,7 @@ function createDemoRoom(): RoomState {
 export function App() {
   const [room, setRoom] = useState(createDemoRoom);
   const [tableMode, setTableMode] = useState<TableMode>("room");
+  const [viewingPlayerId, setViewingPlayerId] = useState(localPlayerId);
   const [standaloneRound, setStandaloneRound] = useState(createDemoRound);
   const [gameLogs, setGameLogs] = useState<LogEntry[]>([
     {
@@ -72,7 +73,7 @@ export function App() {
 
   const tableStarted = tableMode === "standalone" || room.round !== null;
   const round = tableMode === "room" && room.round !== null ? room.round : standaloneRound;
-  const visibleRoom = tableMode === "room" ? toClientVisibleRoomState(room, localPlayerId) : null;
+  const visibleRoom = tableMode === "room" ? toClientVisibleRoomState(room, viewingPlayerId) : null;
   const visibleRound = visibleRoom?.round ?? null;
   const visiblePlayers =
     tableMode === "room" && visibleRound !== null
@@ -80,13 +81,19 @@ export function App() {
       : round.players.map((player) => toVisiblePlayerState(player));
   const currentPlayer = round.players[round.currentPlayer];
   const localPlayer = round.players[localSeatId];
-  const visibleLocalPlayer = visiblePlayers[localSeatId];
-  const visibleLocalHand = visibleLocalPlayer?.hand ?? localPlayer.hand;
+  const viewedSeatId = tableMode === "room" ? visibleRoom?.localSeatId : localSeatId;
+  const viewedPlayer = viewedSeatId === null || viewedSeatId === undefined ? localPlayer : round.players[viewedSeatId];
+  const visibleViewedPlayer =
+    viewedSeatId === null || viewedSeatId === undefined ? null : visiblePlayers[viewedSeatId];
+  const visibleViewedHand = visibleViewedPlayer?.hand ?? (tableMode === "standalone" ? viewedPlayer.hand : []);
   const currentPhase = getTurnPhase(currentPlayer);
   const localPhase = getTurnPhase(localPlayer);
   const isLocalTurn = round.currentPlayer === localSeatId;
+  const isViewingExecutionPlayer = tableMode !== "room" || viewingPlayerId === localPlayerId;
   const currentHu = isLocalTurn ? checkCurrentPlayerHu(round) : null;
-  const sortedLocalHand = useMemo(() => sortHand(visibleLocalHand), [visibleLocalHand]);
+  const sortedVisibleHand = useMemo(() => sortHand(visibleViewedHand), [visibleViewedHand]);
+  const viewingPlayerIndex = demoPlayers.findIndex((player) => player.playerId === viewingPlayerId);
+  const viewingPlayerLabel = viewingPlayerIndex >= 0 ? `玩家 ${viewingPlayerIndex + 1}` : "未入座";
 
   const totalDiscards = useMemo(
     () => visiblePlayers.reduce((sum, player) => sum + player.discards.length, 0),
@@ -221,12 +228,14 @@ export function App() {
   function handleStandaloneDemo() {
     setTableMode("standalone");
     setStandaloneRound(createDemoRound());
+    setViewingPlayerId(localPlayerId);
     autoDrawKeys.current.clear();
     addGameLog("已进入单机演示牌桌。这个模式绕过房间流程，只用于快速展示。");
   }
 
   function handleReset() {
     autoDrawKeys.current.clear();
+    setViewingPlayerId(localPlayerId);
 
     if (tableMode === "room") {
       setRoom(createDemoRoom());
@@ -249,12 +258,26 @@ export function App() {
     ]);
   }
 
+  function handleViewingPlayerChange(playerId: string) {
+    setViewingPlayerId(playerId);
+  }
+
   function handleChooseMissingSuit(suit: Suit) {
+    if (!isViewingExecutionPlayer) {
+      addGameLog("当前正在演示其他客户端视角，请切回玩家 1 再操作本地模拟牌局。");
+      return;
+    }
+
     commitRound(updatePlayer(round, localSeatId, { ...round.players[localSeatId], missingSuit: suit }));
     addGameLog(`你选择定缺 ${suitText(suit)}。`);
   }
 
   function handleDiscard(tile: Tile) {
+    if (!isViewingExecutionPlayer) {
+      addGameLog("当前正在演示其他客户端视角，请切回玩家 1 再操作本地模拟牌局。");
+      return;
+    }
+
     if (!isLocalTurn) {
       addGameLog(`现在是玩家 ${round.currentPlayer + 1} 的回合，联机模式下只能操作自己的座位。`);
       return;
@@ -317,7 +340,11 @@ export function App() {
           </div>
           <div className="round-stats">
             <Stat label="房间" value={tableMode === "room" ? room.id : "单机"} />
-            <Stat label="我的座位" value={`玩家 ${localSeatId + 1}`} />
+            <Stat
+              label="当前视角"
+              value={tableMode === "room" ? viewingPlayerLabel : "玩家 1"}
+            />
+            <Stat label="模拟操作" value={`玩家 ${localSeatId + 1}`} />
             <Stat label="当前回合" value={tableStarted ? `玩家 ${round.currentPlayer + 1}` : "待开局"} />
             <Stat
               label="牌墙"
@@ -327,8 +354,15 @@ export function App() {
         </header>
 
         <div className="mode-banner">
-          <strong>本地模拟联机</strong>
-          <span>这个页面已经接入 room reducer，但还没有真实网络；房间牌桌按红acted 客户端视图展示，其他玩家只露出手牌数量。</span>
+          <div>
+            <strong>本地模拟联机</strong>
+            <span>
+              当前客户端视角只影响可见信息；牌局动作仍由玩家 1 的本地模拟执行，还没有真实网络连接。
+            </span>
+          </div>
+          {tableMode === "room" && (
+            <ClientViewSelector value={viewingPlayerId} onChange={handleViewingPlayerChange} />
+          )}
         </div>
 
         {tableMode === "room" && room.round === null ? (
@@ -350,16 +384,16 @@ export function App() {
                   key={player.id}
                   player={player}
                   current={player.id === round.currentPlayer}
-                  local={player.id === localSeatId}
+                  local={player.id === viewedSeatId}
                 />
               ))}
             </div>
 
             <section className="action-panel" aria-label="我的操作区">
               <div>
-                <h2>我的手牌</h2>
+                <h2>当前视角手牌</h2>
                 <p>
-                  座位：玩家 {localSeatId + 1} · 定缺：{suitText(localPlayer.missingSuit)} · 弃牌：{totalDiscards}
+                  视角：玩家 {viewedPlayer.id + 1} · 定缺：{suitText(viewedPlayer.missingSuit)} · 弃牌：{totalDiscards}
                 </p>
               </div>
               <div className="actions">
@@ -373,29 +407,45 @@ export function App() {
                 </button>
               </div>
 
-              <MissingSuitPanel player={localPlayer} onChoose={handleChooseMissingSuit} />
+              {tableMode === "room" && !isViewingExecutionPlayer && (
+                <div className="view-only-note">
+                  正在查看玩家 {viewedPlayer.id + 1} 客户端：只能展示该玩家手牌，不能用这个视角操作牌局。
+                </div>
+              )}
+
+              <MissingSuitPanel
+                player={localPlayer}
+                onChoose={handleChooseMissingSuit}
+                disabled={!isViewingExecutionPlayer}
+              />
 
               <div className="turn-hint" data-phase={currentPhase} data-local={isLocalTurn}>
                 {turnHintText(isLocalTurn, currentPhase, tableMode)}
               </div>
 
-              <div className="hu-status" data-ready={currentHu?.canHu ?? false}>
-                {currentHu === null
-                  ? `当前是玩家 ${round.currentPlayer + 1} 的回合，等待远端玩家操作。`
-                  : currentHu.canHu
-                    ? `可以自摸胡：${currentHu.score.cappedPoints} 分，牌型 ${currentHu.patterns.map(patternText).join("、")}`
-                    : `暂不能自摸：${reasonText(currentHu.reason)}`}
+              <div className="hu-status" data-ready={isViewingExecutionPlayer && (currentHu?.canHu ?? false)}>
+                {!isViewingExecutionPlayer
+                  ? `正在查看玩家 ${viewedPlayer.id + 1} 的客户端视角；胡牌判断和出牌操作仍由玩家 1 的本地模拟执行。`
+                  : currentHu === null
+                    ? `当前是玩家 ${round.currentPlayer + 1} 的回合，等待远端玩家操作。`
+                    : currentHu.canHu
+                      ? `可以自摸胡：${currentHu.score.cappedPoints} 分，牌型 ${currentHu.patterns.map(patternText).join("、")}`
+                      : `暂不能自摸：${reasonText(currentHu.reason)}`}
               </div>
 
               <div className="hand" aria-label="按条筒万排序的我的手牌">
-                {sortedLocalHand.map((tile, index) => (
+                {sortedVisibleHand.map((tile, index) => (
                   <button
                     className="tile-button"
                     key={`${tileText(tile)}-${index}`}
                     type="button"
                     onClick={() => handleDiscard(tile)}
-                    title={isLocalTurn && localPhase === "discard" ? `打出 ${tileText(tile)}` : tileText(tile)}
-                    disabled={!isLocalTurn || localPhase !== "discard"}
+                    title={
+                      isViewingExecutionPlayer && isLocalTurn && localPhase === "discard"
+                        ? `打出 ${tileText(tile)}`
+                        : tileText(tile)
+                    }
+                    disabled={!isViewingExecutionPlayer || !isLocalTurn || localPhase !== "discard"}
                     data-yaoji={isYaoJiTile(tile)}
                   >
                     <TileFace tile={tile} />
@@ -433,6 +483,27 @@ export function App() {
         </section>
       </aside>
     </main>
+  );
+}
+
+function ClientViewSelector({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (playerId: string) => void;
+}) {
+  return (
+    <label className="view-switcher">
+      <span>当前客户端视角</span>
+      <select value={value} onChange={(event) => onChange(event.target.value)}>
+        {demoPlayers.map((player, index) => (
+          <option key={player.playerId} value={player.playerId}>
+            玩家 {index + 1} · {player.displayName}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 
@@ -524,7 +595,15 @@ function RoomSeatCard({ seat, onToggleReady }: { seat: SeatState; onToggleReady:
   );
 }
 
-function MissingSuitPanel({ player, onChoose }: { player: PlayerState; onChoose: (suit: Suit) => void }) {
+function MissingSuitPanel({
+  player,
+  onChoose,
+  disabled = false,
+}: {
+  player: PlayerState;
+  onChoose: (suit: Suit) => void;
+  disabled?: boolean;
+}) {
   const heavenlyMissingSuit = detectHeavenlyMissingSuit(player.hand);
 
   if (player.missingSuit !== null) {
@@ -542,7 +621,7 @@ function MissingSuitPanel({ player, onChoose }: { player: PlayerState; onChoose:
       <span>请选择定缺</span>
       <div className="missing-options">
         {suitOrder.map((suit) => (
-          <button key={suit} type="button" onClick={() => onChoose(suit)}>
+          <button key={suit} type="button" onClick={() => onChoose(suit)} disabled={disabled}>
             {suitText(suit)}
           </button>
         ))}
