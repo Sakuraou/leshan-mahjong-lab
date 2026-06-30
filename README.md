@@ -99,6 +99,7 @@ Implemented rule-core basics:
 - Seeded shuffle, four-player dealing, dealer state, and remaining wall tracking
 - Basic draw and discard transitions with dingque and no-yao-ji-discard checks
 - Self-draw and discard hu checks with minimum-score validation
+- First Vite + React table prototype wired to seeded round state
 
 Run tests:
 
@@ -106,5 +107,11 @@ Run tests:
 npm test
 ```
 
-Next milestone: build the first playable table prototype using the seeded round
-state, draw/discard transitions, and hu checks.
+Run the web prototype:
+
+```bash
+npm run dev
+```
+
+Next milestone: add a clearer action timeline and improve the table interaction
+flow for peng/gang/hu prompts.

@@ -148,3 +148,12 @@ Basic hu-check session:
   discard ping hu cannot
 - Added tests for self-draw ping hu, rejected discard ping hu, higher-value
   discard hu, and failed hand structures
+
+First web prototype session:
+
+- Added a minimal Vite + React + TypeScript frontend
+- Rendered four players, current player hand, wall count, discard areas, current
+  turn, and round log
+- Wired UI actions to `startRound`, `drawTile`, `discardTile`,
+  `checkCurrentPlayerHu`, and `checkDiscardHu`
+- Verified rule tests, production build, and local dev server response

@@ -1,0 +1,287 @@
+:root {
+  color: #17211b;
+  background: #f6f1e8;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
+  text-rendering: geometricPrecision;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+}
+
+button {
+  font: inherit;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  min-height: 100vh;
+}
+
+.table-area {
+  display: grid;
+  grid-template-rows: auto minmax(260px, 1fr) auto;
+  gap: 18px;
+  padding: 24px;
+}
+
+.top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.top-bar h1,
+.top-bar p,
+.action-panel h2,
+.action-panel p,
+.seat h2,
+.log-panel h2,
+.log-panel p {
+  margin: 0;
+}
+
+.top-bar h1 {
+  font-size: 24px;
+  line-height: 1.1;
+}
+
+.top-bar p,
+.action-panel p,
+.seat-meta,
+.empty,
+.log-panel p {
+  color: #657064;
+  font-size: 13px;
+}
+
+.round-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(72px, 1fr));
+  gap: 8px;
+}
+
+.stat {
+  border: 1px solid #d6d0c5;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #fffaf1;
+}
+
+.stat span {
+  display: block;
+  color: #657064;
+  font-size: 12px;
+}
+
+.stat strong {
+  display: block;
+  margin-top: 2px;
+  font-size: 18px;
+}
+
+.seats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 12px;
+  align-content: center;
+}
+
+.seat,
+.action-panel,
+.log-panel {
+  border: 1px solid #d6d0c5;
+  border-radius: 8px;
+  background: #fffaf1;
+}
+
+.seat {
+  min-height: 128px;
+  padding: 14px;
+}
+
+.seat[data-current="true"] {
+  border-color: #247a48;
+  box-shadow: inset 0 0 0 2px rgba(36, 122, 72, 0.12);
+}
+
+.seat-title,
+.seat-meta,
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.seat-title h2,
+.action-panel h2,
+.log-panel h2 {
+  font-size: 16px;
+}
+
+.seat-title span {
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: #e8efe5;
+  color: #247a48;
+  font-size: 12px;
+}
+
+.seat-meta {
+  margin-top: 10px;
+}
+
+.discard-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 34px;
+  margin-top: 16px;
+}
+
+.discard-tile {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 32px;
+  border: 1px solid #d6d0c5;
+  border-radius: 5px;
+  background: #f7f2ea;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.action-panel {
+  display: grid;
+  grid-template-columns: minmax(180px, auto) auto;
+  gap: 14px;
+  padding: 16px;
+}
+
+.actions button {
+  min-width: 84px;
+  height: 38px;
+  border: 0;
+  border-radius: 8px;
+  background: #247a48;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.actions button + button {
+  background: #36403a;
+}
+
+.hu-status {
+  grid-column: 1 / -1;
+  min-height: 34px;
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: #f4e7d2;
+  color: #7b4c18;
+  font-size: 13px;
+}
+
+.hu-status[data-ready="true"] {
+  background: #e3f1df;
+  color: #247a48;
+}
+
+.hand {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 76px;
+}
+
+.tile {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  place-items: center;
+  width: 48px;
+  height: 68px;
+  border: 1px solid #c9c1b3;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #fffdf8, #eee5d8);
+  color: #1b2720;
+  cursor: pointer;
+}
+
+.tile span {
+  font-size: 24px;
+  font-weight: 800;
+}
+
+.tile small {
+  padding-bottom: 7px;
+  color: #657064;
+  font-size: 11px;
+}
+
+.tile:hover {
+  border-color: #247a48;
+  transform: translateY(-1px);
+}
+
+.log-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-width: 0 0 0 1px;
+  border-radius: 0;
+  padding: 24px;
+  background: #fdf8ef;
+}
+
+.log-list {
+  display: grid;
+  gap: 10px;
+}
+
+.log-panel p {
+  border-bottom: 1px solid #e0d8cc;
+  padding-bottom: 10px;
+  line-height: 1.45;
+}
+
+@media (max-width: 860px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .table-area {
+    padding: 16px;
+  }
+
+  .top-bar,
+  .action-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .top-bar,
+  .actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .round-stats,
+  .seats {
+    grid-template-columns: 1fr;
+  }
+
+  .log-panel {
+    border-width: 1px 0 0;
+  }
+}
+

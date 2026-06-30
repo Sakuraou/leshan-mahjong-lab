@@ -11,11 +11,13 @@
 
 Goal: one person can open the app and interact with a Mahjong table.
 
-- Create Next.js app structure
-- Build Tile, Hand, TableBoard, ActionPanel, and ReplayTimeline components
-- Render four seats, player hand, discard areas, and remaining tile count
+- [x] Create Vite + React app structure
+- [x] Build first Tile, Hand, TableBoard, ActionPanel, and log UI
+- [x] Render four seats, player hand, discard areas, and remaining tile count
 - [x] Support a seeded mock round
 - [x] Support draw and discard actions
+- Add clearer peng/gang/hu prompts
+- Add a fuller replay timeline
 
 ## Phase 2: Rule Engine
 
