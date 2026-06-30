@@ -69,7 +69,8 @@ modeling, tested engineering, frontend interaction, and AI-assisted development.
 - Laizi-aware standard hu decomposition for `4 melds + 1 pair`
 - Self-draw and discard hu checks with the local minimum-score rule
 - Basic score helpers for ping hu, wu ji, qing yi se, gen, and caps
-- Web table prototype with Chinese tile labels, current-player highlight, wall
+- Web table prototype with seat-limited player control, self-selected dingque,
+  automatic system draws, Chinese tile faces, current-player highlight, wall
   count, discard areas, action hints, and round log
 
 ## Screenshots
@@ -80,8 +81,10 @@ Planned portfolio shots:
 
 | Shot | Status | What it should show |
 | --- | --- | --- |
-| Main table | Pending | Four players, highlighted current player, wall count, and Chinese hand tiles |
-| Draw/discard flow | Pending | A player draws, must discard, then the turn moves to the next player |
+| Main table | Pending | Four players, local seat, hidden opponent hands, highlighted current player, and wall count |
+| Dingque flow | Pending | Local player chooses 条/筒/万 instead of receiving a random missing suit |
+| Draw/discard flow | Pending | System auto-draws; local player only chooses a discard on their own turn |
+| Tile visuals | Pending | Self-drawn 条/筒/万 tile faces sorted by 条、筒、万 |
 | Illegal action feedback | Pending | Chinese reason text for dingque or yao ji discard rejection |
 | Hu-ready prompt | Pending | Visible hu result, score, and detected patterns |
 | Portfolio context | Pending | README/case-study view showing the multi-agent workflow and tested rule engine |

@@ -20,6 +20,13 @@ than a complete production game.
 - Basic scoring helpers for ping hu, wu ji, qing yi se, gen, and score caps
 - Chinese tile labels, current-player highlight, wall count, discards, action
   hints, and round log in the Web UI
+- Seat-limited interaction model: the local player can only operate their own
+  seat, while other seats represent future remote players.
+- Player-selected dingque with heavenly-missing-suit default when the local
+  hand naturally lacks exactly one ordinary suit.
+- Automatic system draw at the start of draw phases.
+- Self-drawn tile faces for bamboos, dots, and characters, with the local hand
+  sorted by bamboos, dots, then characters.
 - Vercel-ready build configuration
 
 ### Known Limits
@@ -33,6 +40,8 @@ than a complete production game.
 - The UI is a prototype table, not yet a polished multiplayer game interface.
 - There is no backend, login, persistence, replay system, or real-time room
   synchronization yet.
+- Remote turns are still simulated locally for demo progression until a
+  real-time room backend is added.
 - Screenshot assets are still pending until the first production deployment is
   captured.
 
@@ -45,6 +54,8 @@ than a complete production game.
 4. Connect seven-pairs and advanced fan calculation to hu checks.
 5. Implement chicken, gang, and cha jiao settlement views.
 6. Add a clearer portfolio page or route for case-study presentation.
+7. Design the real multiplayer room flow with seat assignment, readiness,
+   reconnect behavior, and server-authoritative actions.
 
 ## 2026-06-30
 
@@ -52,3 +63,6 @@ than a complete production game.
 - Documented the recommended Vercel project settings in the README.
 - Added SPA fallback routing through `vercel.json`.
 - Added this release note file for portfolio progress tracking.
+- Reworked the Web prototype toward a multiplayer table: local-only seat
+  control, self-selected dingque, automatic system draws, hidden opponent hands,
+  and self-drawn Mahjong tile faces.
