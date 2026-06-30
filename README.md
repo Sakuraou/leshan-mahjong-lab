@@ -12,6 +12,33 @@ Deployment is planned for Vercel.
 - Repository: `https://github.com/Sakuraou/leshan-mahjong-lab`
 - Case study: [docs/case-study.md](docs/case-study.md)
 
+## Deploy To Vercel
+
+The project is a Vite single-page app and is ready for Vercel deployment.
+
+Recommended Vercel settings:
+
+| Setting | Value |
+| --- | --- |
+| Framework Preset | `Vite` |
+| Install Command | `npm install` |
+| Build Command | `npm run build` |
+| Output Directory | `dist` |
+| Root Directory | `.` |
+| Node.js Version | `24.x` |
+
+Import steps:
+
+1. Open [Vercel New Project](https://vercel.com/new).
+2. Choose `Sakuraou/leshan-mahjong-lab` from GitHub.
+3. Keep the detected framework as `Vite`.
+4. Confirm the settings above.
+5. Click Deploy.
+6. After deployment, replace `Live URL: TBD` in this README with the Vercel URL.
+
+The repo includes `vercel.json` so direct SPA routes can rewrite to
+`/index.html`.
+
 ## Why This Project
 
 This is not a generic Mahjong clone. Leshan eight-chicken Mahjong has local
@@ -135,4 +162,3 @@ roles were used to split work into reviewable concerns:
   modeling, implementation, test-case design, and review.
 - Prepared the repository as a portfolio case study with rule documentation,
   roadmap, development log, and deployment-ready Vite build.
-
