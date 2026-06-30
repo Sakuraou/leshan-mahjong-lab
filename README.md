@@ -6,11 +6,14 @@ game engine and a playable browser table.
 
 ## Online Demo
 
-Deployment is planned for Vercel.
+Deployment is prepared for Vercel. The production URL should be pasted here
+after the GitHub repository is imported in Vercel.
 
-- Live URL: `TBD`
+- Live URL: `TBD - paste the Vercel production URL here`
+- Deployment status: Vercel-ready, production URL pending
 - Repository: `https://github.com/Sakuraou/leshan-mahjong-lab`
 - Case study: [docs/case-study.md](docs/case-study.md)
+- Release notes: [docs/release-notes.md](docs/release-notes.md)
 
 ## Deploy To Vercel
 
@@ -34,7 +37,8 @@ Import steps:
 3. Keep the detected framework as `Vite`.
 4. Confirm the settings above.
 5. Click Deploy.
-6. After deployment, replace `Live URL: TBD` in this README with the Vercel URL.
+6. After deployment, replace the `Live URL` placeholder in this README with
+   the Vercel production URL.
 
 The repo includes `vercel.json` so direct SPA routes can rewrite to
 `/index.html`.
@@ -70,16 +74,17 @@ modeling, tested engineering, frontend interaction, and AI-assisted development.
 
 ## Screenshots
 
-Screenshots will be added after deployment.
+Screenshots will be added after the first production deployment.
 
 Planned portfolio shots:
 
-- Main table view with four players, highlighted current player, wall count, and
-  Chinese hand tiles
-- Draw/discard interaction with Chinese illegal-action feedback
-- Hu-ready state showing score and detected patterns
-- Development case-study view showing the multi-agent workflow and rule-engine
-  tests
+| Shot | Status | What it should show |
+| --- | --- | --- |
+| Main table | Pending | Four players, highlighted current player, wall count, and Chinese hand tiles |
+| Draw/discard flow | Pending | A player draws, must discard, then the turn moves to the next player |
+| Illegal action feedback | Pending | Chinese reason text for dingque or yao ji discard rejection |
+| Hu-ready prompt | Pending | Visible hu result, score, and detected patterns |
+| Portfolio context | Pending | README/case-study view showing the multi-agent workflow and tested rule engine |
 
 ## Run Locally
 
