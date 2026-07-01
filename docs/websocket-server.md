@@ -21,7 +21,6 @@ The server core owns:
 
 It does not own:
 
-- A real TCP/WebSocket listener.
 - Browser client code.
 - Authentication.
 - Secure token generation.
@@ -145,10 +144,25 @@ These errors are returned in `errors` rather than being sent through
 `roomSocketAdapter`, because they are transport/protocol problems rather than
 room-rule problems.
 
-## Wrapping With A Real Node WebSocket Server
+## Real Node WebSocket Dev Server
 
-The next low-risk runtime choice is the lightweight `ws` package. The real
-server entry can be a thin wrapper:
+The project now includes a lightweight `ws` wrapper in
+`src/server/devServer.ts`. It keeps the real network layer thin and delegates
+state handling to `roomSocketServerCore`.
+
+Run it locally with:
+
+```bash
+npm run dev:server
+```
+
+By default it listens on:
+
+```text
+ws://127.0.0.1:8787
+```
+
+The server entry follows this shape:
 
 ```ts
 import { WebSocketServer } from "ws";
@@ -191,6 +205,26 @@ server.on("connection", (socket) => {
 The wrapper should stay boring. The interesting behavior should remain in the
 tested core and the tested adapter.
 
+## Smoke Client
+
+`src/server/smokeClient.ts` opens two real WebSocket connections against the dev
+server flow:
+
+1. Host connects and sends `createRoom`.
+2. Guest connects and sends `joinRoom`.
+3. Host receives `actionAccepted`, its first `roomSnapshot`, and the guest-join
+   broadcast snapshot.
+4. Guest receives `actionAccepted` and its own `roomSnapshot`.
+
+Run it with:
+
+```bash
+npm run smoke:server
+```
+
+The smoke helper starts a temporary server on an ephemeral port, so it does not
+require `npm run dev:server` to already be running.
+
 ## Current Test Coverage
 
 `tests/game/roomSocketServerCore.test.ts` covers:
@@ -200,12 +234,21 @@ tested core and the tested adapter.
 - Unknown-session messages becoming `undelivered` instead of being sent to the
   wrong connection.
 
+`tests/game/roomSocketDevServer.test.ts` covers the real `ws` wrapper path:
+
+- Start a real WebSocket server on an ephemeral local port.
+- Connect host and guest sockets.
+- Verify `createRoom` and `joinRoom` return `actionAccepted` and
+  `roomSnapshot` messages over actual WebSocket connections.
+
 ## Next Milestone
 
-Start a real local WebSocket dev server around this core:
+The real local WebSocket dev server is running-capable. The next milestone is
+to add a frontend WebSocket transport option beside the current mock transport:
 
-1. Add `ws` and its types if needed.
-2. Add a small Node server entry, for example `src/server/devServer.ts`.
-3. Add a script such as `npm run dev:server`.
-4. Keep `roomSocketServerCore` as the only place that touches adapter state.
-5. Smoke-test with a tiny Node client before wiring the React frontend.
+1. Keep mock transport as the default portfolio-safe mode.
+2. Add a `WebSocketRoomTransport` client wrapper in the React app.
+3. Persist `sessionToken` and `lastEventId` locally for reconnect.
+4. Render room snapshots from real server messages.
+5. Keep server-authoritative validation in `roomSocketAdapter` and
+   `roomService`.

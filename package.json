@@ -5,20 +5,24 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
+    "dev:server": "node --experimental-strip-types src/server/devServer.ts",
+    "smoke:server": "node --experimental-strip-types src/server/smokeClient.ts",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1",
     "test": "node --test --experimental-strip-types tests/game/*.test.ts"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^4.3.4",
-    "vite": "^6.0.7",
-    "typescript": "^5.7.2",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7",
+    "ws": "^8.21.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.2",
-    "@types/react-dom": "^19.0.2"
+    "@types/react-dom": "^19.0.2",
+    "@types/ws": "^8.18.1"
   },
   "engines": {
     "node": "24.x"

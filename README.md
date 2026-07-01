@@ -107,6 +107,8 @@ and AI-assisted development.
   calls `roomSocketAdapter`, routes messages by `recipientSessionToken`, and
   records undelivered session-targeted messages before a real network server is
   started
+- Real local WebSocket dev server powered by `ws`, plus a smoke client that
+  verifies `createRoom` and `joinRoom` over actual WebSocket connections
 
 ## Screenshots
 
@@ -144,6 +146,8 @@ http://127.0.0.1:5173
 npm test
 npm run build
 npm run dev
+npm run dev:server
+npm run smoke:server
 ```
 
 ## Tech Stack

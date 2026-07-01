@@ -82,7 +82,9 @@ server authoritative.
   parsing, adapter calls, session-token routing, and undelivered messages
 - [x] Document the server core and real Node WebSocket wrapper plan
 - [x] Choose lightweight Node `ws` as the first local WebSocket runtime wrapper
-- Start a real local WebSocket dev server around the tested server core
+- [x] Start a real local WebSocket dev server around the tested server core
+- [x] Add a smoke client/test for `createRoom` and `joinRoom` over real
+  WebSocket connections
 - Wrap `roomSocketAdapter` with a production-ready WebSocket server entry
 - Connect table UI to WebSocket room snapshots
 - Add reconnect with a local session token
