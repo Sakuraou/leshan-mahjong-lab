@@ -119,6 +119,9 @@ and AI-assisted development.
 - Session recovery demo in the WebSocket experiment panel: host/guest
   `sessionToken` and `lastEventId` are saved to `localStorage`, then
   `resumeSession` rebuilds redacted snapshots after a simulated refresh
+- Read-only WebSocket table preview mode in the main table: it consumes real
+  `roomSnapshot` data to show room status, seats, readiness, wall count, and
+  redacted hand counts after start while keeping the mock table as the default
 
 ## Screenshots
 
@@ -139,6 +142,7 @@ Planned portfolio shots:
 | Four-client snapshots | Pending | Host, guest, and helper clients showing per-client redacted snapshots and hidden opponent hands |
 | WebSocket full round start | Pending | Full flow after all four clients are seated, ready, and the room reaches `dingque` |
 | WebSocket session recovery | Pending | Simulated refresh, restored host/guest sessions, resumed redacted snapshots, and missed-event count |
+| WebSocket table preview | Pending | Main table read-only preview consuming real `roomSnapshot` with redacted hand counts |
 | Portfolio context | Pending | README/case-study view showing the multi-agent workflow and tested rule engine |
 
 ## Run Locally
@@ -230,6 +234,10 @@ redacted snapshot delivery. It also demonstrates `sessionToken` + `lastEventId`
 recovery by saving host/guest sessions locally, reconnecting after a simulated
 refresh, and calling `resumeSession` for fresh redacted snapshots. The default
 playable table still uses the local mock transport for a stable portfolio demo.
+The main table now has a read-only "真实 WebSocket 桌面预览" mode that consumes the
+experiment panel's latest real `roomSnapshot` data and renders room, seat,
+ready, wall, and redacted hand-count summaries without enabling real draw or
+discard actions yet.
 
 ## AI-Assisted Workflow
 
@@ -273,6 +281,8 @@ roles were used to split work into reviewable concerns:
   lifecycle across four clients without replacing the default mock table.
 - Added a session recovery demo using `sessionToken`, `lastEventId`,
   `localStorage`, and server-side rebinding to the latest connection.
+- Added a main-table WebSocket preview mode that reads real room snapshots while
+  leaving the mock table as the default gameplay surface.
 - Used a multi-agent AI-assisted workflow to split product planning, rule
   modeling, implementation, test-case design, and review.
 - Prepared the repository as a portfolio case study with rule documentation,

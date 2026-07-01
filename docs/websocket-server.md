@@ -298,6 +298,26 @@ Expected snapshot behavior:
 The default playable table remains backed by the local mock transport. This
 keeps the portfolio demo stable while the real WebSocket path matures.
 
+## Main Table Preview Mode
+
+The main table now includes a read-only "真实 WebSocket 桌面预览" mode. This is a
+bridge between the isolated experiment panel and the eventual real multiplayer
+table, but it still does not replace the mock gameplay path.
+
+The preview reads the latest real `roomSnapshot` values already received by the
+WebSocket experiment panel and renders:
+
+- Real room id and room status.
+- Seat occupancy and ready count.
+- Wall count after the server-authoritative round start.
+- Four seat cards with ready state and visible/hidden hand counts.
+- One client card per connected session, showing that each client only sees its
+  own hand and sees other players as hidden counts.
+
+The preview is intentionally read-only. It does not send draw, discard, peng,
+gang, hu, dingque, or settlement actions. Those actions still belong to the mock
+table until the real server action surface is expanded.
+
 ## Session Recovery Demo
 
 The current recovery flow is intentionally small but end-to-end:
@@ -328,6 +348,7 @@ Portfolio screenshots to capture next:
 | Four-client redacted snapshots | Host, guest, and helper clients with own-hand counts and hidden opponent summaries |
 | Full flow round start | All four clients seated and ready, room status `dingque`, latest event `roundStarted` |
 | Session recovery demo | "模拟刷新后恢复" button, resume success badge, restored host/guest snapshots, missed-event count |
+| Main table WebSocket preview | Main table read-only mode showing real roomSnapshot room status, seats, readiness, wall count, and redacted hand counts |
 
 ## Current Test Coverage
 
@@ -362,18 +383,21 @@ wrapper against a real local WebSocket server:
 The React panel itself is browser-verified manually during the current MVP
 stage: the full-flow button reaches `dingque`, renders four redacted snapshot
 summaries, and the recovery button restores host/guest snapshots after a
-simulated refresh without changing the mock table mode.
+simulated refresh without changing the mock table mode. The main-table preview
+mode is also browser-verified: after the full flow starts, it displays the real
+room status, 4/4 seats, 4/4 ready state, wall count, and per-client redacted hand
+counts while remaining read-only.
 
 ## Next Milestone
 
 The real local WebSocket dev server, frontend WebSocket transport wrapper, full
-room-flow panel, and session recovery demo are visible in the React UI as an
-experiment. The next milestone is to make this path more product-like without
-removing the mock fallback:
+room-flow panel, session recovery demo, and read-only main-table preview are
+visible in the React UI. The next milestone is to move from passive snapshots to
+server-authoritative table actions without removing the mock fallback:
 
 1. Keep mock transport as the default portfolio-safe mode.
-2. Add clearer persisted-session management, such as "clear saved session" and
-   stale-room warnings.
-3. Decide whether to promote real WebSocket room snapshots into the main table.
+2. Add WebSocket actions for player-selected dingque after the server starts a
+   room.
+3. Add WebSocket draw/discard actions as server-authoritative round commands.
 4. Keep server-authoritative validation in `roomSocketAdapter` and
    `roomService`.
