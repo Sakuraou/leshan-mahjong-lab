@@ -371,6 +371,7 @@ button {
 .websocket-header,
 .websocket-controls,
 .websocket-actions,
+.websocket-steps,
 .websocket-snapshots {
   display: flex;
   align-items: center;
@@ -462,6 +463,79 @@ button {
 
 .websocket-actions button:last-child {
   background: #36403a;
+}
+
+.websocket-steps {
+  align-items: stretch;
+  flex-wrap: wrap;
+}
+
+.websocket-step {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 8px;
+  min-width: 150px;
+  flex: 1 1 150px;
+  border: 1px solid #d5e0e8;
+  border-radius: 8px;
+  padding: 9px;
+  background: #ffffff;
+}
+
+.websocket-step strong,
+.websocket-step p {
+  margin: 0;
+}
+
+.websocket-step strong {
+  font-size: 13px;
+}
+
+.websocket-step span {
+  border-radius: 999px;
+  padding: 2px 7px;
+  background: #edf2f6;
+  color: #586775;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.websocket-step p {
+  grid-column: 1 / -1;
+  color: #586775;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.websocket-step[data-status="running"] {
+  border-color: #d0b15f;
+  background: #fff8e4;
+}
+
+.websocket-step[data-status="running"] span {
+  background: #f8e7ba;
+  color: #7b5a14;
+}
+
+.websocket-step[data-status="success"] {
+  border-color: #93c58d;
+  background: #f4fbef;
+}
+
+.websocket-step[data-status="success"] span {
+  background: #dcefd7;
+  color: #247a48;
+}
+
+.websocket-step[data-status="error"] {
+  border-color: #d99b8d;
+  background: #fff3ef;
+}
+
+.websocket-step[data-status="error"] span {
+  background: #f8dfd8;
+  color: #9b3b27;
 }
 
 .websocket-snapshots {
