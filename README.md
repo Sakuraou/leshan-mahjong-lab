@@ -116,6 +116,9 @@ and AI-assisted development.
   host/guest/helper clients join, take seats, ready up, start the round, and
   display per-client redacted snapshot summaries while the mock table remains
   the default main experience
+- Session recovery demo in the WebSocket experiment panel: host/guest
+  `sessionToken` and `lastEventId` are saved to `localStorage`, then
+  `resumeSession` rebuilds redacted snapshots after a simulated refresh
 
 ## Screenshots
 
@@ -135,6 +138,7 @@ Planned portfolio shots:
 | WebSocket experiment | Pending | Real `ws://127.0.0.1:8787` connection status and create/join/seat/ready/start controls |
 | Four-client snapshots | Pending | Host, guest, and helper clients showing per-client redacted snapshots and hidden opponent hands |
 | WebSocket full round start | Pending | Full flow after all four clients are seated, ready, and the room reaches `dingque` |
+| WebSocket session recovery | Pending | Simulated refresh, restored host/guest sessions, resumed redacted snapshots, and missed-event count |
 | Portfolio context | Pending | README/case-study view showing the multi-agent workflow and tested rule engine |
 
 ## Run Locally
@@ -215,15 +219,17 @@ snapshot per simulated session. Replacing this local transport with a real
 WebSocket transport should mainly change delivery and connection management,
 not the room lifecycle rules.
 
-The first server-side core is also in place. `src/server/roomSocketServerCore.ts`
-does not start a real WebSocket listener yet; it gives the future Node server a
-tested path for connection registration, JSON parsing, adapter calls, session
-routing, and undelivered-message handling.
+The server-side core and local `ws` dev wrapper are also in place.
+`src/server/roomSocketServerCore.ts` keeps connection registration, JSON
+parsing, adapter calls, session routing, reconnect binding, and undelivered
+messages testable without tying the room logic to a specific network runtime.
 
 The WebSocket experiment panel is intentionally separate from the main table.
 It uses the real local `ws` dev server to prove the full room lifecycle and
-redacted snapshot delivery, while the default playable table still uses the
-local mock transport for a stable portfolio demo.
+redacted snapshot delivery. It also demonstrates `sessionToken` + `lastEventId`
+recovery by saving host/guest sessions locally, reconnecting after a simulated
+refresh, and calling `resumeSession` for fresh redacted snapshots. The default
+playable table still uses the local mock transport for a stable portfolio demo.
 
 ## AI-Assisted Workflow
 
@@ -265,6 +271,8 @@ roles were used to split work into reviewable concerns:
   Node `ws` development server.
 - Added a real WebSocket experiment panel that demonstrates the full room
   lifecycle across four clients without replacing the default mock table.
+- Added a session recovery demo using `sessionToken`, `lastEventId`,
+  `localStorage`, and server-side rebinding to the latest connection.
 - Used a multi-agent AI-assisted workflow to split product planning, rule
   modeling, implementation, test-case design, and review.
 - Prepared the repository as a portfolio case study with rule documentation,

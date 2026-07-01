@@ -115,6 +115,10 @@ Routing rules:
 - A non-null `recipientSessionToken` is delivered to the connection whose
   `roomId` and `sessionToken` match.
 - If no connection owns that session, the message is added to `undelivered`.
+- When a session resumes on a newer connection, the core binds that
+  `sessionToken` to the new connection and clears the old connection binding.
+  Future redacted snapshots then flow to the latest browser tab instead of a
+  stale socket.
 
 This prevents the server from accidentally sending a private snapshot to the
 wrong socket.
@@ -263,6 +267,9 @@ The panel supports:
 - Auto-filling helper clients for players 3 and 4.
 - Starting the round after four clients are seated and ready.
 - Displaying one redacted snapshot summary per connected client.
+- Saving host/guest `sessionToken` and `lastEventId` in `localStorage`.
+- Simulating a browser refresh by closing host/guest sockets, reconnecting, and
+  calling `resumeSession` for restored redacted snapshots and missed events.
 
 The full-flow button runs this chain:
 
@@ -284,9 +291,32 @@ Expected snapshot behavior:
 - Every client sees the other three players as hidden hands.
 - The room status becomes `dingque`.
 - The latest event is `roundStarted`.
+- After simulated refresh, host/guest receive fresh redacted snapshots through
+  their newly connected sockets. The UI shows whether resume succeeded and how
+  many missed events came back from the server.
 
 The default playable table remains backed by the local mock transport. This
 keeps the portfolio demo stable while the real WebSocket path matures.
+
+## Session Recovery Demo
+
+The current recovery flow is intentionally small but end-to-end:
+
+```text
+host/guest receive roomSnapshot
+  -> frontend stores sessionToken + lastEventId in localStorage
+  -> user clicks "模拟刷新后恢复"
+  -> frontend closes host/guest sockets and opens new ones
+  -> frontend sends resumeSession with stored sessionToken + lastSeenEventId
+  -> roomService returns missed events and a redacted client snapshot
+  -> server core rebinds that sessionToken to the newest connection
+  -> React panel renders restored host/guest snapshots
+```
+
+This is not production authentication. It is a portfolio-safe demonstration of
+the reconnect contract: client state stores only a session cursor, server state
+remains authoritative, and the response is still scoped to the recovering
+client's redacted view.
 
 ## Screenshot Plan
 
@@ -297,6 +327,7 @@ Portfolio screenshots to capture next:
 | WebSocket experiment panel | Server address, connected status, and room lifecycle controls |
 | Four-client redacted snapshots | Host, guest, and helper clients with own-hand counts and hidden opponent summaries |
 | Full flow round start | All four clients seated and ready, room status `dingque`, latest event `roundStarted` |
+| Session recovery demo | "模拟刷新后恢复" button, resume success badge, restored host/guest snapshots, missed-event count |
 
 ## Current Test Coverage
 
@@ -306,6 +337,7 @@ Portfolio screenshots to capture next:
 - Invalid JSON returning a protocol error before adapter execution.
 - Unknown-session messages becoming `undelivered` instead of being sent to the
   wrong connection.
+- Resumed sessions being rebound from stale sockets to the newest connection.
 
 `tests/game/roomSocketDevServer.test.ts` covers the real `ws` wrapper path:
 
@@ -323,20 +355,25 @@ wrapper against a real local WebSocket server:
 - Host starts the round.
 - Each transport stores its own redacted snapshot and does not expose other
   players' hands.
+- A new transport can call `resumeSession` with a stored `sessionToken` and
+  `lastSeenEventId`, then receive missed events and a restored redacted
+  snapshot.
 
 The React panel itself is browser-verified manually during the current MVP
-stage: the full-flow button reaches `dingque` and renders four redacted
-snapshot summaries without changing the mock table mode.
+stage: the full-flow button reaches `dingque`, renders four redacted snapshot
+summaries, and the recovery button restores host/guest snapshots after a
+simulated refresh without changing the mock table mode.
 
 ## Next Milestone
 
-The real local WebSocket dev server and frontend WebSocket transport wrapper
-are visible in the React UI as an experiment. The next milestone is to make the
-real transport path more product-like without removing the mock fallback:
+The real local WebSocket dev server, frontend WebSocket transport wrapper, full
+room-flow panel, and session recovery demo are visible in the React UI as an
+experiment. The next milestone is to make this path more product-like without
+removing the mock fallback:
 
 1. Keep mock transport as the default portfolio-safe mode.
-2. Add clearer success and failure states for the WebSocket panel.
-3. Persist `sessionToken` and `lastEventId` locally for reconnect.
-4. Decide whether to promote real WebSocket room snapshots into the main table.
-5. Keep server-authoritative validation in `roomSocketAdapter` and
+2. Add clearer persisted-session management, such as "clear saved session" and
+   stale-room warnings.
+3. Decide whether to promote real WebSocket room snapshots into the main table.
+4. Keep server-authoritative validation in `roomSocketAdapter` and
    `roomService`.

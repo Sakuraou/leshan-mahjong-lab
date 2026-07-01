@@ -36,6 +36,11 @@ than a complete production game.
 - Frontend WebSocket experiment panel that can run a full four-client room
   lifecycle: create room, join, take seats, ready, start round, and display one
   redacted snapshot summary per client.
+- Frontend WebSocket recovery demo that stores host/guest `sessionToken` and
+  `lastEventId`, simulates a refresh, calls `resumeSession`, and restores
+  redacted snapshots.
+- WebSocket server core now rebinds a resumed session to the newest connection,
+  so private snapshots do not keep routing to a stale socket.
 - The default playable table still uses the local mock transport, keeping the
   main portfolio demo stable while the real WebSocket path is demonstrated
   separately.
@@ -62,7 +67,7 @@ than a complete production game.
 - The main room/table mode is still powered by the local mock transport; the
   real WebSocket path is currently an experiment panel.
 - The WebSocket server currently covers room lifecycle only, not draw/discard,
-  peng/gang, hu, settlement, or reconnect persistence.
+  peng/gang, hu, settlement, durable auth, or production persistence.
 - Screenshot assets are still pending until the first production deployment is
   captured.
 
@@ -73,6 +78,7 @@ than a complete production game.
 | WebSocket experiment panel | `ws://127.0.0.1:8787`, connected state, lifecycle controls, and experiment logs |
 | Four-client redacted snapshots | Host, guest, helper 3, and helper 4 summaries showing own-hand counts and three hidden hands |
 | WebSocket full-flow start | Four clients seated and ready, room status `dingque`, latest event `roundStarted` |
+| WebSocket session recovery | "模拟刷新后恢复", restored host/guest sessions, resume success badge, missed-event count |
 
 ### Next Steps
 
@@ -83,9 +89,9 @@ than a complete production game.
 4. Connect seven-pairs and advanced fan calculation to hu checks.
 5. Implement chicken, gang, and cha jiao settlement views.
 6. Add a clearer portfolio page or route for case-study presentation.
-7. Add clearer success/error states to the real WebSocket experiment panel.
-8. Persist `sessionToken` and `lastEventId` for reconnect recovery.
-9. Decide when to promote real WebSocket snapshots into the main table view.
+7. Add clearer persisted-session management, such as manual clear and stale-room
+   warnings.
+8. Decide when to promote real WebSocket snapshots into the main table view.
 
 ## 2026-06-30
 
@@ -109,4 +115,10 @@ than a complete production game.
 - Added the WebSocket experiment panel to the React page.
 - Expanded the panel into a full room lifecycle demo: four clients join, take
   seats, ready up, start the round, and receive redacted snapshot summaries.
+- Added clearer WebSocket experiment step states for connection, create, join,
+  seat, ready, start, failure, and duplicate-create feedback.
+- Added session recovery in the WebSocket experiment panel using
+  `sessionToken`, `lastEventId`, `localStorage`, and `resumeSession`.
+- Updated server-core routing so a resumed session is rebound to the newest
+  connection instead of a stale socket.
 - Kept the mock room/table flow as the default main experience.
