@@ -135,6 +135,17 @@ button {
   color: #17211b;
 }
 
+.mode-link-button {
+  flex: 0 0 auto;
+  min-height: 34px;
+  border: 0;
+  border-radius: 8px;
+  padding: 0 11px;
+  background: #315f7a;
+  color: #ffffff;
+  cursor: pointer;
+}
+
 .seats {
   display: grid;
   grid-template-columns: repeat(2, minmax(220px, 1fr));
@@ -357,6 +368,129 @@ button {
 
 .room-seat-card button {
   justify-self: start;
+}
+
+.websocket-table-preview {
+  display: grid;
+  gap: 14px;
+  border: 1px solid #c9d5df;
+  border-radius: 8px;
+  padding: 16px;
+  background: #f7fbff;
+}
+
+.preview-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.preview-header h2,
+.preview-header p,
+.preview-seat-card h3,
+.preview-seat-card p,
+.preview-client-card h3,
+.preview-client-card p {
+  margin: 0;
+}
+
+.preview-header h2 {
+  font-size: 18px;
+}
+
+.preview-header p,
+.preview-seat-card p,
+.preview-client-card p,
+.preview-client-card span,
+.preview-empty {
+  color: #586775;
+  font-size: 13px;
+}
+
+.preview-header button {
+  min-width: 104px;
+  height: 36px;
+  border: 0;
+  border-radius: 8px;
+  background: #36403a;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.preview-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(88px, 1fr));
+  gap: 8px;
+}
+
+.preview-empty {
+  border: 1px solid #d5e0e8;
+  border-radius: 8px;
+  padding: 12px;
+  background: #ffffff;
+}
+
+.preview-seat-grid,
+.preview-client-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.preview-seat-card,
+.preview-client-card {
+  display: grid;
+  gap: 8px;
+  border: 1px solid #d5e0e8;
+  border-radius: 8px;
+  padding: 12px;
+  background: #ffffff;
+}
+
+.preview-seat-card[data-occupied="true"] {
+  border-color: #c6b17d;
+  background: #fffdf8;
+}
+
+.preview-seat-card[data-ready="true"] {
+  border-color: #93c58d;
+  background: #f4fbef;
+}
+
+.preview-seat-card > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.preview-seat-card h3,
+.preview-client-card h3 {
+  font-size: 14px;
+}
+
+.preview-seat-card span {
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: #edf2f6;
+  color: #586775;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.preview-seat-card[data-ready="true"] span {
+  background: #dcefd7;
+  color: #247a48;
+}
+
+.preview-client-card > div {
+  display: grid;
+  gap: 4px;
+}
+
+.preview-client-card span {
+  display: block;
 }
 
 .websocket-panel {

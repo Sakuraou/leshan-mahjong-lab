@@ -71,8 +71,20 @@ type WebSocketRecoveryRecord = {
   sessionToken: string;
   lastEventId: number;
 };
+type WebSocketPreviewState = {
+  host: WebSocketRoomTransportState | null;
+  guest: WebSocketRoomTransportState | null;
+  helpers: WebSocketRoomTransportState[];
+};
+type WebSocketPreviewClient = {
+  title: string;
+  playerId: string;
+  state: WebSocketRoomTransportState | null;
+  snapshot: ClientVisibleRoomState | null;
+  sessionToken: string | null;
+};
 
-type TableMode = "room" | "standalone";
+type TableMode = "room" | "standalone" | "websocketPreview";
 type TurnPhase = "chooseMissingSuit" | "draw" | "discard";
 
 function createDemoRound(): RoundState {
@@ -91,6 +103,11 @@ export function App() {
   const [transport, setTransport] = useState(() => createLocalRoomTransport({ roomId, seed }));
   const [tableMode, setTableMode] = useState<TableMode>("room");
   const [viewingPlayerId, setViewingPlayerId] = useState(localPlayerId);
+  const [webSocketPreview, setWebSocketPreview] = useState<WebSocketPreviewState>({
+    host: null,
+    guest: null,
+    helpers: [],
+  });
   const [standaloneRound, setStandaloneRound] = useState(createDemoRound);
   const [gameLogs, setGameLogs] = useState<LogEntry[]>([
     {
@@ -101,7 +118,7 @@ export function App() {
   const autoDrawKeys = useRef(new Set<string>());
 
   const room = transport.room;
-  const tableStarted = tableMode === "standalone" || room.round !== null;
+  const tableStarted = tableMode === "standalone" || (tableMode === "room" && room.round !== null);
   const round = tableMode === "room" && room.round !== null ? room.round : standaloneRound;
   const visibleRoom = tableMode === "room" ? getLocalRoomClientView(transport, viewingPlayerId) : null;
   const visibleRound = visibleRoom?.round ?? null;
@@ -124,6 +141,9 @@ export function App() {
   const sortedVisibleHand = useMemo(() => sortHand(visibleViewedHand), [visibleViewedHand]);
   const viewingPlayerIndex = demoPlayers.findIndex((player) => player.playerId === viewingPlayerId);
   const viewingPlayerLabel = viewingPlayerIndex >= 0 ? `玩家 ${viewingPlayerIndex + 1}` : "未入座";
+  const webSocketPreviewPrimary = getWebSocketPreviewPrimary(webSocketPreview);
+  const webSocketPreviewRoomId = webSocketPreviewPrimary?.roomId ?? "未连接";
+  const webSocketPreviewSnapshot = getWebSocketPreviewSnapshot(webSocketPreviewPrimary, "player-1");
 
   const totalDiscards = useMemo(
     () => visiblePlayers.reduce((sum, player) => sum + player.discards.length, 0),
@@ -256,6 +276,11 @@ export function App() {
     addGameLog("已进入单机演示牌桌。这个模式绕过房间流程，只用于快速展示。");
   }
 
+  function handleWebSocketPreviewMode() {
+    setTableMode("websocketPreview");
+    addGameLog("已切换到真实 WebSocket 桌面预览。这里只读取 roomSnapshot，不接管摸牌/出牌。");
+  }
+
   function handleReset() {
     autoDrawKeys.current.clear();
     setViewingPlayerId(localPlayerId);
@@ -267,6 +292,17 @@ export function App() {
         {
           id: (items.at(-1)?.id ?? 0) + 1,
           text: "本地模拟房间已重置。请重新加入、占座、准备并开局。",
+        },
+      ]);
+      return;
+    }
+
+    if (tableMode === "websocketPreview") {
+      setTableMode("room");
+      setGameLogs((items) => [
+        {
+          id: (items.at(-1)?.id ?? 0) + 1,
+          text: "已退出真实 WebSocket 预览，回到本地模拟房间。",
         },
       ]);
       return;
@@ -362,35 +398,66 @@ export function App() {
             <p>八鸡赖子规则的本地模拟联机桌</p>
           </div>
           <div className="round-stats">
-            <Stat label="房间" value={tableMode === "room" ? room.id : "单机"} />
+            <Stat
+              label="房间"
+              value={tableMode === "websocketPreview" ? webSocketPreviewRoomId : tableMode === "room" ? room.id : "单机"}
+            />
             <Stat
               label="当前视角"
-              value={tableMode === "room" ? viewingPlayerLabel : "玩家 1"}
+              value={
+                tableMode === "websocketPreview"
+                  ? "WebSocket 预览"
+                  : tableMode === "room"
+                    ? viewingPlayerLabel
+                    : "玩家 1"
+              }
             />
-            <Stat label="模拟操作" value={`玩家 ${localSeatId + 1}`} />
-            <Stat label="当前回合" value={tableStarted ? `玩家 ${round.currentPlayer + 1}` : "待开局"} />
+            <Stat label="模拟操作" value={tableMode === "websocketPreview" ? "只读" : `玩家 ${localSeatId + 1}`} />
+            <Stat
+              label="当前回合"
+              value={
+                tableMode === "websocketPreview"
+                  ? webSocketPreviewSnapshot?.status ?? "待快照"
+                  : tableStarted
+                    ? `玩家 ${round.currentPlayer + 1}`
+                    : "待开局"
+              }
+            />
             <Stat
               label="牌墙"
-              value={tableStarted ? (visibleRound?.wallCount ?? round.wall.length).toString() : "-"}
+              value={
+                tableMode === "websocketPreview"
+                  ? (webSocketPreviewSnapshot?.round?.wallCount?.toString() ?? "-")
+                  : tableStarted
+                    ? (visibleRound?.wallCount ?? round.wall.length).toString()
+                    : "-"
+              }
             />
           </div>
         </header>
 
         <div className="mode-banner">
           <div>
-            <strong>本地模拟传输</strong>
+            <strong>{tableMode === "websocketPreview" ? "真实 WebSocket 只读预览" : "本地模拟传输"}</strong>
             <span>
-              房间流程已通过本地 mock transport 和 roomSocketAdapter 驱动；牌局动作仍由玩家 1 本地模拟执行，还没有真实网络连接。
+              {tableMode === "websocketPreview"
+                ? "主牌桌正在读取真实 WebSocket roomSnapshot；这里只展示房间/座位/准备/手牌数量，不接管摸牌出牌。"
+                : "房间流程已通过本地 mock transport 和 roomSocketAdapter 驱动；牌局动作仍由玩家 1 本地模拟执行，还没有真实网络连接。"}
             </span>
           </div>
           {tableMode === "room" && (
             <ClientViewSelector value={viewingPlayerId} onChange={handleViewingPlayerChange} />
           )}
+          <button className="mode-link-button" type="button" onClick={handleWebSocketPreviewMode}>
+            真实 WebSocket 桌面预览
+          </button>
         </div>
 
-        <WebSocketExperimentPanel />
+        <WebSocketExperimentPanel onPreviewChange={setWebSocketPreview} />
 
-        {tableMode === "room" && room.round === null ? (
+        {tableMode === "websocketPreview" ? (
+          <WebSocketTablePreview preview={webSocketPreview} onExit={() => setTableMode("room")} />
+        ) : tableMode === "room" && room.round === null ? (
           <RoomPanel
             room={room}
             onJoinLocalPlayer={handleJoinLocalPlayer}
@@ -511,6 +578,121 @@ export function App() {
   );
 }
 
+function WebSocketTablePreview({
+  preview,
+  onExit,
+}: {
+  preview: WebSocketPreviewState;
+  onExit: () => void;
+}) {
+  const clients = getWebSocketPreviewClients(preview);
+  const primary = clients.find((client) => client.snapshot !== null) ?? clients[0];
+  const snapshot = primary?.snapshot ?? null;
+  const round = snapshot?.round ?? null;
+  const occupiedSeats = snapshot?.seats.filter((seat) => seat.playerId !== null).length ?? 0;
+  const readySeats = snapshot?.seats.filter((seat) => seat.ready).length ?? 0;
+
+  return (
+    <section className="websocket-table-preview" aria-label="真实 WebSocket 桌面预览">
+      <div className="preview-header">
+        <div>
+          <h2>真实 WebSocket 桌面预览</h2>
+          <p>只读取 WebSocket roomSnapshot 展示房间状态；当前还不接真实摸牌、出牌、碰杠胡。</p>
+        </div>
+        <button type="button" onClick={onExit}>
+          回到本地模拟
+        </button>
+      </div>
+
+      <div className="preview-summary">
+        <Stat label="真实房间" value={primary?.state?.roomId ?? "未连接"} />
+        <Stat label="房间状态" value={snapshot?.status ?? "待快照"} />
+        <Stat label="座位" value={`${occupiedSeats}/4`} />
+        <Stat label="准备" value={`${readySeats}/4`} />
+        <Stat label="牌墙" value={round?.wallCount?.toString() ?? "-"} />
+      </div>
+
+      {snapshot === null ? (
+        <div className="preview-empty">
+          请先在上方“真实 WebSocket 连接演示”里运行 create/join/ready/start，预览区会读取最新 redacted snapshot。
+        </div>
+      ) : (
+        <>
+          <div className="preview-seat-grid">
+            {snapshot.seats.map((seat) => (
+              <WebSocketPreviewSeatCard
+                key={seat.seatId}
+                seat={seat}
+                player={round?.players[seat.seatId] ?? null}
+              />
+            ))}
+          </div>
+
+          <div className="preview-client-grid">
+            {clients.map((client) => (
+              <WebSocketPreviewClientCard key={client.playerId} client={client} />
+            ))}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function WebSocketPreviewSeatCard({
+  seat,
+  player,
+}: {
+  seat: SeatState;
+  player: VisiblePlayerState | null;
+}) {
+  const handText =
+    player === null
+      ? "未开局"
+      : player.hand !== null
+        ? `${player.hand.length} 张可见`
+        : `${player.handCount} 张隐藏`;
+
+  return (
+    <article className="preview-seat-card" data-ready={seat.ready} data-occupied={seat.playerId !== null}>
+      <div>
+        <h3>座位 {seat.seatId + 1}</h3>
+        <span>{seat.ready ? "已准备" : "未准备"}</span>
+      </div>
+      <p>{seat.displayName ?? "空位"}</p>
+      <p>手牌：{handText}</p>
+    </article>
+  );
+}
+
+function WebSocketPreviewClientCard({ client }: { client: WebSocketPreviewClient }) {
+  const snapshot = client.snapshot;
+  const round = snapshot?.round ?? null;
+  const localSeat = snapshot?.localSeatId;
+  const players = round?.players ?? [];
+
+  return (
+    <article className="preview-client-card">
+      <h3>{client.title}</h3>
+      <p>session：{client.sessionToken ?? "暂无"}</p>
+      <p>本地座位：{localSeat === null || localSeat === undefined ? "-" : localSeat + 1}</p>
+      <p>房间状态：{snapshot?.status ?? "待快照"}</p>
+      <div>
+        {players.length === 0 ? (
+          <span>开局后显示 redacted 手牌数量</span>
+        ) : (
+          players.map((player) => (
+            <span key={player.id}>
+              玩家 {player.id + 1}：
+              {player.hand !== null ? `${player.hand.length} 张可见` : `${player.handCount} 张隐藏`}
+            </span>
+          ))
+        )}
+      </div>
+    </article>
+  );
+}
+
 function ClientViewSelector({
   value,
   onChange,
@@ -532,7 +714,7 @@ function ClientViewSelector({
   );
 }
 
-function WebSocketExperimentPanel() {
+function WebSocketExperimentPanel({ onPreviewChange }: { onPreviewChange: (preview: WebSocketPreviewState) => void }) {
   const hostTransport = useRef<WebSocketRoomTransport | null>(null);
   const guestTransport = useRef<WebSocketRoomTransport | null>(null);
   const helperTransports = useRef<WebSocketRoomTransport[]>([]);
@@ -607,7 +789,13 @@ function WebSocketExperimentPanel() {
     const nextGuestState = guestTransport.current?.getState() ?? null;
     setHostState(nextHostState);
     setGuestState(nextGuestState);
-    setHelperStates(helperTransports.current.map((transport) => transport.getState()));
+    const nextHelperStates = helperTransports.current.map((transport) => transport.getState());
+    setHelperStates(nextHelperStates);
+    onPreviewChange({
+      host: nextHostState,
+      guest: nextGuestState,
+      helpers: nextHelperStates,
+    });
     saveWebSocketRecoveryRecord(nextHostState, "player-1");
     saveWebSocketRecoveryRecord(nextGuestState, "player-2");
   }
@@ -998,6 +1186,7 @@ function WebSocketExperimentPanel() {
     setHostState(null);
     setGuestState(null);
     setHelperStates([]);
+    onPreviewChange({ host: null, guest: null, helpers: [] });
     setStepStates(createInitialWebSocketStepStates());
     clearWebSocketRecoveryRecords();
     setLogs([{ id: 1, text: "真实 WebSocket 实验区已重置；当前牌桌仍使用本地 mock transport。" }]);
@@ -1297,6 +1486,35 @@ function countWebSocketResumeEvents(state: WebSocketRoomTransportState, playerId
   const snapshot = state.messages.findLast((message) => message.type === "roomSnapshot" && message.payload.playerId === playerId);
 
   return snapshot?.type === "roomSnapshot" ? snapshot.payload.events.length : 0;
+}
+
+function getWebSocketPreviewPrimary(preview: WebSocketPreviewState): WebSocketRoomTransportState | null {
+  return preview.host ?? preview.guest ?? preview.helpers[0] ?? null;
+}
+
+function getWebSocketPreviewSnapshot(
+  state: WebSocketRoomTransportState | null,
+  playerId: string,
+): ClientVisibleRoomState | null {
+  return state?.snapshotByPlayerId[playerId] ?? null;
+}
+
+function getWebSocketPreviewClients(preview: WebSocketPreviewState): WebSocketPreviewClient[] {
+  const baseClients: Array<{ title: string; playerId: string; state: WebSocketRoomTransportState | null }> = [
+    { title: "Host 客户端", playerId: "player-1", state: preview.host },
+    { title: "Guest 客户端", playerId: "player-2", state: preview.guest },
+    ...preview.helpers.map((state, index) => ({
+      title: `辅助客户端 ${index + 3}`,
+      playerId: `player-${index + 3}`,
+      state,
+    })),
+  ];
+
+  return baseClients.map((client) => ({
+    ...client,
+    snapshot: getWebSocketPreviewSnapshot(client.state, client.playerId),
+    sessionToken: client.state?.sessionTokenByPlayerId[client.playerId] ?? null,
+  }));
 }
 
 function createWebSocketExperimentRoomId(): string {
