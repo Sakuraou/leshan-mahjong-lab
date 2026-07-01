@@ -99,6 +99,9 @@ and AI-assisted development.
 - Pure-function WebSocket adapter that maps protocol-like messages to
   `roomService` and returns `ServerMessage`-style accepted, rejected, and
   redacted snapshot messages without starting a real server
+- Frontend local mock transport that turns room UI actions into
+  `RoomSocketClientMessage` objects, feeds them through `roomSocketAdapter`, and
+  renders each simulated client from its own server-shaped redacted snapshot
 
 ## Screenshots
 
@@ -156,8 +159,9 @@ reuse possible.
 
 ```text
 src/
-  App.tsx           Browser table prototype
-  styles.css        Prototype UI styling
+  App.tsx              Browser table prototype
+  localRoomTransport.ts Frontend mock transport over the socket adapter
+  styles.css           Prototype UI styling
   game/
     tiles.ts        Tile model, wall generation, yao ji detection
     hu.ts           Laizi-aware standard hu decomposition
@@ -179,6 +183,14 @@ tests/
     room-service.md Server-authoritative room service interface
     socket-adapter.md Pure socket adapter interface and frontend integration plan
 ```
+
+The current browser room flow is intentionally shaped like a future networked
+client. It does not call the room reducer directly. Instead, the UI sends
+server-like messages into `localRoomTransport`, which wraps
+`roomSocketAdapter`, stores the returned adapter state, and keeps a redacted
+snapshot per simulated session. Replacing this local transport with a real
+WebSocket transport should mainly change delivery and connection management,
+not the room lifecycle rules.
 
 ## AI-Assisted Workflow
 
@@ -214,6 +226,8 @@ roles were used to split work into reviewable concerns:
 - Added a tested pure-function socket adapter, preparing the frontend to consume
   server-shaped room snapshots through either a local mock transport or a real
   WebSocket server.
+- Connected the room UI to a local mock transport, proving the frontend can
+  consume server-shaped snapshots before a real WebSocket server exists.
 - Used a multi-agent AI-assisted workflow to split product planning, rule
   modeling, implementation, test-case design, and review.
 - Prepared the repository as a portfolio case study with rule documentation,

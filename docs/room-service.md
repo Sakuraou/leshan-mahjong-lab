@@ -18,6 +18,8 @@ The room service owns the authoritative in-memory state for one room:
   - `takeSeat`
   - `toggleReady`
   - `startRoomRound`
+- A stable API that can be called by both the current frontend mock transport
+  and a future real WebSocket adapter.
 
 It does not own:
 
@@ -181,6 +183,56 @@ After every accepted action, the adapter should call `getClientRoomView` for
 each connected session and send a client-specific snapshot. This keeps hidden
 hands out of other players' payloads.
 
+## Current Frontend Mock Transport
+
+The frontend now exercises this service through two layers instead of calling
+the room reducer directly:
+
+```text
+App room controls
+  -> localRoomTransport
+  -> roomSocketAdapter
+  -> roomService
+  -> room reducer
+```
+
+`localRoomTransport` is not a production network layer. It is a browser-local
+stand-in that stores adapter state in memory, creates protocol-like client
+messages, and saves the returned `roomSnapshot` payloads by player id.
+
+This gives the prototype a useful portfolio property: the page is still easy to
+run locally, but its room flow already behaves like a future networked client.
+Each simulated client perspective renders from its own redacted
+`ClientVisibleRoomState`, so one player's hand is not present in another
+player's snapshot.
+
+## Future Real Server Entry
+
+The real WebSocket server should keep `roomService` behind the adapter rather
+than importing the reducer directly. A first server entry can be intentionally
+thin:
+
+```text
+socket receives client message
+  -> validate protocolVersion, clientMessageId, roomId, and sessionToken
+  -> call roomSocketAdapter
+  -> store returned adapter state
+  -> route accepted/rejected/snapshot messages to connected sockets
+```
+
+Server-owned concerns:
+
+- Real socket connection lifecycle.
+- Session-to-socket registry.
+- Reconnect timeout and presence state.
+- Secure token generation.
+- Optional room persistence.
+- Deployment choice, such as Node WebSocket, Socket.IO, or a managed realtime
+  provider.
+
+Service-owned concerns stay unchanged: room lifecycle validation, session
+lookup, event ids, and redacted room views.
+
 ## Current Limits
 
 - One service state represents one room. A server process will need a room map:
@@ -194,7 +246,8 @@ hands out of other players' payloads.
 
 ## Next Adapter Step
 
-The next implementation milestone is a WebSocket adapter that:
+The pure-function adapter and frontend mock transport are already in place. The
+next implementation milestone is a real WebSocket runtime wrapper that:
 
 1. Maintains a `Map<roomId, RoomServiceState>`.
 2. Parses protocol messages from `docs/realtime-protocol.md`.

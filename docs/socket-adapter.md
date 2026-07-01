@@ -170,22 +170,75 @@ The adapter intentionally does not know about sockets. This keeps it easy to
 unit test and lets the project choose between:
 
 - A real WebSocket server.
-- A local mock transport for frontend integration.
+- The current local mock transport for frontend integration.
 - A serverless real-time provider later.
 
-## Frontend Integration Plan
+## Frontend Mock Transport Integration
 
-The next frontend step can avoid real networking by introducing a local mock
-transport:
+The frontend now uses `src/localRoomTransport.ts` as a low-risk transport layer
+before real networking exists. This module is intentionally shaped like a local
+client-to-server message bus:
 
-1. Keep `RoomSocketAdapterState` in a local module or React state.
-2. Convert UI actions into `RoomSocketClientMessage`.
+1. Keep `RoomSocketAdapterState` inside `LocalRoomTransportState`.
+2. Convert room UI actions into `RoomSocketClientMessage` objects.
 3. Call `handleRoomSocketMessage`.
-4. Route returned `roomSnapshot` messages to simulated clients.
-5. Render the table from the snapshot for the selected client perspective.
+4. Store the returned adapter state as the local authoritative state.
+5. Capture each `roomSnapshot` under that message's `playerId`.
+6. Render the selected client perspective from its own redacted snapshot.
 
-After that, replacing mock transport with real WebSocket should mostly change
-message delivery, not room rules.
+The current room UI no longer calls the room reducer directly for join, seat,
+ready, or start-round actions. Those actions move through:
+
+```text
+React room controls
+  -> localRoomTransport
+  -> roomSocketAdapter
+  -> roomService
+  -> room reducer
+  -> per-session roomSnapshot messages
+  -> selected client's redacted table view
+```
+
+This keeps the browser demo honest: even though it is still offline, the UI is
+already consuming server-shaped snapshots. Switching from mock transport to a
+real WebSocket transport should mostly change message delivery, connection
+registry, and reconnect handling, not the room lifecycle behavior.
+
+## Real Server Entry Design
+
+The next server milestone can wrap this adapter with a small runtime-specific
+entry. The boundary should look like:
+
+```ts
+type ConnectedClient = {
+  socketId: string;
+  sessionToken?: string;
+  roomId?: string;
+};
+
+let adapter = createRoomSocketAdapterState();
+
+function onClientMessage(socketId: string, raw: string) {
+  const message = parseAndValidateRoomSocketMessage(raw);
+  const result = handleRoomSocketMessage(adapter, message);
+  adapter = result.adapter;
+
+  for (const serverMessage of result.messages) {
+    deliverServerMessage(socketId, serverMessage);
+  }
+}
+```
+
+The runtime wrapper should own:
+
+- JSON parsing and schema validation.
+- `socketId -> sessionToken` and `sessionToken -> socketId` registries.
+- Sending `actionAccepted` / `actionRejected` to the requesting socket.
+- Sending `roomSnapshot` to the session named by `recipientSessionToken`.
+- Heartbeats, disconnect state, and reconnect timeouts.
+- Secure token generation if deterministic test tokens are replaced.
+
+The adapter should continue to own only protocol-to-service mapping.
 
 ## Current Test Coverage
 
@@ -198,15 +251,17 @@ message delivery, not room rules.
 - Four-session start-round broadcast where each session receives only its own
   hidden hand.
 
+`tests/game/localRoomTransport.test.ts` covers the browser-facing mock
+transport path:
+
+- Create host session through the adapter.
+- Join, sit, and ready four simulated players.
+- Start a round through adapter messages.
+- Confirm player-specific redacted snapshots hide other players' hands.
+
 ## Next Milestone
 
-The project is ready for either of these paths:
-
-1. **Local mock transport first:** wire the frontend to the adapter without a
-   server process.
-2. **Real WebSocket server first:** add a server entry that wraps
-   `handleRoomSocketMessage`.
-
-For portfolio clarity, the local mock transport is the lower-risk next step:
-it proves the frontend can consume server-shaped snapshots before adding
-deployment complexity.
+The local mock transport path is complete. The next milestone is a real
+WebSocket server entry that wraps `handleRoomSocketMessage`, keeps a connection
+registry, and sends each connected client the redacted snapshot addressed to
+its own session.
