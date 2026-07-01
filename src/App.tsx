@@ -2,15 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   checkCurrentPlayerHu,
   checkDiscardHu,
-  createRoom,
   discardTile,
   drawTile,
-  joinRoom,
-  startRoomRound,
   startRound,
-  takeSeat,
-  toggleReady,
-  toClientVisibleRoomState,
   type PlayerId,
   type PlayerState,
   type RoomEvent,
@@ -21,6 +15,18 @@ import {
   type Tile,
   type VisiblePlayerState,
 } from "./game/index.ts";
+import {
+  createLocalRoomSession,
+  createLocalRoomTransport,
+  getLocalRoomClientView,
+  getLocalRoomSessionToken,
+  joinLocalRoomSession,
+  replaceLocalRoomTransportRoom,
+  startLocalRoomRound,
+  takeLocalRoomSeat,
+  toggleLocalRoomReady,
+  type LocalRoomTransportResult,
+} from "./localRoomTransport.ts";
 
 const seed = "portfolio-demo-001";
 const roomId = "LSMJ-001";
@@ -54,12 +60,8 @@ function createDemoRound(): RoundState {
   };
 }
 
-function createDemoRoom(): RoomState {
-  return createRoom({ id: roomId, seed });
-}
-
 export function App() {
-  const [room, setRoom] = useState(createDemoRoom);
+  const [transport, setTransport] = useState(() => createLocalRoomTransport({ roomId, seed }));
   const [tableMode, setTableMode] = useState<TableMode>("room");
   const [viewingPlayerId, setViewingPlayerId] = useState(localPlayerId);
   const [standaloneRound, setStandaloneRound] = useState(createDemoRound);
@@ -71,9 +73,10 @@ export function App() {
   ]);
   const autoDrawKeys = useRef(new Set<string>());
 
+  const room = transport.room;
   const tableStarted = tableMode === "standalone" || room.round !== null;
   const round = tableMode === "room" && room.round !== null ? room.round : standaloneRound;
-  const visibleRoom = tableMode === "room" ? toClientVisibleRoomState(room, viewingPlayerId) : null;
+  const visibleRoom = tableMode === "room" ? getLocalRoomClientView(transport, viewingPlayerId) : null;
   const visibleRound = visibleRoom?.round ?? null;
   const visiblePlayers =
     tableMode === "room" && visibleRound !== null
@@ -136,90 +139,83 @@ export function App() {
 
   function commitRound(nextRound: RoundState) {
     if (tableMode === "room" && room.round !== null) {
-      setRoom((value) => ({ ...value, round: nextRound }));
+      setTransport((value) => replaceLocalRoomTransportRoom(value, { ...value.room, round: nextRound }));
       return;
     }
 
     setStandaloneRound(nextRound);
   }
 
+  function applyTransportResult(result: LocalRoomTransportResult) {
+    setTransport(result.state);
+    result.rejectedMessages.forEach((message) => {
+      addGameLog(`本地模拟传输拒绝：${roomReasonText(message.payload.code)}。`);
+    });
+  }
+
   function handleJoinLocalPlayer() {
-    const result = joinRoom(room, demoPlayers[0]);
-
-    if (!result.ok) {
-      addGameLog(`房间操作失败：${roomReasonText(result.reason)}。`);
-      return;
-    }
-
-    setRoom(result.room);
+    applyTransportResult(createLocalRoomSession(transport, { displayName: demoPlayers[0].displayName }));
   }
 
   function handleTakeLocalSeat() {
-    const result = takeSeat(room, localPlayerId, localSeatId);
-
-    if (!result.ok) {
-      addGameLog(`房间操作失败：${roomReasonText(result.reason)}。`);
-      return;
-    }
-
-    setRoom(result.room);
+    applyTransportResult(takeLocalRoomSeat(transport, localPlayerId, localSeatId));
   }
 
   function handleFillDemoPlayers() {
-    const result = demoPlayers.reduce((nextRoom, player, index) => {
-      let memberRoom = nextRoom;
+    const rejectedMessages: LocalRoomTransportResult["rejectedMessages"] = [];
+    let nextTransport = transport;
 
-      if (!memberRoom.members.some((member) => member.playerId === player.playerId)) {
-        const joinResult = joinRoom(memberRoom, player);
-        memberRoom = joinResult.ok ? joinResult.room : memberRoom;
+    demoPlayers.forEach((player, index) => {
+      if (getLocalRoomSessionToken(nextTransport, player.playerId) === undefined) {
+        const joinResult =
+          index === 0
+            ? createLocalRoomSession(nextTransport, { displayName: player.displayName })
+            : joinLocalRoomSession(nextTransport, { displayName: player.displayName });
+        nextTransport = joinResult.state;
+        rejectedMessages.push(...joinResult.rejectedMessages);
       }
 
-      if (memberRoom.seats.some((seat) => seat.playerId === player.playerId)) {
-        return memberRoom;
+      if (!nextTransport.room.seats.some((seat) => seat.playerId === player.playerId)) {
+        const seatResult = takeLocalRoomSeat(nextTransport, player.playerId, index as PlayerId);
+        nextTransport = seatResult.state;
+        rejectedMessages.push(...seatResult.rejectedMessages);
       }
+    });
 
-      const seatResult = takeSeat(memberRoom, player.playerId, index as PlayerId);
-      return seatResult.ok ? seatResult.room : memberRoom;
-    }, room);
-
-    setRoom(result);
+    applyTransportResult({ state: nextTransport, messages: [], rejectedMessages });
   }
 
   function handleToggleReady(playerId: string) {
-    const result = toggleReady(room, playerId);
-
-    if (!result.ok) {
-      addGameLog(`房间操作失败：${roomReasonText(result.reason)}。`);
-      return;
-    }
-
-    setRoom(result.room);
+    applyTransportResult(toggleLocalRoomReady(transport, playerId));
   }
 
   function handleReadyAll() {
-    const result = demoPlayers.reduce((nextRoom, player) => {
-      const seat = nextRoom.seats.find((value) => value.playerId === player.playerId);
+    const rejectedMessages: LocalRoomTransportResult["rejectedMessages"] = [];
+    let nextTransport = transport;
 
+    demoPlayers.forEach((player) => {
+      const seat = nextTransport.room.seats.find((value) => value.playerId === player.playerId);
       if (seat === undefined || seat.ready) {
-        return nextRoom;
+        return;
       }
 
-      const readyResult = toggleReady(nextRoom, player.playerId);
-      return readyResult.ok ? readyResult.room : nextRoom;
-    }, room);
+      const readyResult = toggleLocalRoomReady(nextTransport, player.playerId);
+      nextTransport = readyResult.state;
+      rejectedMessages.push(...readyResult.rejectedMessages);
+    });
 
-    setRoom(result);
+    applyTransportResult({ state: nextTransport, messages: [], rejectedMessages });
   }
 
   function handleStartRoomRound() {
-    const result = startRoomRound(room, localSeatId);
+    const result = startLocalRoomRound(transport, localPlayerId, localSeatId);
 
-    if (!result.ok) {
-      addGameLog(`房间开局失败：${roomReasonText(result.reason)}。`);
+    if (result.rejectedMessages.length > 0) {
+      applyTransportResult(result);
       return;
     }
 
-    setRoom(result.room);
+    setTransport(result.state);
     setTableMode("room");
     autoDrawKeys.current.clear();
     addGameLog("房间已开局。下面进入牌桌体验，仍然是本地模拟联机，还没有真实网络。");
@@ -238,7 +234,7 @@ export function App() {
     setViewingPlayerId(localPlayerId);
 
     if (tableMode === "room") {
-      setRoom(createDemoRoom());
+      setTransport(createLocalRoomTransport({ roomId, seed }));
       setTableMode("room");
       setGameLogs((items) => [
         {
@@ -355,9 +351,9 @@ export function App() {
 
         <div className="mode-banner">
           <div>
-            <strong>本地模拟联机</strong>
+            <strong>本地模拟传输</strong>
             <span>
-              当前客户端视角只影响可见信息；牌局动作仍由玩家 1 的本地模拟执行，还没有真实网络连接。
+              房间流程已通过本地 mock transport 和 roomSocketAdapter 驱动；牌局动作仍由玩家 1 本地模拟执行，还没有真实网络连接。
             </span>
           </div>
           {tableMode === "room" && (
@@ -536,7 +532,7 @@ function RoomPanel({
       <div className="room-header">
         <div>
           <h2>房间模式</h2>
-          <p>房间号 {room.id} · 本地 reducer 模拟 · 暂无真实网络连接</p>
+          <p>房间号 {room.id} · 本地 mock transport · roomSocketAdapter · 暂无真实网络连接</p>
         </div>
         <div className="room-summary">
           <Stat label="成员" value={room.members.length.toString()} />
@@ -905,6 +901,9 @@ function chineseNumber(rank: Tile["rank"]): string {
 
 function roomReasonText(reason: string): string {
   const reasons: Record<string, string> = {
+    roomNotFound: "房间不存在",
+    roomAlreadyExists: "房间已经创建",
+    invalidSession: "本地会话无效",
     roomAlreadyStarted: "房间已经开局",
     playerAlreadyJoined: "玩家已经加入",
     playerNotInRoom: "玩家还没有加入房间",
