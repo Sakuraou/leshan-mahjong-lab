@@ -21,6 +21,7 @@ export type WebSocketRoomTransportState = {
 export type WebSocketRoomTransport = {
   createRoomSession: (input: { displayName: string }) => Promise<WebSocketRoomTransportActionResult>;
   joinRoomSession: (input: { displayName: string }) => Promise<WebSocketRoomTransportActionResult>;
+  resumeSession: (input: { sessionToken: string; lastSeenEventId?: number }) => Promise<WebSocketRoomTransportActionResult>;
   takeSeat: (playerId: string, seatId: PlayerId) => Promise<WebSocketRoomTransportActionResult>;
   toggleReady: (playerId: string) => Promise<WebSocketRoomTransportActionResult>;
   startRound: (playerId: string, dealer?: PlayerId) => Promise<WebSocketRoomTransportActionResult>;
@@ -182,6 +183,15 @@ export async function createWebSocketRoomTransport(
         roomId: state.roomId,
         type: "joinRoom",
         payload: { displayName: input.displayName },
+      }),
+    resumeSession: (input) =>
+      sendRoomMessage({
+        protocolVersion: 1,
+        clientMessageId: nextClientMessageId(state),
+        roomId: state.roomId,
+        sessionToken: input.sessionToken,
+        type: "resumeSession",
+        payload: { lastSeenEventId: input.lastSeenEventId },
       }),
     takeSeat: (playerId, seatId) => sendSessionMessage(playerId, { type: "takeSeat", payload: { seatId } }),
     toggleReady: (playerId) => sendSessionMessage(playerId, { type: "toggleReady", payload: {} }),

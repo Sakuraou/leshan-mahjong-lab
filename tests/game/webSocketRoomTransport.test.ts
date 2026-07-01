@@ -73,6 +73,56 @@ test("websocket room transport tracks session snapshots over a real dev server",
   }
 });
 
+test("websocket room transport resumes a stored session over a real dev server", async () => {
+  const server = await createRoomSocketDevServer({ port: 0 });
+  const roomId = "transport-resume-ws-room";
+  const transports: WebSocketRoomTransport[] = [];
+
+  try {
+    const host = await createWebSocketRoomTransport({
+      url: server.url,
+      roomId,
+      seed: "transport-resume-ws-seed",
+      webSocketFactory: createNodeWebSocket,
+    });
+    transports.push(host);
+
+    assert.equal((await host.createRoomSession({ displayName: "Player One" })).ok, true);
+    const sessionToken = host.getSessionToken("player-1");
+    assert.equal(sessionToken, "session-1");
+
+    const initialLastEventId = host.getState().messages.find((message) => message.type === "roomSnapshot")?.payload.lastEventId;
+    assert.equal(initialLastEventId, 2);
+
+    assert.equal((await host.takeSeat("player-1", 0)).ok, true);
+    assert.equal((await host.toggleReady("player-1")).ok, true);
+
+    const resumed = await createWebSocketRoomTransport({
+      url: server.url,
+      roomId,
+      seed: "transport-resume-ws-seed",
+      webSocketFactory: createNodeWebSocket,
+    });
+    transports.push(resumed);
+
+    const resumeResult = await resumed.resumeSession({ sessionToken, lastSeenEventId: initialLastEventId });
+    assert.equal(resumeResult.ok, true);
+
+    const resumeSnapshot = resumed.getState().messages.findLast((message) => message.type === "roomSnapshot");
+    assert.equal(resumeSnapshot?.payload.playerId, "player-1");
+    assert.equal(resumeSnapshot?.payload.lastEventId, 4);
+    assert.deepEqual(
+      resumeSnapshot?.payload.events.map((event) => event.type),
+      ["seatTaken", "readyChanged"],
+    );
+    assert.equal(resumed.getSessionToken("player-1"), "session-1");
+    assert.equal(resumed.getClientView("player-1")?.seats[0].ready, true);
+  } finally {
+    transports.forEach((transport) => transport.close());
+    await server.close();
+  }
+});
+
 async function waitForRoundSnapshots(transports: WebSocketRoomTransport[]): Promise<void> {
   const deadline = Date.now() + 3_000;
 

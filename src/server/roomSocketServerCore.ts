@@ -142,11 +142,17 @@ function bindRequestingConnection(
 
   return {
     ...state,
-    connections: state.connections.map((connection) =>
-      connection.connectionId === connectionId
-        ? { ...connection, roomId: accepted.roomId, sessionToken: accepted.recipientSessionToken }
-        : connection,
-    ),
+    connections: state.connections.map((connection) => {
+      if (connection.connectionId === connectionId) {
+        return { ...connection, roomId: accepted.roomId, sessionToken: accepted.recipientSessionToken };
+      }
+
+      if (connection.roomId === accepted.roomId && connection.sessionToken === accepted.recipientSessionToken) {
+        return { connectionId: connection.connectionId };
+      }
+
+      return connection;
+    }),
   };
 }
 

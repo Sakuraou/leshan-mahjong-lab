@@ -94,6 +94,40 @@ test("does not deliver messages addressed to an unknown session", () => {
   assert.equal(actionRejected(result.undelivered[0].message).payload.code, "invalidSession");
 });
 
+test("rebinds a resumed session to the newest connection", () => {
+  let server = createConnectedServer(["conn-host", "conn-resumed"]);
+  server = handleRoomSocketRawMessage(
+    server,
+    "conn-host",
+    JSON.stringify(createRoomMessage("m-create", "server-room-resume-route", "Host")),
+  ).state;
+
+  const result = handleRoomSocketRawMessage(
+    server,
+    "conn-resumed",
+    JSON.stringify({
+      protocolVersion: 1,
+      clientMessageId: "m-resume",
+      roomId: "server-room-resume-route",
+      sessionToken: "session-1",
+      type: "resumeSession",
+      payload: { lastSeenEventId: 0 },
+    } satisfies RoomSocketClientMessage),
+  );
+
+  assert.equal(result.errors.length, 0);
+  assert.equal(result.undelivered.length, 0);
+  assert.deepEqual(
+    result.outgoing.map((message) => [message.connectionId, message.message.type]),
+    [
+      ["conn-resumed", "actionAccepted"],
+      ["conn-resumed", "roomSnapshot"],
+    ],
+  );
+  assert.equal(sessionFor(result.state, "conn-host"), undefined);
+  assert.equal(sessionFor(result.state, "conn-resumed"), "session-1");
+});
+
 function createConnectedServer(connectionIds: string[]): RoomSocketServerCoreState {
   return connectionIds.reduce(
     (server, connectionId) => registerRoomSocketConnection(server, connectionId),

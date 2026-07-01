@@ -41,7 +41,8 @@ const webSocketExperimentUrl = "ws://127.0.0.1:8787";
 const localPlayerId = "player-1";
 const localSeatId: PlayerId = 0;
 const suitOrder: Suit[] = ["bamboos", "dots", "characters"];
-const webSocketStepOrder: WebSocketStepKey[] = ["connection", "create", "join", "seat", "ready", "start"];
+const webSocketStepOrder: WebSocketStepKey[] = ["connection", "create", "join", "seat", "ready", "start", "resume"];
+const webSocketRecoveryStoragePrefix = "leshan-mahjong-lab.websocketRecovery.";
 const demoPlayers = [
   { playerId: "player-1", displayName: "我" },
   { playerId: "player-2", displayName: "演示玩家 2" },
@@ -54,7 +55,7 @@ type LogEntry = {
   text: string;
 };
 
-type WebSocketStepKey = "connection" | "create" | "join" | "seat" | "ready" | "start";
+type WebSocketStepKey = "connection" | "create" | "join" | "seat" | "ready" | "start" | "resume";
 type WebSocketStepStatus = "idle" | "running" | "success" | "error";
 type WebSocketStepState = {
   label: string;
@@ -62,6 +63,14 @@ type WebSocketStepState = {
   message: string;
 };
 type WebSocketStepStates = Record<WebSocketStepKey, WebSocketStepState>;
+type WebSocketRecoveryRecord = {
+  playerId: string;
+  roomId: string;
+  seed: string;
+  url: string;
+  sessionToken: string;
+  lastEventId: number;
+};
 
 type TableMode = "room" | "standalone";
 type TurnPhase = "chooseMissingSuit" | "draw" | "discard";
@@ -594,9 +603,13 @@ function WebSocketExperimentPanel() {
   }
 
   function syncTransportState() {
-    setHostState(hostTransport.current?.getState() ?? null);
-    setGuestState(guestTransport.current?.getState() ?? null);
+    const nextHostState = hostTransport.current?.getState() ?? null;
+    const nextGuestState = guestTransport.current?.getState() ?? null;
+    setHostState(nextHostState);
+    setGuestState(nextGuestState);
     setHelperStates(helperTransports.current.map((transport) => transport.getState()));
+    saveWebSocketRecoveryRecord(nextHostState, "player-1");
+    saveWebSocketRecoveryRecord(nextGuestState, "player-2");
   }
 
   function appendWebSocketLog(text: string) {
@@ -901,6 +914,71 @@ function WebSocketExperimentPanel() {
     syncTransportState();
   }
 
+  async function handleSimulateRefreshAndResume() {
+    const hostRecord = loadWebSocketRecoveryRecord("player-1");
+    const guestRecord = loadWebSocketRecoveryRecord("player-2");
+
+    if (hostRecord === null || guestRecord === null) {
+      setWebSocketStep("resume", "error", "恢复失败：缺少 host/guest 本地 session，请先完成创建和加入。");
+      appendWebSocketLog("恢复失败：localStorage 里还没有 host/guest 的 sessionToken 和 lastEventId。");
+      return;
+    }
+
+    setWebSocketStep("resume", "running", "正在模拟页面刷新，并用本地 session 恢复 host/guest。");
+    appendWebSocketLog("模拟刷新：关闭 host/guest 连接，保留本地 sessionToken。");
+
+    hostTransport.current?.close();
+    guestTransport.current?.close();
+    hostTransport.current = null;
+    guestTransport.current = null;
+    setHostState(null);
+    setGuestState(null);
+
+    try {
+      setServerUrl(hostRecord.url);
+      setExperimentRoomId(hostRecord.roomId);
+      const [nextHost, nextGuest] = await Promise.all([
+        createWebSocketRoomTransport({ url: hostRecord.url, roomId: hostRecord.roomId, seed: hostRecord.seed }),
+        createWebSocketRoomTransport({ url: guestRecord.url, roomId: guestRecord.roomId, seed: guestRecord.seed }),
+      ]);
+
+      hostTransport.current = nextHost;
+      guestTransport.current = nextGuest;
+      setConnectionStatus("connected");
+      setWebSocketStep("connection", "success", "刷新后已重新建立 host/guest 连接。");
+
+      const hostResult = await nextHost.resumeSession({
+        sessionToken: hostRecord.sessionToken,
+        lastSeenEventId: hostRecord.lastEventId,
+      });
+      const guestResult = await nextGuest.resumeSession({
+        sessionToken: guestRecord.sessionToken,
+        lastSeenEventId: guestRecord.lastEventId,
+      });
+
+      if (!hostResult.ok || !guestResult.ok) {
+        const reason = !hostResult.ok ? webSocketActionErrorText(hostResult) : webSocketActionErrorText(guestResult);
+        setWebSocketStep("resume", "error", `恢复失败：${reason}。`);
+        appendWebSocketLog(`resumeSession：恢复失败，${reason}。`);
+        syncTransportState();
+        return;
+      }
+
+      await Promise.all([
+        waitForWebSocketView(nextHost, "player-1", (view) => view.localSeatId !== undefined),
+        waitForWebSocketView(nextGuest, "player-2", (view) => view.localSeatId !== undefined),
+      ]);
+      const missedEvents = countWebSocketResumeEvents(nextHost.getState(), "player-1") + countWebSocketResumeEvents(nextGuest.getState(), "player-2");
+      setWebSocketStep("resume", "success", `恢复成功：host/guest 已拉回 redacted snapshot，补回 ${missedEvents} 条 missed events。`);
+      appendWebSocketLog(`resumeSession：恢复成功，补回 ${missedEvents} 条 missed events。`);
+      syncTransportState();
+    } catch {
+      setConnectionStatus("error");
+      setWebSocketStep("resume", "error", "恢复失败：请确认 dev server 仍在运行，且房间没有被服务端重置。");
+      appendWebSocketLog("恢复失败：WebSocket 重连或 resumeSession 没有完成。");
+    }
+  }
+
   function handleResetWebSocketExperiment() {
     hostTransport.current?.close();
     guestTransport.current?.close();
@@ -914,6 +992,7 @@ function WebSocketExperimentPanel() {
     setGuestState(null);
     setHelperStates([]);
     setStepStates(createInitialWebSocketStepStates());
+    clearWebSocketRecoveryRecords();
     setLogs([{ id: 1, text: "真实 WebSocket 实验区已重置；当前牌桌仍使用本地 mock transport。" }]);
   }
 
@@ -964,6 +1043,9 @@ function WebSocketExperimentPanel() {
         </button>
         <button type="button" onClick={handleRunWebSocketDemo}>
           一键完整流程
+        </button>
+        <button type="button" onClick={handleSimulateRefreshAndResume}>
+          模拟刷新后恢复
         </button>
         <button type="button" onClick={handleResetWebSocketExperiment}>
           重置实验
@@ -1107,7 +1189,104 @@ function createInitialWebSocketStepStates(): WebSocketStepStates {
       status: "idle",
       message: "四人准备后由 Host 发起开局。",
     },
+    resume: {
+      label: "恢复",
+      status: "idle",
+      message: "保存 session 后可以模拟刷新恢复。",
+    },
   };
+}
+
+function saveWebSocketRecoveryRecord(state: WebSocketRoomTransportState | null, playerId: string) {
+  if (state === null || !canUseLocalStorage()) {
+    return;
+  }
+
+  const sessionToken = state.sessionTokenByPlayerId[playerId];
+  const snapshot = state.snapshotByPlayerId[playerId];
+
+  if (sessionToken === undefined || snapshot === undefined) {
+    return;
+  }
+
+  const record: WebSocketRecoveryRecord = {
+    playerId,
+    roomId: state.roomId,
+    seed: state.seed,
+    url: state.url,
+    sessionToken,
+    lastEventId: snapshot.eventLog.length,
+  };
+  const snapshotMessage = state.messages.findLast(
+    (message) => message.type === "roomSnapshot" && message.payload.playerId === playerId,
+  );
+
+  if (snapshotMessage?.type === "roomSnapshot") {
+    record.lastEventId = snapshotMessage.payload.lastEventId;
+  }
+
+  window.localStorage.setItem(webSocketRecoveryStorageKey(playerId), JSON.stringify(record));
+}
+
+function loadWebSocketRecoveryRecord(playerId: string): WebSocketRecoveryRecord | null {
+  if (!canUseLocalStorage()) {
+    return null;
+  }
+
+  const raw = window.localStorage.getItem(webSocketRecoveryStorageKey(playerId));
+
+  if (raw === null) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as Partial<WebSocketRecoveryRecord>;
+
+    if (
+      parsed.playerId !== playerId ||
+      typeof parsed.roomId !== "string" ||
+      typeof parsed.seed !== "string" ||
+      typeof parsed.url !== "string" ||
+      typeof parsed.sessionToken !== "string" ||
+      typeof parsed.lastEventId !== "number"
+    ) {
+      return null;
+    }
+
+    return {
+      playerId: parsed.playerId,
+      roomId: parsed.roomId,
+      seed: parsed.seed,
+      url: parsed.url,
+      sessionToken: parsed.sessionToken,
+      lastEventId: parsed.lastEventId,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function clearWebSocketRecoveryRecords() {
+  if (!canUseLocalStorage()) {
+    return;
+  }
+
+  window.localStorage.removeItem(webSocketRecoveryStorageKey("player-1"));
+  window.localStorage.removeItem(webSocketRecoveryStorageKey("player-2"));
+}
+
+function webSocketRecoveryStorageKey(playerId: string): string {
+  return `${webSocketRecoveryStoragePrefix}${playerId}`;
+}
+
+function canUseLocalStorage(): boolean {
+  return typeof window !== "undefined" && window.localStorage !== undefined;
+}
+
+function countWebSocketResumeEvents(state: WebSocketRoomTransportState, playerId: string): number {
+  const snapshot = state.messages.findLast((message) => message.type === "roomSnapshot" && message.payload.playerId === playerId);
+
+  return snapshot?.type === "roomSnapshot" ? snapshot.payload.events.length : 0;
 }
 
 function createWebSocketExperimentRoomId(): string {
