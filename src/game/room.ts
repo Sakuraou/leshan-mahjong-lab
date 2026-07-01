@@ -1,4 +1,4 @@
-import { startRound } from "./round.ts";
+import { drawTile as drawRoundTile, startRound, type DrawTileResult } from "./round.ts";
 import type { PlayerId, RoundState, Suit, Tile } from "./types.ts";
 
 const seatIds: PlayerId[] = [0, 1, 2, 3];
@@ -25,7 +25,8 @@ export type RoomEvent =
   | { type: "seatTaken"; seatId: PlayerId; playerId: string }
   | { type: "readyChanged"; seatId: PlayerId; playerId: string; ready: boolean }
   | { type: "roundStarted"; seed: string; dealer: PlayerId }
-  | { type: "missingSuitChosen"; seatId: PlayerId; playerId: string; suit: Suit };
+  | { type: "missingSuitChosen"; seatId: PlayerId; playerId: string; suit: Suit }
+  | { type: "tileDrawn"; seatId: PlayerId; playerId: string };
 
 export type RoomState = {
   id: string;
@@ -92,6 +93,19 @@ export type StartRoomRoundResult =
 export type ChooseMissingSuitResult =
   | { ok: true; room: RoomState }
   | { ok: false; reason: "roundNotStarted" | "playerNotSeated" | "missingSuitAlreadyChosen" };
+
+export type DrawRoomTileResult =
+  | { ok: true; room: RoomState }
+  | {
+      ok: false;
+      reason:
+        | "roundNotStarted"
+        | "playerNotSeated"
+        | "missingSuitNotSet"
+        | "notCurrentPlayer"
+        | "notDrawPhase"
+        | DrawTileResult["reason"];
+    };
 
 export function createRoom(input: CreateRoomInput): RoomState {
   return {
@@ -247,6 +261,47 @@ export function chooseMissingSuit(room: RoomState, playerId: string, suit: Suit)
       ...room,
       round: nextRound,
       eventLog: [...room.eventLog, { type: "missingSuitChosen", seatId: seat.seatId, playerId, suit }],
+    },
+  };
+}
+
+export function drawRoomTile(room: RoomState, playerId: string): DrawRoomTileResult {
+  if (room.round === null) {
+    return { ok: false, reason: "roundNotStarted" };
+  }
+
+  const seat = room.seats.find((value) => value.playerId === playerId);
+
+  if (seat === undefined) {
+    return { ok: false, reason: "playerNotSeated" };
+  }
+
+  if (room.round.players.some((player) => player.missingSuit === null)) {
+    return { ok: false, reason: "missingSuitNotSet" };
+  }
+
+  if (room.round.currentPlayer !== seat.seatId) {
+    return { ok: false, reason: "notCurrentPlayer" };
+  }
+
+  const player = room.round.players[seat.seatId];
+
+  if (player.hand.length % 3 !== 1) {
+    return { ok: false, reason: "notDrawPhase" };
+  }
+
+  const result = drawRoundTile(room.round);
+
+  if (!result.ok) {
+    return { ok: false, reason: result.reason };
+  }
+
+  return {
+    ok: true,
+    room: {
+      ...room,
+      round: result.round,
+      eventLog: [...room.eventLog, { type: "tileDrawn", seatId: seat.seatId, playerId }],
     },
   };
 }

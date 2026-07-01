@@ -57,6 +57,26 @@ test("websocket room transport tracks session snapshots over a real dev server",
     assert.equal(chosen.ok, true);
     await waitForMissingSuitSnapshots(transports, 1, "characters");
 
+    for (const [index, suit] of ["bamboos", "dots", "characters", "bamboos"].entries()) {
+      const playerId = `player-${index + 1}`;
+      const view = transports[index].getClientView(playerId);
+
+      if (view?.round?.players[index].missingSuit !== null) {
+        continue;
+      }
+
+      assert.equal((await transports[index].chooseMissingSuit(playerId, suit as "bamboos" | "dots" | "characters")).ok, true);
+    }
+
+    await waitForMissingSuitSnapshots(transports, 0, "bamboos");
+    await waitForMissingSuitSnapshots(transports, 2, "characters");
+    await waitForMissingSuitSnapshots(transports, 3, "bamboos");
+
+    const dealerDraw = await transports[0].drawTile("player-1");
+    assert.equal(dealerDraw.ok, false);
+    assert.equal(dealerDraw.reason, "actionRejected");
+    assert.equal(dealerDraw.rejectedMessage?.payload.code, "notDrawPhase");
+
     transports.forEach((transport, index) => {
       const view = transport.getClientView(`player-${index + 1}`);
       assert.ok(view?.round);

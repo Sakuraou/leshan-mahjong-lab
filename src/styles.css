@@ -514,6 +514,22 @@ button {
   cursor: not-allowed;
 }
 
+.preview-draw-button {
+  width: fit-content;
+  min-width: 104px;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: #247a48;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.preview-draw-button:disabled {
+  background: #a7b3bc;
+  cursor: not-allowed;
+}
+
 .websocket-panel {
   display: grid;
   gap: 12px;

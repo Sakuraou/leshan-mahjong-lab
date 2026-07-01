@@ -243,6 +243,10 @@ function isRoomSocketClientMessage(value: unknown): value is RoomSocketClientMes
     return isSessionRoomMessage(value) && isRecord(value.payload) && isSuit(value.payload.suit);
   }
 
+  if (value.type === "drawTile") {
+    return isSessionRoomMessage(value) && isRecord(value.payload);
+  }
+
   if (value.type === "resumeSession") {
     return (
       isSessionRoomMessage(value) &&

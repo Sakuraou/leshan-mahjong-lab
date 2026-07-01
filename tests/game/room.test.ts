@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   createRoom,
   chooseMissingSuit,
+  drawRoomTile,
   joinRoom,
   startRoomRound,
   takeSeat,
@@ -208,6 +209,58 @@ test("lets a seated player choose their missing suit after the round starts", ()
   });
 });
 
+test("draws a tile for the current seated player after dingque is complete", () => {
+  const room = readyRoomForPlayerTwoDraw();
+  const beforeHandCount = room.round?.players[1].hand.length;
+  const beforeWallCount = room.round?.wall.length;
+  const result = drawRoomTile(room, "p2");
+
+  assert.equal(result.ok, true);
+
+  if (!result.ok) {
+    return;
+  }
+
+  assert.equal(result.room.round?.players[1].hand.length, (beforeHandCount ?? 0) + 1);
+  assert.equal(result.room.round?.wall.length, (beforeWallCount ?? 0) - 1);
+  assert.deepEqual(result.room.eventLog.at(-1), { type: "tileDrawn", seatId: 1, playerId: "p2" });
+
+  const visibleToP1 = toClientVisibleRoomState(result.room, "p1");
+  const visibleToP2 = toClientVisibleRoomState(result.room, "p2");
+
+  assert.equal(visibleToP1.round?.players[1].hand, null);
+  assert.equal(visibleToP1.round?.players[1].handCount, 14);
+  assert.equal(visibleToP2.round?.players[1].hand?.length, 14);
+});
+
+test("rejects draw before start, before dingque, out of turn, and outside draw phase", () => {
+  const waitingRoom = seatPlayers(createRoom({ id: "room-draw-waiting", seed: "draw-waiting-seed" }));
+
+  assert.deepEqual(drawRoomTile(waitingRoom, "p1"), {
+    ok: false,
+    reason: "roundNotStarted",
+  });
+
+  const started = startReadyRoom();
+
+  assert.deepEqual(drawRoomTile(started, "p1"), {
+    ok: false,
+    reason: "missingSuitNotSet",
+  });
+
+  const ready = readyRoomForPlayerTwoDraw();
+
+  assert.deepEqual(drawRoomTile(ready, "p3"), {
+    ok: false,
+    reason: "notCurrentPlayer",
+  });
+
+  assert.deepEqual(drawRoomTile({ ...ready, round: { ...ready.round!, currentPlayer: 0 } }, "p1"), {
+    ok: false,
+    reason: "notDrawPhase",
+  });
+});
+
 test("rejects choosing missing suit before start, without a seat, or twice", () => {
   const waitingRoom = seatPlayers(createRoom({ id: "room-missing-waiting", seed: "missing-waiting-seed" }));
 
@@ -270,6 +323,27 @@ function startReadyRoom(): RoomState {
   }
 
   return result.room;
+}
+
+function readyRoomForPlayerTwoDraw(): RoomState {
+  const room = ["p1", "p2", "p3", "p4"].reduce((nextRoom, playerId, index) => {
+    const suits = ["bamboos", "dots", "characters", "bamboos"] as const;
+    const result = chooseMissingSuit(nextRoom, playerId, suits[index]);
+
+    if (!result.ok) {
+      throw new Error(result.reason);
+    }
+
+    return result.room;
+  }, startReadyRoom());
+
+  return {
+    ...room,
+    round: {
+      ...room.round!,
+      currentPlayer: 1,
+    },
+  };
 }
 
 function seatPlayers(room: RoomState): RoomState {

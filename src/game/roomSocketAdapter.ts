@@ -71,6 +71,14 @@ export type RoomSocketClientMessage =
       clientMessageId: string;
       roomId: string;
       sessionToken: string;
+      type: "drawTile";
+      payload: Record<string, never>;
+    }
+  | {
+      protocolVersion: 1;
+      clientMessageId: string;
+      roomId: string;
+      sessionToken: string;
       type: "resumeSession";
       payload: { lastSeenEventId?: number };
     };
@@ -227,7 +235,10 @@ function handleResumeSession(
 function handleRoomServiceAction(
   adapter: RoomSocketAdapterState,
   service: RoomServiceState,
-  message: Extract<RoomSocketClientMessage, { type: "takeSeat" | "toggleReady" | "startRound" | "chooseMissingSuit" }>,
+  message: Extract<
+    RoomSocketClientMessage,
+    { type: "takeSeat" | "toggleReady" | "startRound" | "chooseMissingSuit" | "drawTile" }
+  >,
   action: RoomAction,
 ): RoomSocketAdapterResult {
   const result = handleRoomAction(service, message.sessionToken, action);
@@ -251,7 +262,10 @@ function handleRoomServiceAction(
 }
 
 function clientMessageToRoomAction(
-  message: Extract<RoomSocketClientMessage, { type: "takeSeat" | "toggleReady" | "startRound" | "chooseMissingSuit" }>,
+  message: Extract<
+    RoomSocketClientMessage,
+    { type: "takeSeat" | "toggleReady" | "startRound" | "chooseMissingSuit" | "drawTile" }
+  >,
 ): RoomAction {
   if (message.type === "takeSeat") {
     return { type: "takeSeat", seatId: message.payload.seatId };
@@ -263,6 +277,10 @@ function clientMessageToRoomAction(
 
   if (message.type === "startRound") {
     return { type: "startRound", dealer: message.payload.dealer };
+  }
+
+  if (message.type === "drawTile") {
+    return { type: "drawTile" };
   }
 
   return { type: "chooseMissingSuit", suit: message.payload.suit };
@@ -350,6 +368,11 @@ function errorMessage(code: RoomSocketErrorCode): string {
     notAllPlayersReady: "Not all players are ready.",
     roundNotStarted: "Round has not started.",
     missingSuitAlreadyChosen: "Missing suit has already been chosen.",
+    missingSuitNotSet: "Missing suit has not been chosen.",
+    notCurrentPlayer: "It is not this player's turn.",
+    notDrawPhase: "The current player is not in a draw phase.",
+    wallEmpty: "Wall is empty.",
+    playerAlreadyWon: "Player has already won.",
   };
   return messages[code];
 }

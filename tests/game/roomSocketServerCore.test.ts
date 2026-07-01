@@ -124,6 +124,35 @@ test("accepts chooseMissingSuit protocol messages and routes snapshots", () => {
   assert.equal(actionRejected(result.outgoing[0].message).payload.code, "roundNotStarted");
 });
 
+test("accepts drawTile protocol messages and routes adapter rejections", () => {
+  let server = createConnectedServer(["conn-host"]);
+  server = handleRoomSocketRawMessage(
+    server,
+    "conn-host",
+    JSON.stringify(createRoomMessage("m-create", "server-room-draw", "Host")),
+  ).state;
+
+  const result = handleRoomSocketRawMessage(
+    server,
+    "conn-host",
+    JSON.stringify({
+      protocolVersion: 1,
+      clientMessageId: "m-draw",
+      roomId: "server-room-draw",
+      sessionToken: "session-1",
+      type: "drawTile",
+      payload: {},
+    } satisfies RoomSocketClientMessage),
+  );
+
+  assert.equal(result.errors.length, 0);
+  assert.deepEqual(
+    result.outgoing.map((message) => [message.connectionId, message.message.type]),
+    [["conn-host", "actionRejected"]],
+  );
+  assert.equal(actionRejected(result.outgoing[0].message).payload.code, "roundNotStarted");
+});
+
 test("rebinds a resumed session to the newest connection", () => {
   let server = createConnectedServer(["conn-host", "conn-resumed"]);
   server = handleRoomSocketRawMessage(

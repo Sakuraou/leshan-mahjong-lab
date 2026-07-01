@@ -41,7 +41,17 @@ const webSocketExperimentUrl = "ws://127.0.0.1:8787";
 const localPlayerId = "player-1";
 const localSeatId: PlayerId = 0;
 const suitOrder: Suit[] = ["bamboos", "dots", "characters"];
-const webSocketStepOrder: WebSocketStepKey[] = ["connection", "create", "join", "seat", "ready", "start", "dingque", "resume"];
+const webSocketStepOrder: WebSocketStepKey[] = [
+  "connection",
+  "create",
+  "join",
+  "seat",
+  "ready",
+  "start",
+  "dingque",
+  "draw",
+  "resume",
+];
 const webSocketRecoveryStoragePrefix = "leshan-mahjong-lab.websocketRecovery.";
 const demoPlayers = [
   { playerId: "player-1", displayName: "我" },
@@ -55,7 +65,16 @@ type LogEntry = {
   text: string;
 };
 
-type WebSocketStepKey = "connection" | "create" | "join" | "seat" | "ready" | "start" | "dingque" | "resume";
+type WebSocketStepKey =
+  | "connection"
+  | "create"
+  | "join"
+  | "seat"
+  | "ready"
+  | "start"
+  | "dingque"
+  | "draw"
+  | "resume";
 type WebSocketStepStatus = "idle" | "running" | "success" | "error";
 type WebSocketStepState = {
   label: string;
@@ -85,6 +104,7 @@ type WebSocketPreviewClient = {
 };
 type WebSocketPreviewActions = {
   chooseMissingSuit: (playerId: string, suit: Suit) => Promise<void>;
+  drawTile: (playerId: string) => Promise<void>;
 };
 
 type TableMode = "room" | "standalone" | "websocketPreview";
@@ -464,6 +484,7 @@ export function App() {
             preview={webSocketPreview}
             onExit={() => setTableMode("room")}
             onChooseMissingSuit={(playerId, suit) => webSocketPreviewActions.current?.chooseMissingSuit(playerId, suit)}
+            onDrawTile={(playerId) => webSocketPreviewActions.current?.drawTile(playerId)}
           />
         ) : tableMode === "room" && room.round === null ? (
           <RoomPanel
@@ -590,10 +611,12 @@ function WebSocketTablePreview({
   preview,
   onExit,
   onChooseMissingSuit,
+  onDrawTile,
 }: {
   preview: WebSocketPreviewState;
   onExit: () => void;
   onChooseMissingSuit: (playerId: string, suit: Suit) => void;
+  onDrawTile: (playerId: string) => void;
 }) {
   const clients = getWebSocketPreviewClients(preview);
   const primary = clients.find((client) => client.snapshot !== null) ?? clients[0];
@@ -644,6 +667,7 @@ function WebSocketTablePreview({
                 key={client.playerId}
                 client={client}
                 onChooseMissingSuit={onChooseMissingSuit}
+                onDrawTile={onDrawTile}
               />
             ))}
           </div>
@@ -683,16 +707,26 @@ function WebSocketPreviewSeatCard({
 function WebSocketPreviewClientCard({
   client,
   onChooseMissingSuit,
+  onDrawTile,
 }: {
   client: WebSocketPreviewClient;
   onChooseMissingSuit: (playerId: string, suit: Suit) => void;
+  onDrawTile: (playerId: string) => void;
 }) {
   const snapshot = client.snapshot;
   const round = snapshot?.round ?? null;
   const localSeat = snapshot?.localSeatId;
   const players = round?.players ?? [];
   const localPlayer = localSeat === null || localSeat === undefined ? null : round?.players[localSeat];
+  const allMissingSuitsChosen = round !== null && round.players.every((player) => player.missingSuit !== null);
   const canChooseMissingSuit = round !== null && localPlayer?.missingSuit === null && client.sessionToken !== null;
+  const canDrawTile =
+    round !== null &&
+    localSeat === round.currentPlayer &&
+    allMissingSuitsChosen &&
+    localPlayer !== null &&
+    localPlayer.handCount % 3 === 1 &&
+    client.sessionToken !== null;
 
   return (
     <article className="preview-client-card">
@@ -701,6 +735,7 @@ function WebSocketPreviewClientCard({
       <p>本地座位：{localSeat === null || localSeat === undefined ? "-" : localSeat + 1}</p>
       <p>房间状态：{snapshot?.status ?? "待快照"}</p>
       <p>定缺状态：{round === null ? "开局后可选" : suitText(localPlayer?.missingSuit ?? null)}</p>
+      <p>摸牌状态：{webSocketDrawHint(round, localSeat, localPlayer, allMissingSuitsChosen)}</p>
       <div className="preview-missing-actions">
         {suitOrder.map((suit) => (
           <button
@@ -713,6 +748,14 @@ function WebSocketPreviewClientCard({
           </button>
         ))}
       </div>
+      <button
+        className="preview-draw-button"
+        type="button"
+        disabled={!canDrawTile}
+        onClick={() => onDrawTile(client.playerId)}
+      >
+        服务端摸牌
+      </button>
       <div>
         {players.length === 0 ? (
           <span>开局后显示 redacted 手牌数量</span>
@@ -727,6 +770,35 @@ function WebSocketPreviewClientCard({
       </div>
     </article>
   );
+}
+
+function webSocketDrawHint(
+  round: ClientVisibleRoomState["round"],
+  localSeat: PlayerId | null | undefined,
+  localPlayer: VisiblePlayerState | null | undefined,
+  allMissingSuitsChosen: boolean,
+): string {
+  if (round === null) {
+    return "开局后等待服务端判断";
+  }
+
+  if (localSeat === null || localSeat === undefined || localPlayer === null || localPlayer === undefined) {
+    return "尚未入座";
+  }
+
+  if (!allMissingSuitsChosen) {
+    return "等待所有玩家定缺";
+  }
+
+  if (localSeat !== round.currentPlayer) {
+    return `等待玩家 ${round.currentPlayer + 1}`;
+  }
+
+  if (localPlayer.handCount % 3 !== 1) {
+    return "当前不是摸牌阶段";
+  }
+
+  return "当前玩家可请求服务端摸牌";
 }
 
 function ClientViewSelector({
@@ -783,6 +855,7 @@ function WebSocketExperimentPanel({
   useEffect(() => {
     actionsRef.current = {
       chooseMissingSuit: handleChooseWebSocketMissingSuit,
+      drawTile: handleDrawWebSocketTile,
     };
 
     return () => {
@@ -1161,6 +1234,42 @@ function WebSocketExperimentPanel({
     syncTransportState();
   }
 
+  async function handleDrawWebSocketTile(playerId: string) {
+    const transport = webSocketTransportForPlayer(playerId);
+
+    if (transport === null) {
+      setWebSocketStep("draw", "error", `摸牌失败：${playerId} 还没有可用的 WebSocket session。`);
+      appendWebSocketLog(`drawTile：${playerId} 缺少 WebSocket session。`);
+      syncTransportState();
+      return;
+    }
+
+    const beforeView = transport.getClientView(playerId);
+    const beforeLocalSeat = beforeView?.localSeatId;
+    const beforeHandCount =
+      beforeLocalSeat === null || beforeLocalSeat === undefined ? null : beforeView?.round?.players[beforeLocalSeat].handCount;
+
+    setWebSocketStep("draw", "running", `${playerId} 正在请求服务端摸牌。`);
+    const result = await transport.drawTile(playerId);
+    appendWebSocketLog(`drawTile：${playerId}，${webSocketActionText(result)}。`);
+
+    if (result.ok) {
+      await waitForWebSocketView(transport, playerId, (view) => {
+        const seatId = view.localSeatId;
+        if (seatId === null || seatId === undefined) {
+          return false;
+        }
+
+        return beforeHandCount === null || view.round?.players[seatId].handCount === beforeHandCount + 1;
+      }).catch(() => undefined);
+      setWebSocketStep("draw", "success", `${playerId} 已由服务端摸牌并收到更新后的 redacted snapshot。`);
+    } else {
+      setWebSocketStep("draw", "error", `摸牌失败：${webSocketActionErrorText(result)}。`);
+    }
+
+    syncTransportState();
+  }
+
   function webSocketTransportForPlayer(playerId: string): WebSocketRoomTransport | null {
     if (playerId === "player-1") {
       return hostTransport.current;
@@ -1486,6 +1595,11 @@ function createInitialWebSocketStepStates(): WebSocketStepStates {
       status: "idle",
       message: "开局后玩家可在 WebSocket 桌面预览里提交定缺。",
     },
+    draw: {
+      label: "摸牌",
+      status: "idle",
+      message: "定缺完成后，当前摸牌阶段玩家可请求服务端摸牌。",
+    },
     resume: {
       label: "恢复",
       status: "idle",
@@ -1702,7 +1816,12 @@ function webSocketErrorCodeText(code: string): string {
     playerNotSeated: "玩家还没有占座",
     notAllPlayersReady: "还有玩家没有准备",
     roundNotStarted: "牌局还没有开局，开局后才能定缺",
+    missingSuitNotSet: "还有玩家没有完成定缺",
     missingSuitAlreadyChosen: "该玩家已经定缺，不能重复提交",
+    notCurrentPlayer: "还没轮到该玩家",
+    notDrawPhase: "当前不是摸牌阶段",
+    wallEmpty: "牌墙已经摸完",
+    playerAlreadyWon: "该玩家已经胡牌",
     invalidSession: "session 无效，请重新加入房间",
     unknown: "未知错误",
   };
@@ -2105,6 +2224,8 @@ function roomEventText(event: RoomEvent, room: RoomState): string {
       return `房间开局，庄家是玩家 ${event.dealer + 1}。`;
     case "missingSuitChosen":
       return `${roomPlayerName(room, event.playerId)} 定缺 ${suitText(event.suit)}。`;
+    case "tileDrawn":
+      return `${roomPlayerName(room, event.playerId)} 已由服务端摸牌。`;
   }
 }
 

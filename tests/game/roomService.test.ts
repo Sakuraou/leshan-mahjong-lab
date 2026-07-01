@@ -110,6 +110,55 @@ test("lets a seated session choose its own missing suit after start", () => {
   ]);
 });
 
+test("draws through the authoritative service and returns a redacted view", () => {
+  const prepared = prepareServiceForPlayerTwoDraw("svc-room-draw");
+  const beforeWallCount = prepared.service.room.round?.wall.length;
+  const drawn = handleOk(prepared.service, prepared.sessions[1].sessionToken, { type: "drawTile" });
+
+  assert.equal(drawn.service.room.round?.players[1].hand.length, 14);
+  assert.equal(drawn.service.room.round?.wall.length, (beforeWallCount ?? 0) - 1);
+  assert.equal(drawn.view.localSeatId, 1);
+  assert.equal(drawn.view.round?.players[1].hand?.length, 14);
+  assert.equal(drawn.view.round?.players[0].hand, null);
+  assert.deepEqual(drawn.events, [{ type: "tileDrawn", seatId: 1, playerId: "player-2" }]);
+});
+
+test("rejects service draw when dingque is missing, out of turn, or outside draw phase", () => {
+  const filled = fillReadyService("svc-room-draw-reject");
+  const started = handleOk(filled.service, filled.sessions[0].sessionToken, { type: "startRound" });
+
+  assert.deepEqual(handleRoomAction(started.service, filled.sessions[0].sessionToken, { type: "drawTile" }), {
+    ok: false,
+    reason: "missingSuitNotSet",
+    service: started.service,
+  });
+
+  const prepared = prepareServiceForPlayerTwoDraw("svc-room-draw-reject-ready");
+
+  assert.deepEqual(handleRoomAction(prepared.service, prepared.sessions[2].sessionToken, { type: "drawTile" }), {
+    ok: false,
+    reason: "notCurrentPlayer",
+    service: prepared.service,
+  });
+
+  const dealerTurnService = {
+    ...prepared.service,
+    room: {
+      ...prepared.service.room,
+      round: {
+        ...prepared.service.room.round!,
+        currentPlayer: 0 as const,
+      },
+    },
+  };
+
+  assert.deepEqual(handleRoomAction(dealerTurnService, prepared.sessions[0].sessionToken, { type: "drawTile" }), {
+    ok: false,
+    reason: "notDrawPhase",
+    service: dealerTurnService,
+  });
+});
+
 test("rejects missing suit choice before the round starts, without a seat, and after choosing once", () => {
   const host = createRoomSession({ roomId: "svc-room-dingque-reject", seed: "svc-seed", displayName: "Host" });
 
@@ -218,6 +267,30 @@ function fillReadyService(roomId: string): { service: RoomServiceState; sessions
   });
 
   return { service, sessions };
+}
+
+function prepareServiceForPlayerTwoDraw(roomId: string): { service: RoomServiceState; sessions: RoomSession[] } {
+  const filled = fillReadyService(roomId);
+  let service = handleOk(filled.service, filled.sessions[0].sessionToken, { type: "startRound" }).service;
+  const suits = ["bamboos", "dots", "characters", "bamboos"] as const;
+
+  filled.sessions.forEach((session, index) => {
+    service = handleOk(service, session.sessionToken, { type: "chooseMissingSuit", suit: suits[index] }).service;
+  });
+
+  return {
+    sessions: filled.sessions,
+    service: {
+      ...service,
+      room: {
+        ...service.room,
+        round: {
+          ...service.room.round!,
+          currentPlayer: 1,
+        },
+      },
+    },
+  };
 }
 
 function handleOk(

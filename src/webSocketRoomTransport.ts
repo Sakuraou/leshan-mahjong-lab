@@ -27,6 +27,7 @@ export type WebSocketRoomTransport = {
   toggleReady: (playerId: string) => Promise<WebSocketRoomTransportActionResult>;
   startRound: (playerId: string, dealer?: PlayerId) => Promise<WebSocketRoomTransportActionResult>;
   chooseMissingSuit: (playerId: string, suit: Suit) => Promise<WebSocketRoomTransportActionResult>;
+  drawTile: (playerId: string) => Promise<WebSocketRoomTransportActionResult>;
   waitForSnapshot: (playerId: string, timeoutMs?: number) => Promise<ClientVisibleRoomState>;
   waitForMessageCount: (count: number, timeoutMs?: number) => Promise<RoomSocketServerMessage[]>;
   getClientView: (playerId: string) => ClientVisibleRoomState | undefined;
@@ -140,7 +141,10 @@ export async function createWebSocketRoomTransport(
   function sendSessionMessage(
     playerId: string,
     message: Omit<
-      Extract<RoomSocketClientMessage, { type: "takeSeat" | "toggleReady" | "startRound" | "chooseMissingSuit" }>,
+      Extract<
+        RoomSocketClientMessage,
+        { type: "takeSeat" | "toggleReady" | "startRound" | "chooseMissingSuit" | "drawTile" }
+      >,
       "protocolVersion" | "clientMessageId" | "roomId" | "sessionToken"
     >,
   ): Promise<WebSocketRoomTransportActionResult> {
@@ -199,6 +203,7 @@ export async function createWebSocketRoomTransport(
     toggleReady: (playerId) => sendSessionMessage(playerId, { type: "toggleReady", payload: {} }),
     startRound: (playerId, dealer) => sendSessionMessage(playerId, { type: "startRound", payload: { dealer } }),
     chooseMissingSuit: (playerId, suit) => sendSessionMessage(playerId, { type: "chooseMissingSuit", payload: { suit } }),
+    drawTile: (playerId) => sendSessionMessage(playerId, { type: "drawTile", payload: {} }),
     waitForSnapshot: (playerId, timeoutMs = actionTimeoutMs) => waitForSnapshot(state, snapshotWaiters, playerId, timeoutMs),
     waitForMessageCount: (count, timeoutMs = actionTimeoutMs) =>
       waitForMessageCount(state, messageCountWaiters, count, timeoutMs),

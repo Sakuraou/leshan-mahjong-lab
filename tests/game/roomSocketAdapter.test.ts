@@ -175,6 +175,32 @@ test("maps chooseMissingSuit and broadcasts redacted snapshots to every session"
   ]);
 });
 
+test("maps drawTile and broadcasts redacted snapshots to every session", () => {
+  const prepared = prepareAdapterForPlayerTwoDraw("socket-room-draw");
+  const result = dispatch(prepared.adapter, {
+    protocolVersion: 1,
+    clientMessageId: "m-draw",
+    roomId: "socket-room-draw",
+    sessionToken: prepared.sessions[1],
+    type: "drawTile",
+    payload: {},
+  });
+  const snapshots = snapshotMessages(result.messages);
+
+  assert.equal(result.messages[0].type, "actionAccepted");
+  assert.equal(result.messages[0].recipientSessionToken, prepared.sessions[1]);
+  assert.equal(snapshots.length, 4);
+
+  snapshots.forEach((message, index) => {
+    const playerTwo = message.payload.view.round?.players[1];
+    assert.ok(playerTwo);
+    assert.equal(playerTwo.handCount, 14);
+    assert.equal(playerTwo.hand !== null, index === 1);
+    assert.equal(message.payload.view.round?.wallCount, prepared.beforeWallCount - 1);
+  });
+  assert.deepEqual(snapshots[1].payload.events, [{ type: "tileDrawn", seatId: 1, playerId: "player-2" }]);
+});
+
 function fillReadyAdapter(roomId: string): { adapter: RoomSocketAdapterState; sessions: string[] } {
   let adapter = createRoomSocketAdapterState();
   adapter = dispatch(adapter, createRoomMessage("m-create", roomId, "Player One")).adapter;
@@ -197,6 +223,60 @@ function fillReadyAdapter(roomId: string): { adapter: RoomSocketAdapterState; se
   });
 
   return { adapter, sessions };
+}
+
+function prepareAdapterForPlayerTwoDraw(roomId: string): {
+  adapter: RoomSocketAdapterState;
+  sessions: string[];
+  beforeWallCount: number;
+} {
+  const filled = fillReadyAdapter(roomId);
+  let adapter = dispatch(filled.adapter, {
+    protocolVersion: 1,
+    clientMessageId: "m-start-draw",
+    roomId,
+    sessionToken: filled.sessions[0],
+    type: "startRound",
+    payload: {},
+  }).adapter;
+  const suits = ["bamboos", "dots", "characters", "bamboos"] as const;
+
+  filled.sessions.forEach((sessionToken, index) => {
+    adapter = dispatch(adapter, {
+      protocolVersion: 1,
+      clientMessageId: `m-dingque-${index + 1}`,
+      roomId,
+      sessionToken,
+      type: "chooseMissingSuit",
+      payload: { suit: suits[index] },
+    }).adapter;
+  });
+
+  const service = adapter.rooms[0].service;
+  const beforeWallCount = service.room.round?.wall.length ?? 0;
+
+  return {
+    sessions: filled.sessions,
+    beforeWallCount,
+    adapter: {
+      ...adapter,
+      rooms: [
+        {
+          ...adapter.rooms[0],
+          service: {
+            ...service,
+            room: {
+              ...service.room,
+              round: {
+                ...service.room.round!,
+                currentPlayer: 1,
+              },
+            },
+          },
+        },
+      ],
+    },
+  };
 }
 
 function createRoomMessage(clientMessageId: string, roomId: string, displayName: string): RoomSocketClientMessage {

@@ -1,6 +1,7 @@
 import {
   chooseMissingSuit,
   createRoom,
+  drawRoomTile,
   joinRoom,
   startRoomRound,
   takeSeat,
@@ -8,6 +9,7 @@ import {
   toClientVisibleRoomState,
   type ChooseMissingSuitResult,
   type ClientVisibleRoomState,
+  type DrawRoomTileResult,
   type JoinRoomResult,
   type RoomEvent,
   type RoomState,
@@ -46,7 +48,8 @@ export type RoomAction =
   | { type: "takeSeat"; seatId: PlayerId }
   | { type: "toggleReady" }
   | { type: "startRound"; dealer?: PlayerId }
-  | { type: "chooseMissingSuit"; suit: Suit };
+  | { type: "chooseMissingSuit"; suit: Suit }
+  | { type: "drawTile" };
 
 export type RoomServiceError =
   | "invalidSession"
@@ -54,7 +57,8 @@ export type RoomServiceError =
   | TakeSeatResult["reason"]
   | ToggleReadyResult["reason"]
   | StartRoomRoundResult["reason"]
-  | ChooseMissingSuitResult["reason"];
+  | ChooseMissingSuitResult["reason"]
+  | DrawRoomTileResult["reason"];
 
 export type RoomServiceResponse = {
   service: RoomServiceState;
@@ -223,7 +227,7 @@ function applyRoomAction(
   room: RoomState,
   playerId: string,
   action: RoomAction,
-): TakeSeatResult | ToggleReadyResult | StartRoomRoundResult | ChooseMissingSuitResult {
+): TakeSeatResult | ToggleReadyResult | StartRoomRoundResult | ChooseMissingSuitResult | DrawRoomTileResult {
   if (action.type === "takeSeat") {
     return takeSeat(room, playerId, action.seatId);
   }
@@ -234,6 +238,10 @@ function applyRoomAction(
 
   if (action.type === "startRound") {
     return startRoomRound(room, action.dealer);
+  }
+
+  if (action.type === "drawTile") {
+    return drawRoomTile(room, playerId);
   }
 
   return chooseMissingSuit(room, playerId, action.suit);
