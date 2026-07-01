@@ -109,6 +109,9 @@ and AI-assisted development.
   started
 - Real local WebSocket dev server powered by `ws`, plus a smoke client that
   verifies `createRoom` and `joinRoom` over actual WebSocket connections
+- Frontend WebSocket transport wrapper that can connect to
+  `ws://127.0.0.1:8787`, send room lifecycle messages, and maintain each
+  session's latest redacted snapshot without replacing the current mock UI flow
 
 ## Screenshots
 
@@ -170,6 +173,7 @@ reuse possible.
 src/
   App.tsx              Browser table prototype
   localRoomTransport.ts Frontend mock transport over the socket adapter
+  webSocketRoomTransport.ts Frontend WebSocket transport wrapper
   styles.css           Prototype UI styling
   game/
     tiles.ts        Tile model, wall generation, yao ji detection

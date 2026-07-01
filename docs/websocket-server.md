@@ -225,6 +225,29 @@ npm run smoke:server
 The smoke helper starts a temporary server on an ephemeral port, so it does not
 require `npm run dev:server` to already be running.
 
+## Frontend Transport Wrapper
+
+`src/webSocketRoomTransport.ts` is now the browser-facing WebSocket client
+wrapper. It is separate from the current UI path, so the app can keep the local
+mock transport as the default portfolio-safe mode while the real transport is
+tested independently.
+
+The wrapper:
+
+- Connects to `ws://127.0.0.1:8787` by default.
+- Sends `createRoom`, `joinRoom`, `takeSeat`, `toggleReady`, and `startRound`
+  messages using the shared protocol types.
+- Waits for matching `actionAccepted` or `actionRejected` messages by
+  `clientMessageId`.
+- Stores the latest `roomSnapshot` by `playerId`.
+- Maintains `sessionTokenByPlayerId` so later seat/ready/start actions can use
+  the server-issued session token.
+- Exposes test helpers such as `waitForSnapshot` and `waitForMessageCount`.
+
+It does not yet replace `localRoomTransport` in the React page. That switch
+should be a deliberate UI milestone, ideally with a mode toggle and clear
+status text.
+
 ## Current Test Coverage
 
 `tests/game/roomSocketServerCore.test.ts` covers:
@@ -241,13 +264,25 @@ require `npm run dev:server` to already be running.
 - Verify `createRoom` and `joinRoom` return `actionAccepted` and
   `roomSnapshot` messages over actual WebSocket connections.
 
+`tests/game/webSocketRoomTransport.test.ts` covers the browser-facing transport
+wrapper against a real local WebSocket server:
+
+- Four clients connect through the transport wrapper.
+- Host creates a room and three clients join.
+- Each client sends seat and ready actions using its own session token.
+- Host starts the round.
+- Each transport stores its own redacted snapshot and does not expose other
+  players' hands.
+
 ## Next Milestone
 
-The real local WebSocket dev server is running-capable. The next milestone is
-to add a frontend WebSocket transport option beside the current mock transport:
+The real local WebSocket dev server and frontend WebSocket transport wrapper
+are running-capable. The next milestone is to expose this path in the React UI
+without removing the mock transport fallback:
 
 1. Keep mock transport as the default portfolio-safe mode.
-2. Add a `WebSocketRoomTransport` client wrapper in the React app.
+2. Add a UI mode toggle for local mock transport versus real WebSocket
+   transport.
 3. Persist `sessionToken` and `lastEventId` locally for reconnect.
 4. Render room snapshots from real server messages.
 5. Keep server-authoritative validation in `roomSocketAdapter` and

@@ -1,0 +1,106 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { WebSocket } from "ws";
+
+import type { WebSocketLike, WebSocketRoomTransport } from "../../src/webSocketRoomTransport.ts";
+import { createWebSocketRoomTransport } from "../../src/webSocketRoomTransport.ts";
+import { createRoomSocketDevServer } from "../../src/server/devServer.ts";
+import type { PlayerId } from "../../src/game/index.ts";
+
+test("websocket room transport tracks session snapshots over a real dev server", async () => {
+  const server = await createRoomSocketDevServer({ port: 0 });
+  const roomId = "transport-real-ws-room";
+  const transports: WebSocketRoomTransport[] = [];
+
+  try {
+    for (let index = 0; index < 4; index += 1) {
+      transports.push(
+        await createWebSocketRoomTransport({
+          url: server.url,
+          roomId,
+          seed: "transport-real-ws-seed",
+          webSocketFactory: createNodeWebSocket,
+        }),
+      );
+    }
+
+    assert.equal((await transports[0].createRoomSession({ displayName: "Player One" })).ok, true);
+    assert.equal(transports[0].getSessionToken("player-1"), "session-1");
+
+    for (const [index, transport] of transports.slice(1).entries()) {
+      assert.equal((await transport.joinRoomSession({ displayName: `Player ${index + 2}` })).ok, true);
+      assert.equal(transport.getSessionToken(`player-${index + 2}`), `session-${index + 2}`);
+    }
+
+    await transports[0].waitForMessageCount(5);
+    assert.deepEqual(transports[0].getClientView("player-1")?.eventLog.at(-1), {
+      type: "playerJoined",
+      playerId: "player-4",
+      displayName: "Player 4",
+    });
+
+    for (const [index, transport] of transports.entries()) {
+      const playerId = `player-${index + 1}`;
+      assert.equal((await transport.takeSeat(playerId, index as PlayerId)).ok, true);
+      assert.equal((await transport.toggleReady(playerId)).ok, true);
+    }
+
+    await transports[0].waitForMessageCount(13);
+    assert.equal(transports[0].getClientView("player-1")?.seats[1].displayName, "Player 2");
+
+    const started = await transports[0].startRound("player-1", 0);
+    assert.equal(started.ok, true);
+
+    await waitForRoundSnapshots(transports);
+
+    transports.forEach((transport, index) => {
+      const view = transport.getClientView(`player-${index + 1}`);
+      assert.ok(view?.round);
+      assert.equal(view.localSeatId, index);
+
+      view.round.players.forEach((player, playerIndex) => {
+        if (playerIndex === index) {
+          assert.equal(player.hand?.length, index === 0 ? 14 : 13);
+        } else {
+          assert.equal(player.hand, null);
+          assert.equal(player.handCount, playerIndex === 0 ? 14 : 13);
+        }
+      });
+    });
+  } finally {
+    transports.forEach((transport) => transport.close());
+    await server.close();
+  }
+});
+
+async function waitForRoundSnapshots(transports: WebSocketRoomTransport[]): Promise<void> {
+  const deadline = Date.now() + 3_000;
+
+  while (transports.some((transport, index) => transport.getClientView(`player-${index + 1}`)?.round == null)) {
+    if (Date.now() > deadline) {
+      throw new Error("Timed out waiting for WebSocket round snapshots.");
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
+function createNodeWebSocket(url: string): WebSocketLike {
+  const socket = new WebSocket(url);
+
+  return {
+    get readyState() {
+      return socket.readyState;
+    },
+    send: (data) => socket.send(data),
+    close: () => socket.close(),
+    addEventListener: (type, listener) => {
+      if (type === "message") {
+        socket.on("message", (data) => listener({ data }));
+        return;
+      }
+
+      socket.on(type, () => listener({}));
+    },
+  };
+}

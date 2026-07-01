@@ -85,6 +85,8 @@ server authoritative.
 - [x] Start a real local WebSocket dev server around the tested server core
 - [x] Add a smoke client/test for `createRoom` and `joinRoom` over real
   WebSocket connections
+- [x] Add a frontend WebSocket transport wrapper for room lifecycle messages
+  while keeping mock transport as the default UI path
 - Wrap `roomSocketAdapter` with a production-ready WebSocket server entry
 - Connect table UI to WebSocket room snapshots
 - Add reconnect with a local session token
