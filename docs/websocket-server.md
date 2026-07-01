@@ -248,6 +248,56 @@ It does not yet replace `localRoomTransport` in the React page. That switch
 should be a deliberate UI milestone, ideally with a mode toggle and clear
 status text.
 
+## React Experiment Panel
+
+The React app now includes a dedicated WebSocket experiment panel. It is a
+side-by-side proof of networking, not a replacement for the default mock table.
+
+The panel supports:
+
+- Connecting to `ws://127.0.0.1:8787`.
+- Creating the room as the host client.
+- Joining as a guest client.
+- Host and guest seat-taking.
+- Host and guest ready actions.
+- Auto-filling helper clients for players 3 and 4.
+- Starting the round after four clients are seated and ready.
+- Displaying one redacted snapshot summary per connected client.
+
+The full-flow button runs this chain:
+
+```text
+connect host + guest
+  -> host createRoom
+  -> guest joinRoom
+  -> helper players 3 and 4 joinRoom
+  -> all four clients take seats
+  -> all four clients toggleReady
+  -> host startRound
+  -> every client receives a roomSnapshot
+```
+
+Expected snapshot behavior:
+
+- Host sees 14 local hand tiles after start.
+- Non-dealer clients see 13 local hand tiles after start.
+- Every client sees the other three players as hidden hands.
+- The room status becomes `dingque`.
+- The latest event is `roundStarted`.
+
+The default playable table remains backed by the local mock transport. This
+keeps the portfolio demo stable while the real WebSocket path matures.
+
+## Screenshot Plan
+
+Portfolio screenshots to capture next:
+
+| Shot | What to show |
+| --- | --- |
+| WebSocket experiment panel | Server address, connected status, and room lifecycle controls |
+| Four-client redacted snapshots | Host, guest, and helper clients with own-hand counts and hidden opponent summaries |
+| Full flow round start | All four clients seated and ready, room status `dingque`, latest event `roundStarted` |
+
 ## Current Test Coverage
 
 `tests/game/roomSocketServerCore.test.ts` covers:
@@ -274,16 +324,19 @@ wrapper against a real local WebSocket server:
 - Each transport stores its own redacted snapshot and does not expose other
   players' hands.
 
+The React panel itself is browser-verified manually during the current MVP
+stage: the full-flow button reaches `dingque` and renders four redacted
+snapshot summaries without changing the mock table mode.
+
 ## Next Milestone
 
 The real local WebSocket dev server and frontend WebSocket transport wrapper
-are running-capable. The next milestone is to expose this path in the React UI
-without removing the mock transport fallback:
+are visible in the React UI as an experiment. The next milestone is to make the
+real transport path more product-like without removing the mock fallback:
 
 1. Keep mock transport as the default portfolio-safe mode.
-2. Add a UI mode toggle for local mock transport versus real WebSocket
-   transport.
+2. Add clearer success and failure states for the WebSocket panel.
 3. Persist `sessionToken` and `lastEventId` locally for reconnect.
-4. Render room snapshots from real server messages.
+4. Decide whether to promote real WebSocket room snapshots into the main table.
 5. Keep server-authoritative validation in `roomSocketAdapter` and
    `roomService`.

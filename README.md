@@ -112,6 +112,10 @@ and AI-assisted development.
 - Frontend WebSocket transport wrapper that can connect to
   `ws://127.0.0.1:8787`, send room lifecycle messages, and maintain each
   session's latest redacted snapshot without replacing the current mock UI flow
+- Real WebSocket experiment panel that can run a full four-client room flow:
+  host/guest/helper clients join, take seats, ready up, start the round, and
+  display per-client redacted snapshot summaries while the mock table remains
+  the default main experience
 
 ## Screenshots
 
@@ -128,6 +132,9 @@ Planned portfolio shots:
 | Tile visuals | Pending | Self-drawn bamboo/dot/character tile faces sorted by suit |
 | Illegal action feedback | Pending | Chinese reason text for dingque or yao ji discard rejection |
 | Hu-ready prompt | Pending | Visible hu result, score, and detected patterns |
+| WebSocket experiment | Pending | Real `ws://127.0.0.1:8787` connection status and create/join/seat/ready/start controls |
+| Four-client snapshots | Pending | Host, guest, and helper clients showing per-client redacted snapshots and hidden opponent hands |
+| WebSocket full round start | Pending | Full flow after all four clients are seated, ready, and the room reaches `dingque` |
 | Portfolio context | Pending | README/case-study view showing the multi-agent workflow and tested rule engine |
 
 ## Run Locally
@@ -213,6 +220,11 @@ does not start a real WebSocket listener yet; it gives the future Node server a
 tested path for connection registration, JSON parsing, adapter calls, session
 routing, and undelivered-message handling.
 
+The WebSocket experiment panel is intentionally separate from the main table.
+It uses the real local `ws` dev server to prove the full room lifecycle and
+redacted snapshot delivery, while the default playable table still uses the
+local mock transport for a stable portfolio demo.
+
 ## AI-Assisted Workflow
 
 This project intentionally documents the vibe-coding process. Different agent
@@ -251,6 +263,8 @@ roles were used to split work into reviewable concerns:
   consume server-shaped snapshots before a real WebSocket server exists.
 - Added a tested WebSocket server core that is ready to be wrapped by a local
   Node `ws` development server.
+- Added a real WebSocket experiment panel that demonstrates the full room
+  lifecycle across four clients without replacing the default mock table.
 - Used a multi-agent AI-assisted workflow to split product planning, rule
   modeling, implementation, test-case design, and review.
 - Prepared the repository as a portfolio case study with rule documentation,

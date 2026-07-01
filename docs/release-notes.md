@@ -31,6 +31,14 @@ than a complete production game.
 - WebSocket room protocol draft documents the next server-authoritative room
   step, including client actions, broadcasts, errors, reconnect, legal actions,
   and client-visible state payloads.
+- Real local WebSocket dev server powered by `ws`, with tested message routing
+  through `roomSocketServerCore`, `roomSocketAdapter`, and `roomService`.
+- Frontend WebSocket experiment panel that can run a full four-client room
+  lifecycle: create room, join, take seats, ready, start round, and display one
+  redacted snapshot summary per client.
+- The default playable table still uses the local mock transport, keeping the
+  main portfolio demo stable while the real WebSocket path is demonstrated
+  separately.
 - Player-selected dingque with heavenly-missing-suit default when the local
   hand naturally lacks exactly one ordinary suit.
 - Automatic system draw at the start of draw phases.
@@ -47,16 +55,24 @@ than a complete production game.
 - Chicken settlement, gang settlement, and cha jiao settlement are modeled only
   as helpers or rule notes, not as a complete end-of-round settlement screen.
 - The UI is a prototype table, not yet a polished multiplayer game interface.
-- There is no backend, login, persistence, replay system, or real-time room
-  synchronization yet.
+- There is no login, persistence, replay system, or production deployment for
+  the WebSocket server yet.
 - Remote turns are still simulated locally for demo progression until a
   real-time room backend is added.
-- The room mode is local-only and deterministic; it demonstrates product flow
-  before real networking is introduced.
-- The WebSocket protocol is documentation only; no real server connection has
-  been implemented yet.
+- The main room/table mode is still powered by the local mock transport; the
+  real WebSocket path is currently an experiment panel.
+- The WebSocket server currently covers room lifecycle only, not draw/discard,
+  peng/gang, hu, settlement, or reconnect persistence.
 - Screenshot assets are still pending until the first production deployment is
   captured.
+
+### Screenshot Placeholders
+
+| Shot | What it should show |
+| --- | --- |
+| WebSocket experiment panel | `ws://127.0.0.1:8787`, connected state, lifecycle controls, and experiment logs |
+| Four-client redacted snapshots | Host, guest, helper 3, and helper 4 summaries showing own-hand counts and three hidden hands |
+| WebSocket full-flow start | Four clients seated and ready, room status `dingque`, latest event `roundStarted` |
 
 ### Next Steps
 
@@ -67,10 +83,9 @@ than a complete production game.
 4. Connect seven-pairs and advanced fan calculation to hu checks.
 5. Implement chicken, gang, and cha jiao settlement views.
 6. Add a clearer portfolio page or route for case-study presentation.
-7. Design the real multiplayer room flow with seat assignment, readiness,
-   reconnect behavior, and server-authoritative actions.
-8. Build the first WebSocket server-authoritative in-memory room service and
-   connect the table UI to server room snapshots.
+7. Add clearer success/error states to the real WebSocket experiment panel.
+8. Persist `sessionToken` and `lastEventId` for reconnect recovery.
+9. Decide when to promote real WebSocket snapshots into the main table view.
 
 ## 2026-06-30
 
@@ -83,3 +98,15 @@ than a complete production game.
   and self-drawn Mahjong tile faces.
 - Added a local simulated room mode to the frontend, including room number,
   joining, seat assignment, ready state, and reducer-driven round start.
+
+## 2026-07-01
+
+- Added the server-authoritative room service, pure WebSocket adapter, and
+  testable WebSocket server core.
+- Added a real local `ws` development server and smoke client.
+- Added a frontend WebSocket transport wrapper with tests against a real local
+  server.
+- Added the WebSocket experiment panel to the React page.
+- Expanded the panel into a full room lifecycle demo: four clients join, take
+  seats, ready up, start the round, and receive redacted snapshot summaries.
+- Kept the mock room/table flow as the default main experience.
