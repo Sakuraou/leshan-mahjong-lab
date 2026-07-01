@@ -95,6 +95,35 @@ test("returns action rejections to the requesting connection", () => {
   assert.equal(actionRejected(result.outgoing[0].message).payload.code, "invalidSession");
 });
 
+test("accepts chooseMissingSuit protocol messages and routes snapshots", () => {
+  let server = createConnectedServer(["conn-host"]);
+  server = handleRoomSocketRawMessage(
+    server,
+    "conn-host",
+    JSON.stringify(createRoomMessage("m-create", "server-room-dingque", "Host")),
+  ).state;
+
+  const result = handleRoomSocketRawMessage(
+    server,
+    "conn-host",
+    JSON.stringify({
+      protocolVersion: 1,
+      clientMessageId: "m-dingque",
+      roomId: "server-room-dingque",
+      sessionToken: "session-1",
+      type: "chooseMissingSuit",
+      payload: { suit: "dots" },
+    } satisfies RoomSocketClientMessage),
+  );
+
+  assert.equal(result.errors.length, 0);
+  assert.deepEqual(
+    result.outgoing.map((message) => [message.connectionId, message.message.type]),
+    [["conn-host", "actionRejected"]],
+  );
+  assert.equal(actionRejected(result.outgoing[0].message).payload.code, "roundNotStarted");
+});
+
 test("rebinds a resumed session to the newest connection", () => {
   let server = createConnectedServer(["conn-host", "conn-resumed"]);
   server = handleRoomSocketRawMessage(

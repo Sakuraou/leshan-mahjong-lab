@@ -9,7 +9,7 @@ import {
   type RoomServiceState,
 } from "./roomService.ts";
 import type { ClientVisibleRoomState, RoomEvent } from "./room.ts";
-import type { PlayerId } from "./types.ts";
+import type { PlayerId, Suit } from "./types.ts";
 
 export type RoomSocketAdapterState = {
   rooms: RoomSocketRoomState[];
@@ -57,6 +57,14 @@ export type RoomSocketClientMessage =
       sessionToken: string;
       type: "startRound";
       payload: { dealer?: PlayerId };
+    }
+  | {
+      protocolVersion: 1;
+      clientMessageId: string;
+      roomId: string;
+      sessionToken: string;
+      type: "chooseMissingSuit";
+      payload: { suit: Suit };
     }
   | {
       protocolVersion: 1;
@@ -219,7 +227,7 @@ function handleResumeSession(
 function handleRoomServiceAction(
   adapter: RoomSocketAdapterState,
   service: RoomServiceState,
-  message: Extract<RoomSocketClientMessage, { type: "takeSeat" | "toggleReady" | "startRound" }>,
+  message: Extract<RoomSocketClientMessage, { type: "takeSeat" | "toggleReady" | "startRound" | "chooseMissingSuit" }>,
   action: RoomAction,
 ): RoomSocketAdapterResult {
   const result = handleRoomAction(service, message.sessionToken, action);
@@ -243,7 +251,7 @@ function handleRoomServiceAction(
 }
 
 function clientMessageToRoomAction(
-  message: Extract<RoomSocketClientMessage, { type: "takeSeat" | "toggleReady" | "startRound" }>,
+  message: Extract<RoomSocketClientMessage, { type: "takeSeat" | "toggleReady" | "startRound" | "chooseMissingSuit" }>,
 ): RoomAction {
   if (message.type === "takeSeat") {
     return { type: "takeSeat", seatId: message.payload.seatId };
@@ -253,7 +261,11 @@ function clientMessageToRoomAction(
     return { type: "toggleReady" };
   }
 
-  return { type: "startRound", dealer: message.payload.dealer };
+  if (message.type === "startRound") {
+    return { type: "startRound", dealer: message.payload.dealer };
+  }
+
+  return { type: "chooseMissingSuit", suit: message.payload.suit };
 }
 
 function snapshotMessagesForSessions(service: RoomServiceState, events: RoomEvent[]): RoomSocketServerMessage[] {
@@ -336,6 +348,8 @@ function errorMessage(code: RoomSocketErrorCode): string {
     playerNotSeated: "Player is not seated.",
     notEnoughPlayers: "Not enough players are seated.",
     notAllPlayersReady: "Not all players are ready.",
+    roundNotStarted: "Round has not started.",
+    missingSuitAlreadyChosen: "Missing suit has already been chosen.",
   };
   return messages[code];
 }

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   createRoom,
+  chooseMissingSuit,
   joinRoom,
   startRoomRound,
   takeSeat,
@@ -186,6 +187,54 @@ test("redacts other players' hands in client-visible room state", () => {
       { id: 3, handIsVisible: false, handCount: 13 },
     ],
   );
+});
+
+test("lets a seated player choose their missing suit after the round starts", () => {
+  const room = startReadyRoom();
+  const result = chooseMissingSuit(room, "p2", "dots");
+
+  assert.equal(result.ok, true);
+
+  if (!result.ok) {
+    return;
+  }
+
+  assert.equal(result.room.round?.players[1].missingSuit, "dots");
+  assert.deepEqual(result.room.eventLog.at(-1), {
+    type: "missingSuitChosen",
+    seatId: 1,
+    playerId: "p2",
+    suit: "dots",
+  });
+});
+
+test("rejects choosing missing suit before start, without a seat, or twice", () => {
+  const waitingRoom = seatPlayers(createRoom({ id: "room-missing-waiting", seed: "missing-waiting-seed" }));
+
+  assert.deepEqual(chooseMissingSuit(waitingRoom, "p1", "dots"), {
+    ok: false,
+    reason: "roundNotStarted",
+  });
+
+  const room = startReadyRoom();
+
+  assert.deepEqual(chooseMissingSuit(room, "missing-player", "dots"), {
+    ok: false,
+    reason: "playerNotSeated",
+  });
+
+  const chosen = chooseMissingSuit(room, "p1", "bamboos");
+
+  assert.equal(chosen.ok, true);
+
+  if (!chosen.ok) {
+    return;
+  }
+
+  assert.deepEqual(chooseMissingSuit(chosen.room, "p1", "dots"), {
+    ok: false,
+    reason: "missingSuitAlreadyChosen",
+  });
 });
 
 test("rejects room mutations after the round has started", () => {

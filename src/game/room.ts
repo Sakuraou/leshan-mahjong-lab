@@ -1,5 +1,5 @@
 import { startRound } from "./round.ts";
-import type { PlayerId, RoundState, Tile } from "./types.ts";
+import type { PlayerId, RoundState, Suit, Tile } from "./types.ts";
 
 const seatIds: PlayerId[] = [0, 1, 2, 3];
 
@@ -24,7 +24,8 @@ export type RoomEvent =
   | { type: "playerJoined"; playerId: string; displayName: string }
   | { type: "seatTaken"; seatId: PlayerId; playerId: string }
   | { type: "readyChanged"; seatId: PlayerId; playerId: string; ready: boolean }
-  | { type: "roundStarted"; seed: string; dealer: PlayerId };
+  | { type: "roundStarted"; seed: string; dealer: PlayerId }
+  | { type: "missingSuitChosen"; seatId: PlayerId; playerId: string; suit: Suit };
 
 export type RoomState = {
   id: string;
@@ -87,6 +88,10 @@ export type ToggleReadyResult =
 export type StartRoomRoundResult =
   | { ok: true; room: RoomState }
   | { ok: false; reason: "roomAlreadyStarted" | "notEnoughPlayers" | "notAllPlayersReady" };
+
+export type ChooseMissingSuitResult =
+  | { ok: true; room: RoomState }
+  | { ok: false; reason: "roundNotStarted" | "playerNotSeated" | "missingSuitAlreadyChosen" };
 
 export function createRoom(input: CreateRoomInput): RoomState {
   return {
@@ -208,6 +213,40 @@ export function startRoomRound(room: RoomState, dealer: PlayerId = 0): StartRoom
       status: "dingque",
       round: startRound({ seed: room.seed, dealer }),
       eventLog: [...room.eventLog, { type: "roundStarted", seed: room.seed, dealer }],
+    },
+  };
+}
+
+export function chooseMissingSuit(room: RoomState, playerId: string, suit: Suit): ChooseMissingSuitResult {
+  if (room.round === null) {
+    return { ok: false, reason: "roundNotStarted" };
+  }
+
+  const seat = room.seats.find((value) => value.playerId === playerId);
+
+  if (seat === undefined) {
+    return { ok: false, reason: "playerNotSeated" };
+  }
+
+  const player = room.round.players[seat.seatId];
+
+  if (player.missingSuit !== null) {
+    return { ok: false, reason: "missingSuitAlreadyChosen" };
+  }
+
+  const nextRound: RoundState = {
+    ...room.round,
+    players: room.round.players.map((value) =>
+      value.id === seat.seatId ? { ...value, missingSuit: suit } : value,
+    ),
+  };
+
+  return {
+    ok: true,
+    room: {
+      ...room,
+      round: nextRound,
+      eventLog: [...room.eventLog, { type: "missingSuitChosen", seatId: seat.seatId, playerId, suit }],
     },
   };
 }

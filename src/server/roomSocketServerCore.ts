@@ -239,6 +239,10 @@ function isRoomSocketClientMessage(value: unknown): value is RoomSocketClientMes
     );
   }
 
+  if (value.type === "chooseMissingSuit") {
+    return isSessionRoomMessage(value) && isRecord(value.payload) && isSuit(value.payload.suit);
+  }
+
   if (value.type === "resumeSession") {
     return (
       isSessionRoomMessage(value) &&
@@ -262,6 +266,10 @@ function isSessionRoomMessage(
 
 function isPlayerId(value: unknown): value is PlayerId {
   return value === 0 || value === 1 || value === 2 || value === 3;
+}
+
+function isSuit(value: unknown): boolean {
+  return value === "characters" || value === "dots" || value === "bamboos";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

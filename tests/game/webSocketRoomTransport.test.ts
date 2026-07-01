@@ -53,10 +53,15 @@ test("websocket room transport tracks session snapshots over a real dev server",
 
     await waitForRoundSnapshots(transports);
 
+    const chosen = await transports[1].chooseMissingSuit("player-2", "characters");
+    assert.equal(chosen.ok, true);
+    await waitForMissingSuitSnapshots(transports, 1, "characters");
+
     transports.forEach((transport, index) => {
       const view = transport.getClientView(`player-${index + 1}`);
       assert.ok(view?.round);
       assert.equal(view.localSeatId, index);
+      assert.equal(view.round.players[1].missingSuit, "characters");
 
       view.round.players.forEach((player, playerIndex) => {
         if (playerIndex === index) {
@@ -175,6 +180,27 @@ async function waitForRoundSnapshots(transports: WebSocketRoomTransport[]): Prom
   while (transports.some((transport, index) => transport.getClientView(`player-${index + 1}`)?.round == null)) {
     if (Date.now() > deadline) {
       throw new Error("Timed out waiting for WebSocket round snapshots.");
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
+async function waitForMissingSuitSnapshots(
+  transports: WebSocketRoomTransport[],
+  playerIndex: number,
+  suit: "characters" | "dots" | "bamboos",
+): Promise<void> {
+  const deadline = Date.now() + 3_000;
+
+  while (
+    transports.some(
+      (transport, index) =>
+        transport.getClientView(`player-${index + 1}`)?.round?.players[playerIndex].missingSuit !== suit,
+    )
+  ) {
+    if (Date.now() > deadline) {
+      throw new Error("Timed out waiting for WebSocket missing suit snapshots.");
     }
 
     await new Promise((resolve) => setTimeout(resolve, 10));

@@ -41,7 +41,7 @@ const webSocketExperimentUrl = "ws://127.0.0.1:8787";
 const localPlayerId = "player-1";
 const localSeatId: PlayerId = 0;
 const suitOrder: Suit[] = ["bamboos", "dots", "characters"];
-const webSocketStepOrder: WebSocketStepKey[] = ["connection", "create", "join", "seat", "ready", "start", "resume"];
+const webSocketStepOrder: WebSocketStepKey[] = ["connection", "create", "join", "seat", "ready", "start", "dingque", "resume"];
 const webSocketRecoveryStoragePrefix = "leshan-mahjong-lab.websocketRecovery.";
 const demoPlayers = [
   { playerId: "player-1", displayName: "我" },
@@ -55,7 +55,7 @@ type LogEntry = {
   text: string;
 };
 
-type WebSocketStepKey = "connection" | "create" | "join" | "seat" | "ready" | "start" | "resume";
+type WebSocketStepKey = "connection" | "create" | "join" | "seat" | "ready" | "start" | "dingque" | "resume";
 type WebSocketStepStatus = "idle" | "running" | "success" | "error";
 type WebSocketStepState = {
   label: string;
@@ -83,6 +83,9 @@ type WebSocketPreviewClient = {
   snapshot: ClientVisibleRoomState | null;
   sessionToken: string | null;
 };
+type WebSocketPreviewActions = {
+  chooseMissingSuit: (playerId: string, suit: Suit) => Promise<void>;
+};
 
 type TableMode = "room" | "standalone" | "websocketPreview";
 type TurnPhase = "chooseMissingSuit" | "draw" | "discard";
@@ -108,6 +111,7 @@ export function App() {
     guest: null,
     helpers: [],
   });
+  const webSocketPreviewActions = useRef<WebSocketPreviewActions | null>(null);
   const [standaloneRound, setStandaloneRound] = useState(createDemoRound);
   const [gameLogs, setGameLogs] = useState<LogEntry[]>([
     {
@@ -453,10 +457,14 @@ export function App() {
           </button>
         </div>
 
-        <WebSocketExperimentPanel onPreviewChange={setWebSocketPreview} />
+        <WebSocketExperimentPanel onPreviewChange={setWebSocketPreview} actionsRef={webSocketPreviewActions} />
 
         {tableMode === "websocketPreview" ? (
-          <WebSocketTablePreview preview={webSocketPreview} onExit={() => setTableMode("room")} />
+          <WebSocketTablePreview
+            preview={webSocketPreview}
+            onExit={() => setTableMode("room")}
+            onChooseMissingSuit={(playerId, suit) => webSocketPreviewActions.current?.chooseMissingSuit(playerId, suit)}
+          />
         ) : tableMode === "room" && room.round === null ? (
           <RoomPanel
             room={room}
@@ -581,9 +589,11 @@ export function App() {
 function WebSocketTablePreview({
   preview,
   onExit,
+  onChooseMissingSuit,
 }: {
   preview: WebSocketPreviewState;
   onExit: () => void;
+  onChooseMissingSuit: (playerId: string, suit: Suit) => void;
 }) {
   const clients = getWebSocketPreviewClients(preview);
   const primary = clients.find((client) => client.snapshot !== null) ?? clients[0];
@@ -630,7 +640,11 @@ function WebSocketTablePreview({
 
           <div className="preview-client-grid">
             {clients.map((client) => (
-              <WebSocketPreviewClientCard key={client.playerId} client={client} />
+              <WebSocketPreviewClientCard
+                key={client.playerId}
+                client={client}
+                onChooseMissingSuit={onChooseMissingSuit}
+              />
             ))}
           </div>
         </>
@@ -661,15 +675,24 @@ function WebSocketPreviewSeatCard({
       </div>
       <p>{seat.displayName ?? "空位"}</p>
       <p>手牌：{handText}</p>
+      <p>定缺：{suitText(player?.missingSuit ?? null)}</p>
     </article>
   );
 }
 
-function WebSocketPreviewClientCard({ client }: { client: WebSocketPreviewClient }) {
+function WebSocketPreviewClientCard({
+  client,
+  onChooseMissingSuit,
+}: {
+  client: WebSocketPreviewClient;
+  onChooseMissingSuit: (playerId: string, suit: Suit) => void;
+}) {
   const snapshot = client.snapshot;
   const round = snapshot?.round ?? null;
   const localSeat = snapshot?.localSeatId;
   const players = round?.players ?? [];
+  const localPlayer = localSeat === null || localSeat === undefined ? null : round?.players[localSeat];
+  const canChooseMissingSuit = round !== null && localPlayer?.missingSuit === null && client.sessionToken !== null;
 
   return (
     <article className="preview-client-card">
@@ -677,6 +700,19 @@ function WebSocketPreviewClientCard({ client }: { client: WebSocketPreviewClient
       <p>session：{client.sessionToken ?? "暂无"}</p>
       <p>本地座位：{localSeat === null || localSeat === undefined ? "-" : localSeat + 1}</p>
       <p>房间状态：{snapshot?.status ?? "待快照"}</p>
+      <p>定缺状态：{round === null ? "开局后可选" : suitText(localPlayer?.missingSuit ?? null)}</p>
+      <div className="preview-missing-actions">
+        {suitOrder.map((suit) => (
+          <button
+            key={suit}
+            type="button"
+            disabled={!canChooseMissingSuit}
+            onClick={() => onChooseMissingSuit(client.playerId, suit)}
+          >
+            {suitText(suit)}
+          </button>
+        ))}
+      </div>
       <div>
         {players.length === 0 ? (
           <span>开局后显示 redacted 手牌数量</span>
@@ -714,7 +750,13 @@ function ClientViewSelector({
   );
 }
 
-function WebSocketExperimentPanel({ onPreviewChange }: { onPreviewChange: (preview: WebSocketPreviewState) => void }) {
+function WebSocketExperimentPanel({
+  onPreviewChange,
+  actionsRef,
+}: {
+  onPreviewChange: (preview: WebSocketPreviewState) => void;
+  actionsRef: { current: WebSocketPreviewActions | null };
+}) {
   const hostTransport = useRef<WebSocketRoomTransport | null>(null);
   const guestTransport = useRef<WebSocketRoomTransport | null>(null);
   const helperTransports = useRef<WebSocketRoomTransport[]>([]);
@@ -737,6 +779,16 @@ function WebSocketExperimentPanel({ onPreviewChange }: { onPreviewChange: (previ
     },
     [],
   );
+
+  useEffect(() => {
+    actionsRef.current = {
+      chooseMissingSuit: handleChooseWebSocketMissingSuit,
+    };
+
+    return () => {
+      actionsRef.current = null;
+    };
+  });
 
   const connected = connectionStatus === "connected";
 
@@ -1082,6 +1134,46 @@ function WebSocketExperimentPanel({ onPreviewChange }: { onPreviewChange: (previ
     appendWebSocketLog(`${label} 准备：${webSocketActionText(result)}。`);
   }
 
+  async function handleChooseWebSocketMissingSuit(playerId: string, suit: Suit) {
+    const transport = webSocketTransportForPlayer(playerId);
+
+    if (transport === null) {
+      setWebSocketStep("dingque", "error", `定缺失败：${playerId} 还没有可用的 WebSocket session。`);
+      appendWebSocketLog(`chooseMissingSuit：${playerId} 缺少 WebSocket session。`);
+      syncTransportState();
+      return;
+    }
+
+    setWebSocketStep("dingque", "running", `${playerId} 正在提交定缺 ${suitText(suit)}。`);
+    const result = await transport.chooseMissingSuit(playerId, suit);
+    appendWebSocketLog(`chooseMissingSuit：${playerId} 选择 ${suitText(suit)}，${webSocketActionText(result)}。`);
+
+    if (result.ok) {
+      await waitForWebSocketView(transport, playerId, (view) => {
+        const seatId = view.localSeatId;
+        return seatId !== null && seatId !== undefined && view.round?.players[seatId].missingSuit === suit;
+      }).catch(() => undefined);
+      setWebSocketStep("dingque", "success", `${playerId} 已由服务端确认定缺 ${suitText(suit)}。`);
+    } else {
+      setWebSocketStep("dingque", "error", `定缺失败：${webSocketActionErrorText(result)}。`);
+    }
+
+    syncTransportState();
+  }
+
+  function webSocketTransportForPlayer(playerId: string): WebSocketRoomTransport | null {
+    if (playerId === "player-1") {
+      return hostTransport.current;
+    }
+
+    if (playerId === "player-2") {
+      return guestTransport.current;
+    }
+
+    const helperIndex = Number(playerId.replace("player-", "")) - 3;
+    return helperTransports.current[helperIndex] ?? null;
+  }
+
   async function handleRunWebSocketDemo() {
     setWebSocketStep("start", "running", "正在补齐四人并开局。");
     const transports = await ensureFullWebSocketRoomReady();
@@ -1340,6 +1432,7 @@ function WebSocketSnapshotCard({
       <p>状态：{state?.status ?? "未连接"}</p>
       <p>座位：{occupiedSeats}/4 · 准备：{readySeats}/4</p>
       <p>房间状态：{snapshot?.status ?? "未连接"} · 本地座位：{localSeat === null || localSeat === undefined ? "-" : localSeat + 1}</p>
+      <p>定缺：{suitText(localPlayer?.missingSuit ?? null)}</p>
       <p>手牌摘要：{localPlayer?.hand?.length ?? 0} 张可见 · {hiddenHands} 家隐藏</p>
       <p>最新事件：{snapshot?.eventLog.at(-1)?.type ?? "暂无"}</p>
     </article>
@@ -1387,6 +1480,11 @@ function createInitialWebSocketStepStates(): WebSocketStepStates {
       label: "开局",
       status: "idle",
       message: "四人准备后由 Host 发起开局。",
+    },
+    dingque: {
+      label: "定缺",
+      status: "idle",
+      message: "开局后玩家可在 WebSocket 桌面预览里提交定缺。",
     },
     resume: {
       label: "恢复",
@@ -1603,6 +1701,8 @@ function webSocketErrorCodeText(code: string): string {
     playerAlreadySeated: "玩家已经占座",
     playerNotSeated: "玩家还没有占座",
     notAllPlayersReady: "还有玩家没有准备",
+    roundNotStarted: "牌局还没有开局，开局后才能定缺",
+    missingSuitAlreadyChosen: "该玩家已经定缺，不能重复提交",
     invalidSession: "session 无效，请重新加入房间",
     unknown: "未知错误",
   };
@@ -2003,6 +2103,8 @@ function roomEventText(event: RoomEvent, room: RoomState): string {
       return `${roomPlayerName(room, event.playerId)} ${event.ready ? "已准备" : "取消准备"}。`;
     case "roundStarted":
       return `房间开局，庄家是玩家 ${event.dealer + 1}。`;
+    case "missingSuitChosen":
+      return `${roomPlayerName(room, event.playerId)} 定缺 ${suitText(event.suit)}。`;
   }
 }
 

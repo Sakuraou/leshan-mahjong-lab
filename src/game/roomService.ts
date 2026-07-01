@@ -1,10 +1,12 @@
 import {
+  chooseMissingSuit,
   createRoom,
   joinRoom,
   startRoomRound,
   takeSeat,
   toggleReady,
   toClientVisibleRoomState,
+  type ChooseMissingSuitResult,
   type ClientVisibleRoomState,
   type JoinRoomResult,
   type RoomEvent,
@@ -13,7 +15,7 @@ import {
   type TakeSeatResult,
   type ToggleReadyResult,
 } from "./room.ts";
-import type { PlayerId } from "./types.ts";
+import type { PlayerId, Suit } from "./types.ts";
 
 export type RoomSession = {
   sessionToken: string;
@@ -43,14 +45,16 @@ export type JoinRoomSessionInput = {
 export type RoomAction =
   | { type: "takeSeat"; seatId: PlayerId }
   | { type: "toggleReady" }
-  | { type: "startRound"; dealer?: PlayerId };
+  | { type: "startRound"; dealer?: PlayerId }
+  | { type: "chooseMissingSuit"; suit: Suit };
 
 export type RoomServiceError =
   | "invalidSession"
   | JoinRoomResult["reason"]
   | TakeSeatResult["reason"]
   | ToggleReadyResult["reason"]
-  | StartRoomRoundResult["reason"];
+  | StartRoomRoundResult["reason"]
+  | ChooseMissingSuitResult["reason"];
 
 export type RoomServiceResponse = {
   service: RoomServiceState;
@@ -219,7 +223,7 @@ function applyRoomAction(
   room: RoomState,
   playerId: string,
   action: RoomAction,
-): TakeSeatResult | ToggleReadyResult | StartRoomRoundResult {
+): TakeSeatResult | ToggleReadyResult | StartRoomRoundResult | ChooseMissingSuitResult {
   if (action.type === "takeSeat") {
     return takeSeat(room, playerId, action.seatId);
   }
@@ -228,7 +232,11 @@ function applyRoomAction(
     return toggleReady(room, playerId);
   }
 
-  return startRoomRound(room, action.dealer);
+  if (action.type === "startRound") {
+    return startRoomRound(room, action.dealer);
+  }
+
+  return chooseMissingSuit(room, playerId, action.suit);
 }
 
 function buildResponse(

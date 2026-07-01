@@ -142,6 +142,39 @@ test("broadcasts each session its own redacted view after startRound", () => {
   });
 });
 
+test("maps chooseMissingSuit and broadcasts redacted snapshots to every session", () => {
+  const filled = fillReadyAdapter("socket-room-dingque");
+  const started = dispatch(filled.adapter, {
+    protocolVersion: 1,
+    clientMessageId: "m-start",
+    roomId: "socket-room-dingque",
+    sessionToken: filled.sessions[0],
+    type: "startRound",
+    payload: {},
+  });
+  const result = dispatch(started.adapter, {
+    protocolVersion: 1,
+    clientMessageId: "m-dingque",
+    roomId: "socket-room-dingque",
+    sessionToken: filled.sessions[1],
+    type: "chooseMissingSuit",
+    payload: { suit: "bamboos" },
+  });
+  const snapshots = snapshotMessages(result.messages);
+
+  assert.equal(result.messages[0].type, "actionAccepted");
+  assert.equal(result.messages[0].recipientSessionToken, filled.sessions[1]);
+  assert.equal(snapshots.length, 4);
+
+  snapshots.forEach((message, index) => {
+    assert.equal(message.payload.view.round?.players[1].missingSuit, "bamboos");
+    assert.equal(message.payload.view.round?.players[1].hand !== null, index === 1);
+  });
+  assert.deepEqual(snapshots[1].payload.events, [
+    { type: "missingSuitChosen", seatId: 1, playerId: "player-2", suit: "bamboos" },
+  ]);
+});
+
 function fillReadyAdapter(roomId: string): { adapter: RoomSocketAdapterState; sessions: string[] } {
   let adapter = createRoomSocketAdapterState();
   adapter = dispatch(adapter, createRoomMessage("m-create", roomId, "Player One")).adapter;

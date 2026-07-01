@@ -93,6 +93,63 @@ test("starts a round after four sessions are seated and ready", () => {
   assert.equal(playerTwoView.view.round?.players[0].handCount, 14);
 });
 
+test("lets a seated session choose its own missing suit after start", () => {
+  const filled = fillReadyService("svc-room-dingque");
+  const started = handleOk(filled.service, filled.sessions[0].sessionToken, { type: "startRound" });
+  const chosen = handleOk(started.service, filled.sessions[1].sessionToken, {
+    type: "chooseMissingSuit",
+    suit: "characters",
+  });
+
+  assert.equal(chosen.service.room.round?.players[1].missingSuit, "characters");
+  assert.equal(chosen.view.localSeatId, 1);
+  assert.equal(chosen.view.round?.players[1].missingSuit, "characters");
+  assert.equal(chosen.view.round?.players[0].hand, null);
+  assert.deepEqual(chosen.events, [
+    { type: "missingSuitChosen", seatId: 1, playerId: "player-2", suit: "characters" },
+  ]);
+});
+
+test("rejects missing suit choice before the round starts, without a seat, and after choosing once", () => {
+  const host = createRoomSession({ roomId: "svc-room-dingque-reject", seed: "svc-seed", displayName: "Host" });
+
+  assert.deepEqual(handleRoomAction(host.service, host.session.sessionToken, { type: "chooseMissingSuit", suit: "dots" }), {
+    ok: false,
+    reason: "roundNotStarted",
+    service: host.service,
+  });
+
+  const filledWithObserver = fillReadyService("svc-room-dingque-observer");
+  const observer = joinRoomSession(filledWithObserver.service, { displayName: "Observer" });
+
+  assert.equal(observer.ok, true);
+
+  if (!observer.ok) {
+    return;
+  }
+
+  const observerStarted = handleOk(observer.service, filledWithObserver.sessions[0].sessionToken, { type: "startRound" });
+
+  assert.deepEqual(handleRoomAction(observerStarted.service, observer.session.sessionToken, { type: "chooseMissingSuit", suit: "dots" }), {
+    ok: false,
+    reason: "playerNotSeated",
+    service: observerStarted.service,
+  });
+
+  const filled = fillReadyService("svc-room-dingque-repeat");
+  const started = handleOk(filled.service, filled.sessions[0].sessionToken, { type: "startRound" });
+  const chosen = handleOk(started.service, filled.sessions[0].sessionToken, {
+    type: "chooseMissingSuit",
+    suit: "dots",
+  });
+
+  assert.deepEqual(handleRoomAction(chosen.service, filled.sessions[0].sessionToken, { type: "chooseMissingSuit", suit: "bamboos" }), {
+    ok: false,
+    reason: "missingSuitAlreadyChosen",
+    service: chosen.service,
+  });
+});
+
 test("rejects actions and views for invalid sessions", () => {
   const host = createRoomSession({ roomId: "svc-room-invalid", seed: "svc-seed", displayName: "Host" });
 

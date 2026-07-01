@@ -493,6 +493,27 @@ button {
   display: block;
 }
 
+.preview-missing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.preview-missing-actions button {
+  min-width: 56px;
+  height: 30px;
+  border: 0;
+  border-radius: 8px;
+  background: #315f7a;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.preview-missing-actions button:disabled {
+  background: #a7b3bc;
+  cursor: not-allowed;
+}
+
 .websocket-panel {
   display: grid;
   gap: 12px;
