@@ -2,8 +2,10 @@
 
 This document defines the first WebSocket protocol draft for the future
 server-authoritative Leshan Mahjong room. It is a design contract only. The
-current app still uses the local room reducer and does not connect to a real
-server.
+current app has a local `ws` development server, a WebSocket experiment panel,
+session recovery, a main-table WebSocket preview, and a server-authoritative
+`chooseMissingSuit` path. Real WebSocket `drawTile` and `discardTile` actions
+are specified below but are not implemented yet.
 
 ## Goals
 
@@ -88,6 +90,7 @@ type ClientActionType =
   | "toggleReady"
   | "startRound"
   | "chooseMissingSuit"
+  | "drawTile"
   | "discardTile"
   | "declareHu"
   | "resumeSession"
@@ -193,12 +196,67 @@ are occupied and ready.
 The server validates that the player is seated, the round is in dingque phase,
 and the player has not already chosen a missing suit.
 
-### Discard Tile
+Current implementation status:
+
+- Implemented in `room.ts`, `roomService.ts`, `roomSocketAdapter.ts`,
+  `roomSocketServerCore.ts`, and `webSocketRoomTransport.ts`.
+- Exposed in the main WebSocket table preview as the first
+  server-authoritative table action.
+- Broadcasts a fresh redacted `roomSnapshot` to every connected session after
+  success.
+
+### Draw Tile
+
+`drawTile` is the next planned WebSocket table action. It should model system
+dealing, not a human "draw" button in the final UI. The browser may request the
+action in the prototype, but the server remains authoritative.
 
 ```json
 {
   "protocolVersion": 1,
   "clientMessageId": "c-007",
+  "roomId": "L8J4K2",
+  "sessionToken": "<token>",
+  "type": "drawTile",
+  "payload": {}
+}
+```
+
+Server validation draft:
+
+- `sessionToken` must identify a known session in the room.
+- The session must belong to a seated player.
+- The round must have started.
+- All seated players must have chosen `missingSuit` before the room leaves
+  dingque phase.
+- It must be that player's turn.
+- The player must not already have won.
+- The wall must not be empty.
+- The player's hand count must indicate a draw phase; the server should reject
+  a second draw before discard.
+
+State transition draft:
+
+1. Call the existing `drawTile(round)` rule helper on the authoritative round.
+2. Append a `tileDrawn` event.
+3. Keep `currentPlayer` unchanged and move that player into discard phase.
+4. Send each session a redacted `roomSnapshot`.
+
+Broadcast/redaction draft:
+
+- The drawing player receives their updated `hand` in the snapshot.
+- Other players receive only the drawing player's updated `handCount`.
+- The server never sends the drawn tile as a standalone event payload to other
+  sessions.
+- `legalActions` should change from `{ type: "drawTile" }` to
+  `{ type: "discardTile"; tiles: [...] }` for the drawing player.
+
+### Discard Tile
+
+```json
+{
+  "protocolVersion": 1,
+  "clientMessageId": "c-008",
   "roomId": "L8J4K2",
   "sessionToken": "<token>",
   "type": "discardTile",
@@ -211,12 +269,50 @@ and the player has not already chosen a missing suit.
 The server validates turn ownership, tile ownership, dingque constraints, and
 the no-active-yao-ji-discard MVP rule.
 
+Server validation draft:
+
+- `sessionToken` must identify a known session in the room.
+- The session must belong to a seated player.
+- The round must have started.
+- The player must have chosen `missingSuit`.
+- It must be that player's turn.
+- The player must be in discard phase, meaning they have already received the
+  turn's draw if a draw was required.
+- The tile must exist in that player's current hand.
+- If the player still holds tiles from their missing suit, the discarded tile
+  must be from that missing suit.
+- Active discard of yao ji (`1 bamboo` or `1 dot`) remains rejected in the MVP.
+- The player must not already have won.
+
+State transition draft:
+
+1. Call the existing `discardTile(round, seatId, tile)` rule helper on the
+   authoritative round.
+2. Append a `tileDiscarded` event.
+3. Recompute discard-hu candidates with `checkDiscardHu` for other active
+   players.
+4. If no claim window is opened in the MVP, advance `currentPlayer` to the next
+   active player and expose that player's `drawTile` legal action.
+5. Send redacted `roomSnapshot` messages to every connected session.
+
+Broadcast/redaction draft:
+
+- The discarded tile is public and appears in the discarding player's discard
+  list for every client.
+- The discarding player's updated hand is visible only to that player.
+- Other clients see the discarding player's updated `handCount`.
+- If hu candidates exist, the first implementation can either send a
+  `huAvailable` event or include a `declareHu` legal action only in eligible
+  winner snapshots.
+- The server should not trust the browser's local hand sorting or local
+  suggested discard list.
+
 ### Declare Hu
 
 ```json
 {
   "protocolVersion": 1,
-  "clientMessageId": "c-008",
+  "clientMessageId": "c-009",
   "roomId": "L8J4K2",
   "sessionToken": "<token>",
   "type": "declareHu",
@@ -299,6 +395,7 @@ type ErrorCode =
   | "roomAlreadyStarted"
   | "roomFull"
   | "sessionRequired"
+  | "invalidSession"
   | "sessionExpired"
   | "playerAlreadyJoined"
   | "playerNotInRoom"
@@ -310,8 +407,10 @@ type ErrorCode =
   | "roundNotStarted"
   | "invalidPhase"
   | "notCurrentPlayer"
+  | "playerAlreadyWon"
+  | "wallEmpty"
   | "missingSuitNotSet"
-  | "missingSuitAlreadySet"
+  | "missingSuitAlreadyChosen"
   | "invalidSuit"
   | "tileNotInHand"
   | "mustDiscardMissingSuitFirst"
@@ -377,6 +476,7 @@ type LegalAction =
   | { type: "toggleReady" }
   | { type: "startRound" }
   | { type: "chooseMissingSuit"; suits: Array<"bamboos" | "dots" | "characters"> }
+  | { type: "drawTile" }
   | { type: "discardTile"; tiles: Tile[] }
   | { type: "declareHu"; source: "selfDraw" | "discard"; points: number };
 ```
@@ -459,9 +559,15 @@ Validation should call the same rule modules that power the current tests:
 3. Add a pure-function WebSocket adapter around `roomService`. Done in
    `src/game/roomSocketAdapter.ts`.
 4. Connect the frontend to a local mock transport or real WebSocket server.
-5. Replace local reducer calls in the frontend with socket messages.
-6. Keep the local demo mode as a portfolio fallback.
-7. Add reconnect using `sessionToken` and `lastSeenEventId`.
+   Done for both paths: the mock transport powers the default table and the
+   real `ws` dev server powers the experiment panel.
+5. Keep the local demo mode as a portfolio fallback. Done.
+6. Add reconnect using `sessionToken` and `lastSeenEventId`. Done for the
+   WebSocket experiment panel.
+7. Add server-authoritative dingque from the WebSocket table preview. Done.
+8. Add server-authoritative `drawTile` and `discardTile` actions. Designed
+   above; not implemented yet.
 
-The next milestone is either a local mock transport for the frontend or a real
-WebSocket server entry that wraps the completed socket adapter.
+The next implementation milestone is to move the draw/discard design into
+`roomService`, `roomSocketAdapter`, `roomSocketServerCore`, and the WebSocket
+table preview while keeping the mock table as the default fallback.

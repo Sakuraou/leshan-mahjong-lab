@@ -110,8 +110,9 @@ and AI-assisted development.
 - Real local WebSocket dev server powered by `ws`, plus a smoke client that
   verifies `createRoom` and `joinRoom` over actual WebSocket connections
 - Frontend WebSocket transport wrapper that can connect to
-  `ws://127.0.0.1:8787`, send room lifecycle messages, and maintain each
-  session's latest redacted snapshot without replacing the current mock UI flow
+  `ws://127.0.0.1:8787`, send room lifecycle and dingque messages, and maintain
+  each session's latest redacted snapshot without replacing the current mock UI
+  flow
 - Real WebSocket experiment panel that can run a full four-client room flow:
   host/guest/helper clients join, take seats, ready up, start the round, and
   display per-client redacted snapshot summaries while the mock table remains
@@ -119,9 +120,13 @@ and AI-assisted development.
 - Session recovery demo in the WebSocket experiment panel: host/guest
   `sessionToken` and `lastEventId` are saved to `localStorage`, then
   `resumeSession` rebuilds redacted snapshots after a simulated refresh
-- Read-only WebSocket table preview mode in the main table: it consumes real
+- Limited WebSocket table preview mode in the main table: it consumes real
   `roomSnapshot` data to show room status, seats, readiness, wall count, and
   redacted hand counts after start while keeping the mock table as the default
+- WebSocket-backed dingque path in the table preview: players can submit
+  `chooseMissingSuit` after the real server starts the round, and the server
+  validates seat ownership, round state, and duplicate submissions before
+  broadcasting redacted snapshots
 
 ## Screenshots
 
@@ -142,7 +147,8 @@ Planned portfolio shots:
 | Four-client snapshots | Pending | Host, guest, and helper clients showing per-client redacted snapshots and hidden opponent hands |
 | WebSocket full round start | Pending | Full flow after all four clients are seated, ready, and the room reaches `dingque` |
 | WebSocket session recovery | Pending | Simulated refresh, restored host/guest sessions, resumed redacted snapshots, and missed-event count |
-| WebSocket table preview | Pending | Main table read-only preview consuming real `roomSnapshot` with redacted hand counts |
+| WebSocket table preview | Pending | Main table preview consuming real `roomSnapshot` with redacted hand counts |
+| WebSocket dingque | Pending | Preview client cards submit server-authoritative `chooseMissingSuit` and receive updated redacted snapshots |
 | Portfolio context | Pending | README/case-study view showing the multi-agent workflow and tested rule engine |
 
 ## Run Locally
@@ -234,10 +240,12 @@ redacted snapshot delivery. It also demonstrates `sessionToken` + `lastEventId`
 recovery by saving host/guest sessions locally, reconnecting after a simulated
 refresh, and calling `resumeSession` for fresh redacted snapshots. The default
 playable table still uses the local mock transport for a stable portfolio demo.
-The main table now has a read-only "真实 WebSocket 桌面预览" mode that consumes the
+The main table now has a limited "真实 WebSocket 桌面预览" mode that consumes the
 experiment panel's latest real `roomSnapshot` data and renders room, seat,
 ready, wall, and redacted hand-count summaries without enabling real draw or
-discard actions yet.
+discard actions yet. The preview now also sends the first real
+server-authoritative table action, `chooseMissingSuit`; real draw and discard
+remain planned rather than implemented.
 
 ## AI-Assisted Workflow
 
@@ -283,6 +291,9 @@ roles were used to split work into reviewable concerns:
   `localStorage`, and server-side rebinding to the latest connection.
 - Added a main-table WebSocket preview mode that reads real room snapshots while
   leaving the mock table as the default gameplay surface.
+- Added the first WebSocket-backed table action: server-authoritative dingque
+  submission from the preview path, with redacted snapshot updates for every
+  connected client.
 - Used a multi-agent AI-assisted workflow to split product planning, rule
   modeling, implementation, test-case design, and review.
 - Prepared the repository as a portfolio case study with rule documentation,

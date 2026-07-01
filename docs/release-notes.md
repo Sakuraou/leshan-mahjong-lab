@@ -41,9 +41,12 @@ than a complete production game.
   redacted snapshots.
 - WebSocket server core now rebinds a resumed session to the newest connection,
   so private snapshots do not keep routing to a stale socket.
-- Main table read-only WebSocket preview mode can consume real `roomSnapshot`
+- Main table limited WebSocket preview mode can consume real `roomSnapshot`
   data and show room status, seats, readiness, wall count, and redacted hand
   counts after start.
+- Main table WebSocket preview now supports the first server-authoritative
+  table action: `chooseMissingSuit`, with service-side validation and redacted
+  snapshot broadcasts.
 - The default playable table still uses the local mock transport, keeping the
   main portfolio demo stable while the real WebSocket path is demonstrated
   separately.
@@ -68,10 +71,11 @@ than a complete production game.
 - Remote turns are still simulated locally for demo progression until a
   real-time room backend is added.
 - The main room/table mode is still powered by the local mock transport; the
-  real WebSocket path is currently an experiment panel plus a read-only table
-  preview.
-- The WebSocket server currently covers room lifecycle only, not draw/discard,
-  peng/gang, hu, settlement, durable auth, or production persistence.
+  real WebSocket path is currently an experiment panel plus a limited table
+  preview with server-authoritative dingque.
+- The WebSocket server currently covers room lifecycle and
+  server-authoritative dingque, not draw/discard, peng/gang, hu, settlement,
+  durable auth, or production persistence.
 - Screenshot assets are still pending until the first production deployment is
   captured.
 
@@ -83,7 +87,8 @@ than a complete production game.
 | Four-client redacted snapshots | Host, guest, helper 3, and helper 4 summaries showing own-hand counts and three hidden hands |
 | WebSocket full-flow start | Four clients seated and ready, room status `dingque`, latest event `roundStarted` |
 | WebSocket session recovery | "模拟刷新后恢复", restored host/guest sessions, resume success badge, missed-event count |
-| WebSocket table preview | Main table read-only mode showing true `roomSnapshot` status, 4/4 seats, 4/4 ready, wall count, and redacted hand counts |
+| WebSocket table preview | Main table preview showing true `roomSnapshot` status, 4/4 seats, 4/4 ready, wall count, redacted hand counts, and dingque state |
+| WebSocket dingque | Preview client card submits `chooseMissingSuit`, service validates the action, and all clients receive updated redacted snapshots |
 
 ### Next Steps
 
@@ -94,8 +99,9 @@ than a complete production game.
 4. Connect seven-pairs and advanced fan calculation to hu checks.
 5. Implement chicken, gang, and cha jiao settlement views.
 6. Add a clearer portfolio page or route for case-study presentation.
-7. Add WebSocket-backed player-selected dingque in the table preview path.
-8. Add WebSocket-backed draw/discard as server-authoritative round actions.
+7. Implement WebSocket-backed `drawTile` as a server-authoritative round action.
+8. Implement WebSocket-backed `discardTile` with dingque, yao ji, turn, and tile
+   ownership validation.
 
 ## 2026-06-30
 
@@ -125,6 +131,10 @@ than a complete production game.
   `sessionToken`, `lastEventId`, `localStorage`, and `resumeSession`.
 - Updated server-core routing so a resumed session is rebound to the newest
   connection instead of a stale socket.
-- Added a main-table read-only WebSocket preview mode that consumes real
+- Added a main-table limited WebSocket preview mode that consumes real
   `roomSnapshot` values without replacing the default mock table.
+- Added WebSocket-backed player-selected dingque in the table preview path.
+- Drafted the WebSocket `drawTile` and `discardTile` protocol, including
+  payloads, validation rules, redacted broadcasts, legal-action changes, and
+  error codes.
 - Kept the mock room/table flow as the default main experience.

@@ -26,8 +26,8 @@ It does not own:
 - Secure token generation.
 - Database persistence.
 - Heartbeats or reconnect timeout cleanup.
-- Gameplay actions beyond the room lifecycle already supported by
-  `roomSocketAdapter`.
+- Gameplay actions beyond the room lifecycle and `chooseMissingSuit` already
+  supported by `roomSocketAdapter`.
 
 ## State Model
 
@@ -266,6 +266,8 @@ The panel supports:
 - Host and guest ready actions.
 - Auto-filling helper clients for players 3 and 4.
 - Starting the round after four clients are seated and ready.
+- Submitting `chooseMissingSuit` from the WebSocket preview path after the room
+  reaches `dingque`.
 - Displaying one redacted snapshot summary per connected client.
 - Saving host/guest `sessionToken` and `lastEventId` in `localStorage`.
 - Simulating a browser refresh by closing host/guest sockets, reconnecting, and
@@ -300,7 +302,7 @@ keeps the portfolio demo stable while the real WebSocket path matures.
 
 ## Main Table Preview Mode
 
-The main table now includes a read-only "真实 WebSocket 桌面预览" mode. This is a
+The main table now includes a limited "真实 WebSocket 桌面预览" mode. This is a
 bridge between the isolated experiment panel and the eventual real multiplayer
 table, but it still does not replace the mock gameplay path.
 
@@ -313,10 +315,13 @@ WebSocket experiment panel and renders:
 - Four seat cards with ready state and visible/hidden hand counts.
 - One client card per connected session, showing that each client only sees its
   own hand and sees other players as hidden counts.
+- Dingque state per seat and per client snapshot.
+- `chooseMissingSuit` buttons that send the first server-authoritative table
+  action through the real WebSocket transport.
 
-The preview is intentionally read-only. It does not send draw, discard, peng,
-gang, hu, dingque, or settlement actions. Those actions still belong to the mock
-table until the real server action surface is expanded.
+The preview is still deliberately limited. It can submit dingque, but it does
+not send draw, discard, peng, gang, hu, or settlement actions. Those actions
+still belong to the mock table until the real server action surface is expanded.
 
 ## Session Recovery Demo
 
@@ -347,8 +352,9 @@ Portfolio screenshots to capture next:
 | WebSocket experiment panel | Server address, connected status, and room lifecycle controls |
 | Four-client redacted snapshots | Host, guest, and helper clients with own-hand counts and hidden opponent summaries |
 | Full flow round start | All four clients seated and ready, room status `dingque`, latest event `roundStarted` |
+| WebSocket dingque | Preview client card submits `chooseMissingSuit`, server confirms the action, and every client receives an updated redacted snapshot |
 | Session recovery demo | "模拟刷新后恢复" button, resume success badge, restored host/guest snapshots, missed-event count |
-| Main table WebSocket preview | Main table read-only mode showing real roomSnapshot room status, seats, readiness, wall count, and redacted hand counts |
+| Main table WebSocket preview | Main table limited preview showing real roomSnapshot room status, seats, readiness, wall count, redacted hand counts, and dingque state |
 
 ## Current Test Coverage
 
@@ -374,6 +380,7 @@ wrapper against a real local WebSocket server:
 - Host creates a room and three clients join.
 - Each client sends seat and ready actions using its own session token.
 - Host starts the round.
+- A client can submit `chooseMissingSuit`.
 - Each transport stores its own redacted snapshot and does not expose other
   players' hands.
 - A new transport can call `resumeSession` with a stored `sessionToken` and
@@ -385,19 +392,21 @@ stage: the full-flow button reaches `dingque`, renders four redacted snapshot
 summaries, and the recovery button restores host/guest snapshots after a
 simulated refresh without changing the mock table mode. The main-table preview
 mode is also browser-verified: after the full flow starts, it displays the real
-room status, 4/4 seats, 4/4 ready state, wall count, and per-client redacted hand
-counts while remaining read-only.
+room status, 4/4 seats, 4/4 ready state, wall count, per-client redacted hand
+counts, and server-confirmed dingque updates while still leaving draw/discard
+outside the real WebSocket path.
 
 ## Next Milestone
 
 The real local WebSocket dev server, frontend WebSocket transport wrapper, full
-room-flow panel, session recovery demo, and read-only main-table preview are
-visible in the React UI. The next milestone is to move from passive snapshots to
-server-authoritative table actions without removing the mock fallback:
+room-flow panel, session recovery demo, main-table preview, and
+server-authoritative dingque action are visible in the React UI. The next
+milestone is to move from dingque into server-authoritative turn actions without
+removing the mock fallback:
 
 1. Keep mock transport as the default portfolio-safe mode.
-2. Add WebSocket actions for player-selected dingque after the server starts a
-   room.
+2. Design WebSocket `drawTile` and `discardTile` payloads, validations,
+   broadcasts, and error codes.
 3. Add WebSocket draw/discard actions as server-authoritative round commands.
 4. Keep server-authoritative validation in `roomSocketAdapter` and
    `roomService`.
