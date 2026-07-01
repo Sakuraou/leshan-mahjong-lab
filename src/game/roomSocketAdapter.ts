@@ -9,7 +9,7 @@ import {
   type RoomServiceState,
 } from "./roomService.ts";
 import type { ClientVisibleRoomState, RoomEvent } from "./room.ts";
-import type { PlayerId, Suit } from "./types.ts";
+import type { PlayerId, Suit, Tile } from "./types.ts";
 
 export type RoomSocketAdapterState = {
   rooms: RoomSocketRoomState[];
@@ -73,6 +73,14 @@ export type RoomSocketClientMessage =
       sessionToken: string;
       type: "drawTile";
       payload: Record<string, never>;
+    }
+  | {
+      protocolVersion: 1;
+      clientMessageId: string;
+      roomId: string;
+      sessionToken: string;
+      type: "discardTile";
+      payload: { tile: Tile };
     }
   | {
       protocolVersion: 1;
@@ -237,7 +245,7 @@ function handleRoomServiceAction(
   service: RoomServiceState,
   message: Extract<
     RoomSocketClientMessage,
-    { type: "takeSeat" | "toggleReady" | "startRound" | "chooseMissingSuit" | "drawTile" }
+    { type: "takeSeat" | "toggleReady" | "startRound" | "chooseMissingSuit" | "drawTile" | "discardTile" }
   >,
   action: RoomAction,
 ): RoomSocketAdapterResult {
@@ -264,7 +272,7 @@ function handleRoomServiceAction(
 function clientMessageToRoomAction(
   message: Extract<
     RoomSocketClientMessage,
-    { type: "takeSeat" | "toggleReady" | "startRound" | "chooseMissingSuit" | "drawTile" }
+    { type: "takeSeat" | "toggleReady" | "startRound" | "chooseMissingSuit" | "drawTile" | "discardTile" }
   >,
 ): RoomAction {
   if (message.type === "takeSeat") {
@@ -281,6 +289,10 @@ function clientMessageToRoomAction(
 
   if (message.type === "drawTile") {
     return { type: "drawTile" };
+  }
+
+  if (message.type === "discardTile") {
+    return { type: "discardTile", tile: message.payload.tile };
   }
 
   return { type: "chooseMissingSuit", suit: message.payload.suit };
@@ -371,8 +383,12 @@ function errorMessage(code: RoomSocketErrorCode): string {
     missingSuitNotSet: "Missing suit has not been chosen.",
     notCurrentPlayer: "It is not this player's turn.",
     notDrawPhase: "The current player is not in a draw phase.",
+    notDiscardPhase: "The current player is not in a discard phase.",
     wallEmpty: "Wall is empty.",
     playerAlreadyWon: "Player has already won.",
+    tileNotInHand: "Tile is not in hand.",
+    mustDiscardMissingSuitFirst: "Missing-suit tiles must be discarded first.",
+    cannotDiscardYaoJi: "Yao ji cannot be actively discarded.",
   };
   return messages[code];
 }

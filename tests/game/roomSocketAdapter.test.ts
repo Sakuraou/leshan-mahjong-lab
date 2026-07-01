@@ -7,6 +7,8 @@ import {
   type RoomSocketAdapterState,
   type RoomSocketClientMessage,
   type RoomSocketServerMessage,
+  type Suit,
+  type Tile,
 } from "../../src/game/index.ts";
 
 test("maps createRoom to room service and returns a host snapshot", () => {
@@ -201,6 +203,35 @@ test("maps drawTile and broadcasts redacted snapshots to every session", () => {
   assert.deepEqual(snapshots[1].payload.events, [{ type: "tileDrawn", seatId: 1, playerId: "player-2" }]);
 });
 
+test("maps discardTile and broadcasts redacted snapshots to every session", () => {
+  const prepared = prepareAdapterForDealerDiscard("socket-room-discard");
+  const result = dispatch(prepared.adapter, {
+    protocolVersion: 1,
+    clientMessageId: "m-discard",
+    roomId: "socket-room-discard",
+    sessionToken: prepared.sessions[0],
+    type: "discardTile",
+    payload: { tile: prepared.discard },
+  });
+  const snapshots = snapshotMessages(result.messages);
+
+  assert.equal(result.messages[0].type, "actionAccepted");
+  assert.equal(result.messages[0].recipientSessionToken, prepared.sessions[0]);
+  assert.equal(snapshots.length, 4);
+
+  snapshots.forEach((message, index) => {
+    const dealer = message.payload.view.round?.players[0];
+    assert.ok(dealer);
+    assert.equal(dealer.handCount, 13);
+    assert.equal(dealer.hand !== null, index === 0);
+    assert.deepEqual(dealer.discards, [prepared.discard]);
+    assert.equal(message.payload.view.round?.currentPlayer, 1);
+  });
+  assert.deepEqual(snapshots[0].payload.events, [
+    { type: "tileDiscarded", seatId: 0, playerId: "player-1", tile: prepared.discard },
+  ]);
+});
+
 function fillReadyAdapter(roomId: string): { adapter: RoomSocketAdapterState; sessions: string[] } {
   let adapter = createRoomSocketAdapterState();
   adapter = dispatch(adapter, createRoomMessage("m-create", roomId, "Player One")).adapter;
@@ -277,6 +308,52 @@ function prepareAdapterForPlayerTwoDraw(roomId: string): {
       ],
     },
   };
+}
+
+function prepareAdapterForDealerDiscard(roomId: string): {
+  adapter: RoomSocketAdapterState;
+  sessions: string[];
+  discard: Tile;
+} {
+  const filled = fillReadyAdapter(roomId);
+  let adapter = dispatch(filled.adapter, {
+    protocolVersion: 1,
+    clientMessageId: "m-start-discard",
+    roomId,
+    sessionToken: filled.sessions[0],
+    type: "startRound",
+    payload: {},
+  }).adapter;
+  const service = adapter.rooms[0].service;
+  const discard = findDiscardCandidate(service.room.round!.players[0].hand);
+  const suits: Suit[] = [discard.suit, "dots", "characters", "bamboos"];
+
+  filled.sessions.forEach((sessionToken, index) => {
+    adapter = dispatch(adapter, {
+      protocolVersion: 1,
+      clientMessageId: `m-dingque-discard-${index + 1}`,
+      roomId,
+      sessionToken,
+      type: "chooseMissingSuit",
+      payload: { suit: suits[index] },
+    }).adapter;
+  });
+
+  return { adapter, sessions: filled.sessions, discard };
+}
+
+function findDiscardCandidate(hand: Tile[]): Tile {
+  const candidate = hand.find((value) => !isYaoJi(value));
+
+  if (candidate === undefined) {
+    throw new Error("Expected a non-yao-ji discard candidate.");
+  }
+
+  return candidate;
+}
+
+function isYaoJi(tile: Tile): boolean {
+  return tile.rank === 1 && (tile.suit === "bamboos" || tile.suit === "dots");
 }
 
 function createRoomMessage(clientMessageId: string, roomId: string, displayName: string): RoomSocketClientMessage {

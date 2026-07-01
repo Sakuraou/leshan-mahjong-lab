@@ -153,6 +153,35 @@ test("accepts drawTile protocol messages and routes adapter rejections", () => {
   assert.equal(actionRejected(result.outgoing[0].message).payload.code, "roundNotStarted");
 });
 
+test("accepts discardTile protocol messages and routes adapter rejections", () => {
+  let server = createConnectedServer(["conn-host"]);
+  server = handleRoomSocketRawMessage(
+    server,
+    "conn-host",
+    JSON.stringify(createRoomMessage("m-create", "server-room-discard", "Host")),
+  ).state;
+
+  const result = handleRoomSocketRawMessage(
+    server,
+    "conn-host",
+    JSON.stringify({
+      protocolVersion: 1,
+      clientMessageId: "m-discard",
+      roomId: "server-room-discard",
+      sessionToken: "session-1",
+      type: "discardTile",
+      payload: { tile: { suit: "characters", rank: 5 } },
+    } satisfies RoomSocketClientMessage),
+  );
+
+  assert.equal(result.errors.length, 0);
+  assert.deepEqual(
+    result.outgoing.map((message) => [message.connectionId, message.message.type]),
+    [["conn-host", "actionRejected"]],
+  );
+  assert.equal(actionRejected(result.outgoing[0].message).payload.code, "roundNotStarted");
+});
+
 test("rebinds a resumed session to the newest connection", () => {
   let server = createConnectedServer(["conn-host", "conn-resumed"]);
   server = handleRoomSocketRawMessage(

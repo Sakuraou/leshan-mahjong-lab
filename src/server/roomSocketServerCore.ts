@@ -247,6 +247,10 @@ function isRoomSocketClientMessage(value: unknown): value is RoomSocketClientMes
     return isSessionRoomMessage(value) && isRecord(value.payload);
   }
 
+  if (value.type === "discardTile") {
+    return isSessionRoomMessage(value) && isRecord(value.payload) && isTile(value.payload.tile);
+  }
+
   if (value.type === "resumeSession") {
     return (
       isSessionRoomMessage(value) &&
@@ -274,6 +278,24 @@ function isPlayerId(value: unknown): value is PlayerId {
 
 function isSuit(value: unknown): boolean {
   return value === "characters" || value === "dots" || value === "bamboos";
+}
+
+function isRank(value: unknown): boolean {
+  return (
+    value === 1 ||
+    value === 2 ||
+    value === 3 ||
+    value === 4 ||
+    value === 5 ||
+    value === 6 ||
+    value === 7 ||
+    value === 8 ||
+    value === 9
+  );
+}
+
+function isTile(value: unknown): boolean {
+  return isRecord(value) && isSuit(value.suit) && isRank(value.rank);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

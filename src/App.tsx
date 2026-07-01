@@ -50,6 +50,7 @@ const webSocketStepOrder: WebSocketStepKey[] = [
   "start",
   "dingque",
   "draw",
+  "discard",
   "resume",
 ];
 const webSocketRecoveryStoragePrefix = "leshan-mahjong-lab.websocketRecovery.";
@@ -74,6 +75,7 @@ type WebSocketStepKey =
   | "start"
   | "dingque"
   | "draw"
+  | "discard"
   | "resume";
 type WebSocketStepStatus = "idle" | "running" | "success" | "error";
 type WebSocketStepState = {
@@ -105,6 +107,7 @@ type WebSocketPreviewClient = {
 type WebSocketPreviewActions = {
   chooseMissingSuit: (playerId: string, suit: Suit) => Promise<void>;
   drawTile: (playerId: string) => Promise<void>;
+  discardTile: (playerId: string, tile: Tile) => Promise<void>;
 };
 
 type TableMode = "room" | "standalone" | "websocketPreview";
@@ -302,7 +305,7 @@ export function App() {
 
   function handleWebSocketPreviewMode() {
     setTableMode("websocketPreview");
-    addGameLog("已切换到真实 WebSocket 桌面预览。这里只读取 roomSnapshot，不接管摸牌/出牌。");
+    addGameLog("已切换到真实 WebSocket 桌面预览。这里读取 roomSnapshot，并只接入定缺/摸牌/出牌，不接碰杠胡。");
   }
 
   function handleReset() {
@@ -436,7 +439,7 @@ export function App() {
                     : "玩家 1"
               }
             />
-            <Stat label="模拟操作" value={tableMode === "websocketPreview" ? "只读" : `玩家 ${localSeatId + 1}`} />
+            <Stat label="模拟操作" value={tableMode === "websocketPreview" ? "旁路" : `玩家 ${localSeatId + 1}`} />
             <Stat
               label="当前回合"
               value={
@@ -462,10 +465,10 @@ export function App() {
 
         <div className="mode-banner">
           <div>
-            <strong>{tableMode === "websocketPreview" ? "真实 WebSocket 只读预览" : "本地模拟传输"}</strong>
+            <strong>{tableMode === "websocketPreview" ? "真实 WebSocket 旁路预览" : "本地模拟传输"}</strong>
             <span>
               {tableMode === "websocketPreview"
-                ? "主牌桌正在读取真实 WebSocket roomSnapshot；这里只展示房间/座位/准备/手牌数量，不接管摸牌出牌。"
+                ? "主牌桌正在读取真实 WebSocket roomSnapshot；这里已接入定缺/摸牌/出牌，但不接碰杠胡。"
                 : "房间流程已通过本地 mock transport 和 roomSocketAdapter 驱动；牌局动作仍由玩家 1 本地模拟执行，还没有真实网络连接。"}
             </span>
           </div>
@@ -485,6 +488,7 @@ export function App() {
             onExit={() => setTableMode("room")}
             onChooseMissingSuit={(playerId, suit) => webSocketPreviewActions.current?.chooseMissingSuit(playerId, suit)}
             onDrawTile={(playerId) => webSocketPreviewActions.current?.drawTile(playerId)}
+            onDiscardTile={(playerId, tile) => webSocketPreviewActions.current?.discardTile(playerId, tile)}
           />
         ) : tableMode === "room" && room.round === null ? (
           <RoomPanel
@@ -612,11 +616,13 @@ function WebSocketTablePreview({
   onExit,
   onChooseMissingSuit,
   onDrawTile,
+  onDiscardTile,
 }: {
   preview: WebSocketPreviewState;
   onExit: () => void;
   onChooseMissingSuit: (playerId: string, suit: Suit) => void;
   onDrawTile: (playerId: string) => void;
+  onDiscardTile: (playerId: string, tile: Tile) => void;
 }) {
   const clients = getWebSocketPreviewClients(preview);
   const primary = clients.find((client) => client.snapshot !== null) ?? clients[0];
@@ -630,7 +636,7 @@ function WebSocketTablePreview({
       <div className="preview-header">
         <div>
           <h2>真实 WebSocket 桌面预览</h2>
-          <p>只读取 WebSocket roomSnapshot 展示房间状态；当前还不接真实摸牌、出牌、碰杠胡。</p>
+          <p>读取 WebSocket roomSnapshot 展示房间状态；当前只接真实定缺、摸牌、出牌，不接碰杠胡。</p>
         </div>
         <button type="button" onClick={onExit}>
           回到本地模拟
@@ -668,6 +674,7 @@ function WebSocketTablePreview({
                 client={client}
                 onChooseMissingSuit={onChooseMissingSuit}
                 onDrawTile={onDrawTile}
+                onDiscardTile={onDiscardTile}
               />
             ))}
           </div>
@@ -708,10 +715,12 @@ function WebSocketPreviewClientCard({
   client,
   onChooseMissingSuit,
   onDrawTile,
+  onDiscardTile,
 }: {
   client: WebSocketPreviewClient;
   onChooseMissingSuit: (playerId: string, suit: Suit) => void;
   onDrawTile: (playerId: string) => void;
+  onDiscardTile: (playerId: string, tile: Tile) => void;
 }) {
   const snapshot = client.snapshot;
   const round = snapshot?.round ?? null;
@@ -727,6 +736,15 @@ function WebSocketPreviewClientCard({
     localPlayer !== null &&
     localPlayer.handCount % 3 === 1 &&
     client.sessionToken !== null;
+  const canDiscardTile =
+    round !== null &&
+    localSeat === round.currentPlayer &&
+    allMissingSuitsChosen &&
+    localPlayer?.hand !== null &&
+    localPlayer?.hand !== undefined &&
+    localPlayer.handCount % 3 === 2 &&
+    client.sessionToken !== null;
+  const visibleHand = localPlayer?.hand ?? [];
 
   return (
     <article className="preview-client-card">
@@ -736,6 +754,7 @@ function WebSocketPreviewClientCard({
       <p>房间状态：{snapshot?.status ?? "待快照"}</p>
       <p>定缺状态：{round === null ? "开局后可选" : suitText(localPlayer?.missingSuit ?? null)}</p>
       <p>摸牌状态：{webSocketDrawHint(round, localSeat, localPlayer, allMissingSuitsChosen)}</p>
+      <p>出牌状态：{webSocketDiscardHint(round, localSeat, localPlayer, allMissingSuitsChosen)}</p>
       <div className="preview-missing-actions">
         {suitOrder.map((suit) => (
           <button
@@ -756,6 +775,22 @@ function WebSocketPreviewClientCard({
       >
         服务端摸牌
       </button>
+      <div className="preview-discard-actions" aria-label={`${client.title} 可见手牌出牌`}>
+        {visibleHand.length === 0 ? (
+          <span>只有当前客户端自己的手牌可用于出牌</span>
+        ) : (
+          sortHand(visibleHand).map((tile, index) => (
+            <button
+              key={`${tileText(tile)}-${index}`}
+              type="button"
+              disabled={!canDiscardTile}
+              onClick={() => onDiscardTile(client.playerId, tile)}
+            >
+              <TileFace tile={tile} compact />
+            </button>
+          ))
+        )}
+      </div>
       <div>
         {players.length === 0 ? (
           <span>开局后显示 redacted 手牌数量</span>
@@ -799,6 +834,39 @@ function webSocketDrawHint(
   }
 
   return "当前玩家可请求服务端摸牌";
+}
+
+function webSocketDiscardHint(
+  round: ClientVisibleRoomState["round"],
+  localSeat: PlayerId | null | undefined,
+  localPlayer: VisiblePlayerState | null | undefined,
+  allMissingSuitsChosen: boolean,
+): string {
+  if (round === null) {
+    return "开局后等待服务端判断";
+  }
+
+  if (localSeat === null || localSeat === undefined || localPlayer === null || localPlayer === undefined) {
+    return "尚未入座";
+  }
+
+  if (!allMissingSuitsChosen) {
+    return "等待所有玩家定缺";
+  }
+
+  if (localSeat !== round.currentPlayer) {
+    return `等待玩家 ${round.currentPlayer + 1}`;
+  }
+
+  if (localPlayer.handCount % 3 !== 2) {
+    return "当前不是出牌阶段";
+  }
+
+  if (localPlayer.hand === null) {
+    return "当前客户端不可见该手牌";
+  }
+
+  return "当前玩家可选择可见手牌出牌";
 }
 
 function ClientViewSelector({
@@ -856,6 +924,7 @@ function WebSocketExperimentPanel({
     actionsRef.current = {
       chooseMissingSuit: handleChooseWebSocketMissingSuit,
       drawTile: handleDrawWebSocketTile,
+      discardTile: handleDiscardWebSocketTile,
     };
 
     return () => {
@@ -1270,6 +1339,44 @@ function WebSocketExperimentPanel({
     syncTransportState();
   }
 
+  async function handleDiscardWebSocketTile(playerId: string, tile: Tile) {
+    const transport = webSocketTransportForPlayer(playerId);
+
+    if (transport === null) {
+      setWebSocketStep("discard", "error", `出牌失败：${playerId} 还没有可用的 WebSocket session。`);
+      appendWebSocketLog(`discardTile：${playerId} 缺少 WebSocket session。`);
+      syncTransportState();
+      return;
+    }
+
+    const beforeView = transport.getClientView(playerId);
+    const beforeLocalSeat = beforeView?.localSeatId;
+    const beforeDiscardCount =
+      beforeLocalSeat === null || beforeLocalSeat === undefined
+        ? null
+        : beforeView?.round?.players[beforeLocalSeat].discards.length;
+
+    setWebSocketStep("discard", "running", `${playerId} 正在请求服务端打出 ${tileText(tile)}。`);
+    const result = await transport.discardTile(playerId, tile);
+    appendWebSocketLog(`discardTile：${playerId} 打出 ${tileText(tile)}，${webSocketActionText(result)}。`);
+
+    if (result.ok) {
+      await waitForWebSocketView(transport, playerId, (view) => {
+        const seatId = view.localSeatId;
+        if (seatId === null || seatId === undefined) {
+          return false;
+        }
+
+        return beforeDiscardCount === null || view.round?.players[seatId].discards.length === beforeDiscardCount + 1;
+      }).catch(() => undefined);
+      setWebSocketStep("discard", "success", `${playerId} 已由服务端确认打出 ${tileText(tile)}。`);
+    } else {
+      setWebSocketStep("discard", "error", `出牌失败：${webSocketActionErrorText(result)}。`);
+    }
+
+    syncTransportState();
+  }
+
   function webSocketTransportForPlayer(playerId: string): WebSocketRoomTransport | null {
     if (playerId === "player-1") {
       return hostTransport.current;
@@ -1600,6 +1707,11 @@ function createInitialWebSocketStepStates(): WebSocketStepStates {
       status: "idle",
       message: "定缺完成后，当前摸牌阶段玩家可请求服务端摸牌。",
     },
+    discard: {
+      label: "出牌",
+      status: "idle",
+      message: "当前出牌阶段玩家可选择自己的可见手牌交给服务端校验。",
+    },
     resume: {
       label: "恢复",
       status: "idle",
@@ -1820,8 +1932,12 @@ function webSocketErrorCodeText(code: string): string {
     missingSuitAlreadyChosen: "该玩家已经定缺，不能重复提交",
     notCurrentPlayer: "还没轮到该玩家",
     notDrawPhase: "当前不是摸牌阶段",
+    notDiscardPhase: "当前不是出牌阶段",
     wallEmpty: "牌墙已经摸完",
     playerAlreadyWon: "该玩家已经胡牌",
+    tileNotInHand: "手里没有这张牌",
+    mustDiscardMissingSuitFirst: "手里还有缺门牌，必须先打缺门",
+    cannotDiscardYaoJi: "幺鸡/赖子不能主动打出",
     invalidSession: "session 无效，请重新加入房间",
     unknown: "未知错误",
   };
@@ -2226,6 +2342,8 @@ function roomEventText(event: RoomEvent, room: RoomState): string {
       return `${roomPlayerName(room, event.playerId)} 定缺 ${suitText(event.suit)}。`;
     case "tileDrawn":
       return `${roomPlayerName(room, event.playerId)} 已由服务端摸牌。`;
+    case "tileDiscarded":
+      return `${roomPlayerName(room, event.playerId)} 打出 ${tileText(event.tile)}。`;
   }
 }
 

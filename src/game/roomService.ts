@@ -1,6 +1,7 @@
 import {
   chooseMissingSuit,
   createRoom,
+  discardRoomTile,
   drawRoomTile,
   joinRoom,
   startRoomRound,
@@ -9,6 +10,7 @@ import {
   toClientVisibleRoomState,
   type ChooseMissingSuitResult,
   type ClientVisibleRoomState,
+  type DiscardRoomTileResult,
   type DrawRoomTileResult,
   type JoinRoomResult,
   type RoomEvent,
@@ -17,7 +19,7 @@ import {
   type TakeSeatResult,
   type ToggleReadyResult,
 } from "./room.ts";
-import type { PlayerId, Suit } from "./types.ts";
+import type { PlayerId, Suit, Tile } from "./types.ts";
 
 export type RoomSession = {
   sessionToken: string;
@@ -49,7 +51,8 @@ export type RoomAction =
   | { type: "toggleReady" }
   | { type: "startRound"; dealer?: PlayerId }
   | { type: "chooseMissingSuit"; suit: Suit }
-  | { type: "drawTile" };
+  | { type: "drawTile" }
+  | { type: "discardTile"; tile: Tile };
 
 export type RoomServiceError =
   | "invalidSession"
@@ -58,7 +61,8 @@ export type RoomServiceError =
   | ToggleReadyResult["reason"]
   | StartRoomRoundResult["reason"]
   | ChooseMissingSuitResult["reason"]
-  | DrawRoomTileResult["reason"];
+  | DrawRoomTileResult["reason"]
+  | DiscardRoomTileResult["reason"];
 
 export type RoomServiceResponse = {
   service: RoomServiceState;
@@ -227,7 +231,13 @@ function applyRoomAction(
   room: RoomState,
   playerId: string,
   action: RoomAction,
-): TakeSeatResult | ToggleReadyResult | StartRoomRoundResult | ChooseMissingSuitResult | DrawRoomTileResult {
+):
+  | TakeSeatResult
+  | ToggleReadyResult
+  | StartRoomRoundResult
+  | ChooseMissingSuitResult
+  | DrawRoomTileResult
+  | DiscardRoomTileResult {
   if (action.type === "takeSeat") {
     return takeSeat(room, playerId, action.seatId);
   }
@@ -242,6 +252,10 @@ function applyRoomAction(
 
   if (action.type === "drawTile") {
     return drawRoomTile(room, playerId);
+  }
+
+  if (action.type === "discardTile") {
+    return discardRoomTile(room, playerId, action.tile);
   }
 
   return chooseMissingSuit(room, playerId, action.suit);

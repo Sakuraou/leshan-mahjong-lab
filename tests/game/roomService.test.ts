@@ -9,6 +9,8 @@ import {
   resumeRoomSession,
   type RoomServiceState,
   type RoomSession,
+  type Suit,
+  type Tile,
 } from "../../src/game/index.ts";
 
 test("creates a server-authoritative room session for the host", () => {
@@ -123,6 +125,26 @@ test("draws through the authoritative service and returns a redacted view", () =
   assert.deepEqual(drawn.events, [{ type: "tileDrawn", seatId: 1, playerId: "player-2" }]);
 });
 
+test("discards through the authoritative service and returns a redacted view", () => {
+  const prepared = prepareServiceForDealerDiscard("svc-room-discard");
+  const beforeHandCount = prepared.service.room.round?.players[0].hand.length;
+  const discarded = handleOk(prepared.service, prepared.sessions[0].sessionToken, {
+    type: "discardTile",
+    tile: prepared.discard,
+  });
+
+  assert.equal(discarded.service.room.round?.players[0].hand.length, (beforeHandCount ?? 0) - 1);
+  assert.deepEqual(discarded.service.room.round?.players[0].discards, [prepared.discard]);
+  assert.equal(discarded.service.room.round?.currentPlayer, 1);
+  assert.equal(discarded.view.localSeatId, 0);
+  assert.equal(discarded.view.round?.players[0].hand?.length, 13);
+  assert.equal(discarded.view.round?.players[1].hand, null);
+  assert.equal(discarded.view.round?.players[0].discards.length, 1);
+  assert.deepEqual(discarded.events, [
+    { type: "tileDiscarded", seatId: 0, playerId: "player-1", tile: prepared.discard },
+  ]);
+});
+
 test("rejects service draw when dingque is missing, out of turn, or outside draw phase", () => {
   const filled = fillReadyService("svc-room-draw-reject");
   const started = handleOk(filled.service, filled.sessions[0].sessionToken, { type: "startRound" });
@@ -157,6 +179,73 @@ test("rejects service draw when dingque is missing, out of turn, or outside draw
     reason: "notDrawPhase",
     service: dealerTurnService,
   });
+});
+
+test("rejects service discard before dingque, out of turn, outside discard phase, and with illegal tiles", () => {
+  const filled = fillReadyService("svc-room-discard-reject");
+  const started = handleOk(filled.service, filled.sessions[0].sessionToken, { type: "startRound" });
+  const initialDiscard = findDiscardCandidate(started.service.room.round!.players[0].hand);
+
+  assert.deepEqual(
+    handleRoomAction(started.service, filled.sessions[0].sessionToken, {
+      type: "discardTile",
+      tile: initialDiscard,
+    }),
+    {
+      ok: false,
+      reason: "missingSuitNotSet",
+      service: started.service,
+    },
+  );
+
+  const prepared = prepareServiceForDealerDiscard("svc-room-discard-reject-ready");
+
+  assert.deepEqual(
+    handleRoomAction(prepared.service, prepared.sessions[1].sessionToken, {
+      type: "discardTile",
+      tile: prepared.discard,
+    }),
+    {
+      ok: false,
+      reason: "notCurrentPlayer",
+      service: prepared.service,
+    },
+  );
+
+  const playerTwoTurnService = {
+    ...prepared.service,
+    room: {
+      ...prepared.service.room,
+      round: {
+        ...prepared.service.room.round!,
+        currentPlayer: 1 as const,
+      },
+    },
+  };
+
+  assert.deepEqual(
+    handleRoomAction(playerTwoTurnService, prepared.sessions[1].sessionToken, {
+      type: "discardTile",
+      tile: prepared.service.room.round!.players[1].hand[0],
+    }),
+    {
+      ok: false,
+      reason: "notDiscardPhase",
+      service: playerTwoTurnService,
+    },
+  );
+
+  assert.deepEqual(
+    handleRoomAction(prepared.service, prepared.sessions[0].sessionToken, {
+      type: "discardTile",
+      tile: { suit: "characters", rank: 9 },
+    }),
+    {
+      ok: false,
+      reason: "tileNotInHand",
+      service: prepared.service,
+    },
+  );
 });
 
 test("rejects missing suit choice before the round starts, without a seat, and after choosing once", () => {
@@ -291,6 +380,33 @@ function prepareServiceForPlayerTwoDraw(roomId: string): { service: RoomServiceS
       },
     },
   };
+}
+
+function prepareServiceForDealerDiscard(roomId: string): { service: RoomServiceState; sessions: RoomSession[]; discard: Tile } {
+  const filled = fillReadyService(roomId);
+  let service = handleOk(filled.service, filled.sessions[0].sessionToken, { type: "startRound" }).service;
+  const discard = findDiscardCandidate(service.room.round!.players[0].hand);
+  const suits: Suit[] = [discard.suit, "dots", "characters", "bamboos"];
+
+  filled.sessions.forEach((session, index) => {
+    service = handleOk(service, session.sessionToken, { type: "chooseMissingSuit", suit: suits[index] }).service;
+  });
+
+  return { service, sessions: filled.sessions, discard };
+}
+
+function findDiscardCandidate(hand: Tile[]): Tile {
+  const candidate = hand.find((value) => !isYaoJi(value));
+
+  if (candidate === undefined) {
+    throw new Error("Expected a non-yao-ji discard candidate.");
+  }
+
+  return candidate;
+}
+
+function isYaoJi(tile: Tile): boolean {
+  return tile.rank === 1 && (tile.suit === "bamboos" || tile.suit === "dots");
 }
 
 function handleOk(

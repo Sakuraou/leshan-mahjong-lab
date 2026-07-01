@@ -5,7 +5,7 @@ import { WebSocket } from "ws";
 import type { WebSocketLike, WebSocketRoomTransport } from "../../src/webSocketRoomTransport.ts";
 import { createWebSocketRoomTransport } from "../../src/webSocketRoomTransport.ts";
 import { createRoomSocketDevServer } from "../../src/server/devServer.ts";
-import type { PlayerId } from "../../src/game/index.ts";
+import type { PlayerId, Suit, Tile } from "../../src/game/index.ts";
 
 test("websocket room transport tracks session snapshots over a real dev server", async () => {
   const server = await createRoomSocketDevServer({ port: 0 });
@@ -53,11 +53,17 @@ test("websocket room transport tracks session snapshots over a real dev server",
 
     await waitForRoundSnapshots(transports);
 
+    const hostHand = transports[0].getClientView("player-1")?.round?.players[0].hand;
+    assert.ok(hostHand);
+    const hostDiscard = findDiscardCandidate(hostHand);
+
     const chosen = await transports[1].chooseMissingSuit("player-2", "characters");
     assert.equal(chosen.ok, true);
     await waitForMissingSuitSnapshots(transports, 1, "characters");
 
-    for (const [index, suit] of ["bamboos", "dots", "characters", "bamboos"].entries()) {
+    const suits: Suit[] = [hostDiscard.suit, "characters", "dots", "bamboos"];
+
+    for (const [index, suit] of suits.entries()) {
       const playerId = `player-${index + 1}`;
       const view = transports[index].getClientView(playerId);
 
@@ -65,17 +71,25 @@ test("websocket room transport tracks session snapshots over a real dev server",
         continue;
       }
 
-      assert.equal((await transports[index].chooseMissingSuit(playerId, suit as "bamboos" | "dots" | "characters")).ok, true);
+      assert.equal((await transports[index].chooseMissingSuit(playerId, suit)).ok, true);
     }
 
-    await waitForMissingSuitSnapshots(transports, 0, "bamboos");
-    await waitForMissingSuitSnapshots(transports, 2, "characters");
+    await waitForMissingSuitSnapshots(transports, 0, hostDiscard.suit);
+    await waitForMissingSuitSnapshots(transports, 2, "dots");
     await waitForMissingSuitSnapshots(transports, 3, "bamboos");
 
     const dealerDraw = await transports[0].drawTile("player-1");
     assert.equal(dealerDraw.ok, false);
     assert.equal(dealerDraw.reason, "actionRejected");
     assert.equal(dealerDraw.rejectedMessage?.payload.code, "notDrawPhase");
+
+    const discarded = await transports[0].discardTile("player-1", hostDiscard);
+    assert.equal(discarded.ok, true);
+    await waitForDiscardSnapshots(transports, hostDiscard);
+
+    const playerTwoDraw = await transports[1].drawTile("player-2");
+    assert.equal(playerTwoDraw.ok, true);
+    await waitForPlayerHandCount(transports, 1, 14);
 
     transports.forEach((transport, index) => {
       const view = transport.getClientView(`player-${index + 1}`);
@@ -84,11 +98,13 @@ test("websocket room transport tracks session snapshots over a real dev server",
       assert.equal(view.round.players[1].missingSuit, "characters");
 
       view.round.players.forEach((player, playerIndex) => {
+        const expectedHandCount = playerIndex === 0 || playerIndex === 1 ? 14 - Number(playerIndex === 0) : 13;
+
         if (playerIndex === index) {
-          assert.equal(player.hand?.length, index === 0 ? 14 : 13);
+          assert.equal(player.hand?.length, expectedHandCount);
         } else {
           assert.equal(player.hand, null);
-          assert.equal(player.handCount, playerIndex === 0 ? 14 : 13);
+          assert.equal(player.handCount, expectedHandCount);
         }
       });
     });
@@ -225,6 +241,62 @@ async function waitForMissingSuitSnapshots(
 
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
+}
+
+async function waitForDiscardSnapshots(transports: WebSocketRoomTransport[], discard: Tile): Promise<void> {
+  const deadline = Date.now() + 3_000;
+
+  while (
+    transports.some((transport, index) => {
+      const dealer = transport.getClientView(`player-${index + 1}`)?.round?.players[0];
+      return dealer?.handCount !== 13 || dealer.discards.length !== 1 || !sameTile(dealer.discards[0], discard);
+    })
+  ) {
+    if (Date.now() > deadline) {
+      throw new Error("Timed out waiting for WebSocket discard snapshots.");
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
+async function waitForPlayerHandCount(
+  transports: WebSocketRoomTransport[],
+  playerIndex: number,
+  handCount: number,
+): Promise<void> {
+  const deadline = Date.now() + 3_000;
+
+  while (
+    transports.some(
+      (transport, index) =>
+        transport.getClientView(`player-${index + 1}`)?.round?.players[playerIndex].handCount !== handCount,
+    )
+  ) {
+    if (Date.now() > deadline) {
+      throw new Error("Timed out waiting for WebSocket hand count snapshots.");
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
+function findDiscardCandidate(hand: Tile[]): Tile {
+  const candidate = hand.find((value) => !isYaoJi(value));
+
+  if (candidate === undefined) {
+    throw new Error("Expected a non-yao-ji discard candidate.");
+  }
+
+  return candidate;
+}
+
+function isYaoJi(tile: Tile): boolean {
+  return tile.rank === 1 && (tile.suit === "bamboos" || tile.suit === "dots");
+}
+
+function sameTile(left: Tile | undefined, right: Tile): boolean {
+  return left?.suit === right.suit && left.rank === right.rank;
 }
 
 function createNodeWebSocket(url: string): WebSocketLike {

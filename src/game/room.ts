@@ -1,4 +1,10 @@
-import { drawTile as drawRoundTile, startRound, type DrawTileResult } from "./round.ts";
+import {
+  discardTile as discardRoundTile,
+  drawTile as drawRoundTile,
+  startRound,
+  type DiscardTileResult,
+  type DrawTileResult,
+} from "./round.ts";
 import type { PlayerId, RoundState, Suit, Tile } from "./types.ts";
 
 const seatIds: PlayerId[] = [0, 1, 2, 3];
@@ -26,7 +32,8 @@ export type RoomEvent =
   | { type: "readyChanged"; seatId: PlayerId; playerId: string; ready: boolean }
   | { type: "roundStarted"; seed: string; dealer: PlayerId }
   | { type: "missingSuitChosen"; seatId: PlayerId; playerId: string; suit: Suit }
-  | { type: "tileDrawn"; seatId: PlayerId; playerId: string };
+  | { type: "tileDrawn"; seatId: PlayerId; playerId: string }
+  | { type: "tileDiscarded"; seatId: PlayerId; playerId: string; tile: Tile };
 
 export type RoomState = {
   id: string;
@@ -105,6 +112,19 @@ export type DrawRoomTileResult =
         | "notCurrentPlayer"
         | "notDrawPhase"
         | DrawTileResult["reason"];
+    };
+
+export type DiscardRoomTileResult =
+  | { ok: true; room: RoomState }
+  | {
+      ok: false;
+      reason:
+        | "roundNotStarted"
+        | "playerNotSeated"
+        | "missingSuitNotSet"
+        | "notCurrentPlayer"
+        | "notDiscardPhase"
+        | DiscardTileResult["reason"];
     };
 
 export function createRoom(input: CreateRoomInput): RoomState {
@@ -302,6 +322,47 @@ export function drawRoomTile(room: RoomState, playerId: string): DrawRoomTileRes
       ...room,
       round: result.round,
       eventLog: [...room.eventLog, { type: "tileDrawn", seatId: seat.seatId, playerId }],
+    },
+  };
+}
+
+export function discardRoomTile(room: RoomState, playerId: string, tile: Tile): DiscardRoomTileResult {
+  if (room.round === null) {
+    return { ok: false, reason: "roundNotStarted" };
+  }
+
+  const seat = room.seats.find((value) => value.playerId === playerId);
+
+  if (seat === undefined) {
+    return { ok: false, reason: "playerNotSeated" };
+  }
+
+  if (room.round.players.some((player) => player.missingSuit === null)) {
+    return { ok: false, reason: "missingSuitNotSet" };
+  }
+
+  if (room.round.currentPlayer !== seat.seatId) {
+    return { ok: false, reason: "notCurrentPlayer" };
+  }
+
+  const player = room.round.players[seat.seatId];
+
+  if (player.hand.length % 3 !== 2) {
+    return { ok: false, reason: "notDiscardPhase" };
+  }
+
+  const result = discardRoundTile(room.round, seat.seatId, tile);
+
+  if (!result.ok) {
+    return { ok: false, reason: result.reason };
+  }
+
+  return {
+    ok: true,
+    room: {
+      ...room,
+      round: result.round,
+      eventLog: [...room.eventLog, { type: "tileDiscarded", seatId: seat.seatId, playerId, tile }],
     },
   };
 }

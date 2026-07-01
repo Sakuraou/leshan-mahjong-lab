@@ -4,6 +4,7 @@ import type {
   RoomSocketClientMessage,
   RoomSocketServerMessage,
   Suit,
+  Tile,
 } from "./game/index.ts";
 
 export type WebSocketRoomTransportState = {
@@ -28,6 +29,7 @@ export type WebSocketRoomTransport = {
   startRound: (playerId: string, dealer?: PlayerId) => Promise<WebSocketRoomTransportActionResult>;
   chooseMissingSuit: (playerId: string, suit: Suit) => Promise<WebSocketRoomTransportActionResult>;
   drawTile: (playerId: string) => Promise<WebSocketRoomTransportActionResult>;
+  discardTile: (playerId: string, tile: Tile) => Promise<WebSocketRoomTransportActionResult>;
   waitForSnapshot: (playerId: string, timeoutMs?: number) => Promise<ClientVisibleRoomState>;
   waitForMessageCount: (count: number, timeoutMs?: number) => Promise<RoomSocketServerMessage[]>;
   getClientView: (playerId: string) => ClientVisibleRoomState | undefined;
@@ -143,7 +145,7 @@ export async function createWebSocketRoomTransport(
     message: Omit<
       Extract<
         RoomSocketClientMessage,
-        { type: "takeSeat" | "toggleReady" | "startRound" | "chooseMissingSuit" | "drawTile" }
+        { type: "takeSeat" | "toggleReady" | "startRound" | "chooseMissingSuit" | "drawTile" | "discardTile" }
       >,
       "protocolVersion" | "clientMessageId" | "roomId" | "sessionToken"
     >,
@@ -204,6 +206,7 @@ export async function createWebSocketRoomTransport(
     startRound: (playerId, dealer) => sendSessionMessage(playerId, { type: "startRound", payload: { dealer } }),
     chooseMissingSuit: (playerId, suit) => sendSessionMessage(playerId, { type: "chooseMissingSuit", payload: { suit } }),
     drawTile: (playerId) => sendSessionMessage(playerId, { type: "drawTile", payload: {} }),
+    discardTile: (playerId, tile) => sendSessionMessage(playerId, { type: "discardTile", payload: { tile } }),
     waitForSnapshot: (playerId, timeoutMs = actionTimeoutMs) => waitForSnapshot(state, snapshotWaiters, playerId, timeoutMs),
     waitForMessageCount: (count, timeoutMs = actionTimeoutMs) =>
       waitForMessageCount(state, messageCountWaiters, count, timeoutMs),

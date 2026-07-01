@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   createRoom,
   chooseMissingSuit,
+  discardRoomTile,
   drawRoomTile,
   joinRoom,
   startRoomRound,
@@ -11,6 +12,8 @@ import {
   toggleReady,
   toClientVisibleRoomState,
   type RoomState,
+  type Suit,
+  type Tile,
 } from "../../src/game/index.ts";
 
 test("creates a waiting room with four empty seats", () => {
@@ -261,6 +264,66 @@ test("rejects draw before start, before dingque, out of turn, and outside draw p
   });
 });
 
+test("discards a tile for the current seated player after dingque is complete", () => {
+  const { room, discard } = readyRoomForDealerDiscard();
+  const beforeHandCount = room.round?.players[0].hand.length;
+  const result = discardRoomTile(room, "p1", discard);
+
+  assert.equal(result.ok, true);
+
+  if (!result.ok) {
+    return;
+  }
+
+  assert.equal(result.room.round?.players[0].hand.length, (beforeHandCount ?? 0) - 1);
+  assert.equal(result.room.round?.players[0].discards.length, 1);
+  assert.equal(result.room.round?.currentPlayer, 1);
+  assert.deepEqual(result.room.eventLog.at(-1), {
+    type: "tileDiscarded",
+    seatId: 0,
+    playerId: "p1",
+    tile: discard,
+  });
+
+  const visibleToP1 = toClientVisibleRoomState(result.room, "p1");
+  const visibleToP2 = toClientVisibleRoomState(result.room, "p2");
+
+  assert.equal(visibleToP1.round?.players[0].hand?.length, 13);
+  assert.equal(visibleToP2.round?.players[0].hand, null);
+  assert.equal(visibleToP2.round?.players[0].handCount, 13);
+  assert.deepEqual(visibleToP2.round?.players[0].discards, [discard]);
+});
+
+test("rejects discard before start, before dingque, out of turn, and outside discard phase", () => {
+  const waitingRoom = seatPlayers(createRoom({ id: "room-discard-waiting", seed: "discard-waiting-seed" }));
+  const tile: Tile = { suit: "characters", rank: 5 };
+
+  assert.deepEqual(discardRoomTile(waitingRoom, "p1", tile), {
+    ok: false,
+    reason: "roundNotStarted",
+  });
+
+  const started = startReadyRoom();
+  const startedTile = started.round!.players[0].hand.find((value) => !isYaoJi(value))!;
+
+  assert.deepEqual(discardRoomTile(started, "p1", startedTile), {
+    ok: false,
+    reason: "missingSuitNotSet",
+  });
+
+  const { room, discard } = readyRoomForDealerDiscard();
+
+  assert.deepEqual(discardRoomTile(room, "p2", discard), {
+    ok: false,
+    reason: "notCurrentPlayer",
+  });
+
+  assert.deepEqual(discardRoomTile({ ...room, round: { ...room.round!, currentPlayer: 1 } }, "p2", discard), {
+    ok: false,
+    reason: "notDiscardPhase",
+  });
+});
+
 test("rejects choosing missing suit before start, without a seat, or twice", () => {
   const waitingRoom = seatPlayers(createRoom({ id: "room-missing-waiting", seed: "missing-waiting-seed" }));
 
@@ -344,6 +407,37 @@ function readyRoomForPlayerTwoDraw(): RoomState {
       currentPlayer: 1,
     },
   };
+}
+
+function readyRoomForDealerDiscard(): { room: RoomState; discard: Tile } {
+  const started = startReadyRoom();
+  const discard = findDiscardCandidate(started.round!.players[0].hand);
+  const suits: Suit[] = [discard.suit, "dots", "characters", "bamboos"];
+  const room = ["p1", "p2", "p3", "p4"].reduce((nextRoom, playerId, index) => {
+    const result = chooseMissingSuit(nextRoom, playerId, suits[index]);
+
+    if (!result.ok) {
+      throw new Error(result.reason);
+    }
+
+    return result.room;
+  }, started);
+
+  return { room, discard };
+}
+
+function findDiscardCandidate(hand: Tile[]): Tile {
+  const tile = hand.find((value) => !isYaoJi(value));
+
+  if (tile === undefined) {
+    throw new Error("Expected at least one non-yao-ji discard candidate.");
+  }
+
+  return tile;
+}
+
+function isYaoJi(tile: Tile): boolean {
+  return tile.rank === 1 && (tile.suit === "bamboos" || tile.suit === "dots");
 }
 
 function seatPlayers(room: RoomState): RoomState {
