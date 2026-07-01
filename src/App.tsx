@@ -919,8 +919,9 @@ function WebSocketExperimentPanel() {
     const guestRecord = loadWebSocketRecoveryRecord("player-2");
 
     if (hostRecord === null || guestRecord === null) {
-      setWebSocketStep("resume", "error", "恢复失败：缺少 host/guest 本地 session，请先完成创建和加入。");
-      appendWebSocketLog("恢复失败：localStorage 里还没有 host/guest 的 sessionToken 和 lastEventId。");
+      const missingLabel = hostRecord === null && guestRecord === null ? "host/guest" : hostRecord === null ? "host" : "guest";
+      setWebSocketStep("resume", "error", `恢复失败：缺少 ${missingLabel} 本地 session，请先完成创建和加入。`);
+      appendWebSocketLog(`恢复失败：localStorage 里缺少 ${missingLabel} 的 sessionToken 和 lastEventId。`);
       return;
     }
 
@@ -957,7 +958,7 @@ function WebSocketExperimentPanel() {
       });
 
       if (!hostResult.ok || !guestResult.ok) {
-        const reason = !hostResult.ok ? webSocketActionErrorText(hostResult) : webSocketActionErrorText(guestResult);
+        const reason = !hostResult.ok ? webSocketResumeFailureText(hostResult) : webSocketResumeFailureText(guestResult);
         setWebSocketStep("resume", "error", `恢复失败：${reason}。`);
         appendWebSocketLog(`resumeSession：恢复失败，${reason}。`);
         syncTransportState();
@@ -974,9 +975,15 @@ function WebSocketExperimentPanel() {
       syncTransportState();
     } catch {
       setConnectionStatus("error");
-      setWebSocketStep("resume", "error", "恢复失败：请确认 dev server 仍在运行，且房间没有被服务端重置。");
-      appendWebSocketLog("恢复失败：WebSocket 重连或 resumeSession 没有完成。");
+      setWebSocketStep("resume", "error", "恢复失败：连接失败，请确认 dev server 仍在运行。");
+      appendWebSocketLog("恢复失败：WebSocket 连接失败，请确认 npm run dev:server 已启动且地址正确。");
     }
+  }
+
+  function handleClearSavedWebSocketSessions() {
+    clearWebSocketRecoveryRecords();
+    setWebSocketStep("resume", "success", "已清除 host/guest 本地 session；再次恢复会提示缺少本地 session。");
+    appendWebSocketLog("已清除 localStorage 中保存的 host/guest session。");
   }
 
   function handleResetWebSocketExperiment() {
@@ -1046,6 +1053,9 @@ function WebSocketExperimentPanel() {
         </button>
         <button type="button" onClick={handleSimulateRefreshAndResume}>
           模拟刷新后恢复
+        </button>
+        <button type="button" onClick={handleClearSavedWebSocketSessions}>
+          清除已保存 session
         </button>
         <button type="button" onClick={handleResetWebSocketExperiment}>
           重置实验
@@ -1331,6 +1341,36 @@ function webSocketActionErrorText(result: WebSocketRoomTransportActionResult): s
   }
 
   return "等待服务端响应超时";
+}
+
+function webSocketResumeFailureText(result: WebSocketRoomTransportActionResult): string {
+  if (result.ok) {
+    return "没有错误";
+  }
+
+  if (result.reason === "actionRejected") {
+    const code = result.rejectedMessage?.payload.code;
+
+    if (code === "roomNotFound") {
+      return "房间已不存在，可能是 dev server 重启或服务端房间状态被清空";
+    }
+
+    if (code === "invalidSession") {
+      return "session 无效或已过期，请重新创建/加入房间";
+    }
+
+    return webSocketErrorCodeText(code ?? "unknown");
+  }
+
+  if (result.reason === "timeout") {
+    return "服务端没有返回恢复结果，可能是旧 session 没有可投递连接";
+  }
+
+  if (result.reason === "closed") {
+    return "连接已关闭，请重新连接后再恢复";
+  }
+
+  return webSocketActionErrorText(result);
 }
 
 function webSocketErrorCodeText(code: string): string {

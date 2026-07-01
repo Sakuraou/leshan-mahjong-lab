@@ -123,6 +123,52 @@ test("websocket room transport resumes a stored session over a real dev server",
   }
 });
 
+test("websocket room transport reports failed resume reasons over a real dev server", async () => {
+  const server = await createRoomSocketDevServer({ port: 0 });
+  const roomId = "transport-failed-resume-ws-room";
+  const transports: WebSocketRoomTransport[] = [];
+
+  try {
+    const missingRoom = await createWebSocketRoomTransport({
+      url: server.url,
+      roomId: "missing-resume-room",
+      seed: "transport-failed-resume-ws-seed",
+      webSocketFactory: createNodeWebSocket,
+    });
+    transports.push(missingRoom);
+
+    const missingRoomResult = await missingRoom.resumeSession({ sessionToken: "session-missing-room", lastSeenEventId: 0 });
+    assert.equal(missingRoomResult.ok, false);
+    assert.equal(missingRoomResult.reason, "actionRejected");
+    assert.equal(missingRoomResult.rejectedMessage?.payload.code, "roomNotFound");
+
+    const host = await createWebSocketRoomTransport({
+      url: server.url,
+      roomId,
+      seed: "transport-failed-resume-ws-seed",
+      webSocketFactory: createNodeWebSocket,
+    });
+    transports.push(host);
+    assert.equal((await host.createRoomSession({ displayName: "Player One" })).ok, true);
+
+    const invalidSession = await createWebSocketRoomTransport({
+      url: server.url,
+      roomId,
+      seed: "transport-failed-resume-ws-seed",
+      webSocketFactory: createNodeWebSocket,
+    });
+    transports.push(invalidSession);
+
+    const invalidSessionResult = await invalidSession.resumeSession({ sessionToken: "session-invalid", lastSeenEventId: 0 });
+    assert.equal(invalidSessionResult.ok, false);
+    assert.equal(invalidSessionResult.reason, "actionRejected");
+    assert.equal(invalidSessionResult.rejectedMessage?.payload.code, "invalidSession");
+  } finally {
+    transports.forEach((transport) => transport.close());
+    await server.close();
+  }
+});
+
 async function waitForRoundSnapshots(transports: WebSocketRoomTransport[]): Promise<void> {
   const deadline = Date.now() + 3_000;
 

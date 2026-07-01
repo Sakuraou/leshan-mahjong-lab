@@ -72,7 +72,7 @@ test("rejects invalid JSON before calling the room adapter", () => {
   ]);
 });
 
-test("does not deliver messages addressed to an unknown session", () => {
+test("returns action rejections to the requesting connection", () => {
   let server = createConnectedServer(["conn-host", "conn-guest"]);
   server = handleRoomSocketRawMessage(
     server,
@@ -87,11 +87,12 @@ test("does not deliver messages addressed to an unknown session", () => {
   );
 
   assert.equal(result.errors.length, 0);
-  assert.equal(result.outgoing.length, 0);
-  assert.equal(result.undelivered.length, 1);
-  assert.equal(result.undelivered[0].recipientSessionToken, "missing-session");
-  assert.equal(result.undelivered[0].message.type, "actionRejected");
-  assert.equal(actionRejected(result.undelivered[0].message).payload.code, "invalidSession");
+  assert.equal(result.undelivered.length, 0);
+  assert.deepEqual(
+    result.outgoing.map((message) => [message.connectionId, message.message.type]),
+    [["conn-guest", "actionRejected"]],
+  );
+  assert.equal(actionRejected(result.outgoing[0].message).payload.code, "invalidSession");
 });
 
 test("rebinds a resumed session to the newest connection", () => {

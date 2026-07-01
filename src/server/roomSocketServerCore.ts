@@ -165,7 +165,7 @@ function routeServerMessages(
   const undelivered: RoomSocketUndeliveredMessage[] = [];
 
   for (const message of messages) {
-    if (message.recipientSessionToken === null) {
+    if (message.type === "actionRejected" || message.recipientSessionToken === null) {
       outgoing.push({ connectionId: sourceConnectionId, message });
       continue;
     }
