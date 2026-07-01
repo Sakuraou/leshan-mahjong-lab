@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   checkCurrentPlayerHu,
   checkDiscardHu,
+  type ClientVisibleRoomState,
   discardTile,
   drawTile,
   startRound,
@@ -515,11 +516,13 @@ function ClientViewSelector({
 function WebSocketExperimentPanel() {
   const hostTransport = useRef<WebSocketRoomTransport | null>(null);
   const guestTransport = useRef<WebSocketRoomTransport | null>(null);
+  const helperTransports = useRef<WebSocketRoomTransport[]>([]);
   const [serverUrl, setServerUrl] = useState(webSocketExperimentUrl);
   const [experimentRoomId, setExperimentRoomId] = useState(createWebSocketExperimentRoomId);
   const [connectionStatus, setConnectionStatus] = useState<"idle" | "connecting" | "connected" | "error">("idle");
   const [hostState, setHostState] = useState<WebSocketRoomTransportState | null>(null);
   const [guestState, setGuestState] = useState<WebSocketRoomTransportState | null>(null);
+  const [helperStates, setHelperStates] = useState<WebSocketRoomTransportState[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([
     { id: 1, text: "真实 WebSocket 实验区尚未连接；当前牌桌仍使用本地 mock transport。" },
   ]);
@@ -528,6 +531,7 @@ function WebSocketExperimentPanel() {
     () => () => {
       hostTransport.current?.close();
       guestTransport.current?.close();
+      helperTransports.current.forEach((transport) => transport.close());
     },
     [],
   );
@@ -566,6 +570,7 @@ function WebSocketExperimentPanel() {
   function syncTransportState() {
     setHostState(hostTransport.current?.getState() ?? null);
     setGuestState(guestTransport.current?.getState() ?? null);
+    setHelperStates(helperTransports.current.map((transport) => transport.getState()));
   }
 
   function appendWebSocketLog(text: string) {
@@ -577,62 +582,242 @@ function WebSocketExperimentPanel() {
   }
 
   async function handleCreateWebSocketRoom() {
-    const transports = await ensureExperimentTransports().catch(() => null);
-
-    if (transports === null) {
-      return;
-    }
-
-    const result = await transports.host.createRoomSession({ displayName: "WebSocket 玩家 1" });
+    const transports = await ensureWebSocketRoomCreated();
     syncTransportState();
-    appendWebSocketLog(`createRoom：${webSocketActionText(result)}。`);
+
+    if (transports !== null) {
+      appendWebSocketLog("Host 已具备房主 session。");
+    }
   }
 
-  async function handleJoinWebSocketRoom() {
+  async function ensureWebSocketRoomCreated(): Promise<{
+    host: WebSocketRoomTransport;
+    guest: WebSocketRoomTransport;
+  } | null> {
     const transports = await ensureExperimentTransports().catch(() => null);
 
     if (transports === null) {
-      return;
-    }
-
-    const result = await transports.guest.joinRoomSession({ displayName: "WebSocket 玩家 2" });
-    await transports.guest.waitForSnapshot("player-2").catch(() => undefined);
-    await transports.host.waitForMessageCount(3).catch(() => undefined);
-    syncTransportState();
-    appendWebSocketLog(`joinRoom：${webSocketActionText(result)}。`);
-  }
-
-  async function handleRunWebSocketDemo() {
-    const transports = await ensureExperimentTransports().catch(() => null);
-
-    if (transports === null) {
-      return;
+      return null;
     }
 
     if (transports.host.getSessionToken("player-1") === undefined) {
-      const created = await transports.host.createRoomSession({ displayName: "WebSocket 玩家 1" });
-      appendWebSocketLog(`createRoom：${webSocketActionText(created)}。`);
+      const result = await transports.host.createRoomSession({ displayName: "WebSocket 玩家 1" });
+      await waitForWebSocketView(transports.host, "player-1", (view) => view.eventLog.some((event) => event.type === "playerJoined"));
+      appendWebSocketLog(`createRoom：${webSocketActionText(result)}。`);
+    }
+
+    return transports;
+  }
+
+  async function handleJoinWebSocketRoom() {
+    const transports = await ensureGuestJoined();
+    syncTransportState();
+
+    if (transports !== null) {
+      appendWebSocketLog("Guest 已具备玩家 2 session。");
+    }
+  }
+
+  async function ensureGuestJoined(): Promise<{
+    host: WebSocketRoomTransport;
+    guest: WebSocketRoomTransport;
+  } | null> {
+    const transports = await ensureWebSocketRoomCreated();
+
+    if (transports === null) {
+      return null;
     }
 
     if (transports.guest.getSessionToken("player-2") === undefined) {
-      const joined = await transports.guest.joinRoomSession({ displayName: "WebSocket 玩家 2" });
-      await transports.guest.waitForSnapshot("player-2").catch(() => undefined);
-      await transports.host.waitForMessageCount(3).catch(() => undefined);
-      appendWebSocketLog(`joinRoom：${webSocketActionText(joined)}。`);
+      const result = await transports.guest.joinRoomSession({ displayName: "WebSocket 玩家 2" });
+      await waitForWebSocketView(transports.guest, "player-2", (view) => view.eventLog.at(-1)?.type === "playerJoined");
+      await waitForWebSocketView(transports.host, "player-1", (view) =>
+        view.eventLog.some((event) => event.type === "playerJoined" && event.playerId === "player-2"),
+      );
+      appendWebSocketLog(`joinRoom：${webSocketActionText(result)}。`);
     }
 
+    return transports;
+  }
+
+  async function handleHostTakeSeat() {
+    const transports = await ensureWebSocketRoomCreated();
+
+    if (transports === null) {
+      return;
+    }
+
+    await takeWebSocketSeat(transports.host, "player-1", 0, "Host");
+    syncTransportState();
+  }
+
+  async function handleGuestTakeSeat() {
+    const transports = await ensureGuestJoined();
+
+    if (transports === null) {
+      return;
+    }
+
+    await takeWebSocketSeat(transports.guest, "player-2", 1, "Guest");
+    syncTransportState();
+  }
+
+  async function handleHostReady() {
+    const transports = await ensureWebSocketRoomCreated();
+
+    if (transports === null) {
+      return;
+    }
+
+    await ensureWebSocketSeat(transports.host, "player-1", 0, "Host");
+    await readyWebSocketPlayer(transports.host, "player-1", 0, "Host");
+    syncTransportState();
+  }
+
+  async function handleGuestReady() {
+    const transports = await ensureGuestJoined();
+
+    if (transports === null) {
+      return;
+    }
+
+    await ensureWebSocketSeat(transports.guest, "player-2", 1, "Guest");
+    await readyWebSocketPlayer(transports.guest, "player-2", 1, "Guest");
+    syncTransportState();
+  }
+
+  async function handleStartWebSocketRound() {
+    const transports = await ensureFullWebSocketRoomReady();
+
+    if (transports === null) {
+      return;
+    }
+
+    const result = await transports.host.startRound("player-1", 0);
+    appendWebSocketLog(`startRound：${webSocketActionText(result)}。`);
+    await waitForRoundSnapshots([transports.host, transports.guest, ...helperTransports.current]);
+    syncTransportState();
+  }
+
+  async function ensureHelperPlayersJoined(): Promise<WebSocketRoomTransport[] | null> {
+    const transports = await ensureExperimentTransports().catch(() => null);
+
+    if (transports === null) {
+      return null;
+    }
+
+    while (helperTransports.current.length < 2) {
+      const playerNumber = helperTransports.current.length + 3;
+      const helper = await createWebSocketRoomTransport({ url: serverUrl, roomId: experimentRoomId, seed: seed });
+      helperTransports.current = [...helperTransports.current, helper];
+      const result = await helper.joinRoomSession({ displayName: `WebSocket 玩家 ${playerNumber}` });
+      await waitForWebSocketView(helper, `player-${playerNumber}`, (view) => view.eventLog.at(-1)?.type === "playerJoined");
+      appendWebSocketLog(`玩家 ${playerNumber} joinRoom：${webSocketActionText(result)}。`);
+    }
+
+    return helperTransports.current;
+  }
+
+  async function ensureFullWebSocketRoomReady(): Promise<{
+    host: WebSocketRoomTransport;
+    guest: WebSocketRoomTransport;
+  } | null> {
+    const transports = await ensureGuestJoined();
+
+    if (transports === null) {
+      return null;
+    }
+
+    await ensureWebSocketSeat(transports.host, "player-1", 0, "Host");
+    await readyWebSocketPlayer(transports.host, "player-1", 0, "Host");
+    await ensureWebSocketSeat(transports.guest, "player-2", 1, "Guest");
+    await readyWebSocketPlayer(transports.guest, "player-2", 1, "Guest");
+
+    const helpers = await ensureHelperPlayersJoined();
+
+    if (helpers === null) {
+      return null;
+    }
+
+    for (const [index, helper] of helpers.entries()) {
+      const seatId = (index + 2) as PlayerId;
+      const playerId = `player-${index + 3}`;
+      await ensureWebSocketSeat(helper, playerId, seatId, `玩家 ${index + 3}`);
+      await readyWebSocketPlayer(helper, playerId, seatId, `玩家 ${index + 3}`);
+    }
+
+    syncTransportState();
+    return transports;
+  }
+
+  async function takeWebSocketSeat(
+    transport: WebSocketRoomTransport,
+    playerId: string,
+    seatId: PlayerId,
+    label: string,
+  ) {
+    const result = await transport.takeSeat(playerId, seatId);
+    await waitForWebSocketView(transport, playerId, (view) => view.seats[seatId].playerId === playerId).catch(() => undefined);
+    appendWebSocketLog(`${label} 占座：${webSocketActionText(result)}。`);
+  }
+
+  async function ensureWebSocketSeat(
+    transport: WebSocketRoomTransport,
+    playerId: string,
+    seatId: PlayerId,
+    label: string,
+  ) {
+    const view = transport.getClientView(playerId);
+
+    if (view?.seats[seatId].playerId === playerId) {
+      return;
+    }
+
+    await takeWebSocketSeat(transport, playerId, seatId, label);
+  }
+
+  async function readyWebSocketPlayer(
+    transport: WebSocketRoomTransport,
+    playerId: string,
+    seatId: PlayerId,
+    label: string,
+  ) {
+    const view = transport.getClientView(playerId);
+
+    if (view?.seats[seatId].ready) {
+      return;
+    }
+
+    const result = await transport.toggleReady(playerId);
+    await waitForWebSocketView(transport, playerId, (nextView) => nextView.seats[seatId].ready).catch(() => undefined);
+    appendWebSocketLog(`${label} 准备：${webSocketActionText(result)}。`);
+  }
+
+  async function handleRunWebSocketDemo() {
+    const transports = await ensureFullWebSocketRoomReady();
+
+    if (transports === null) {
+      return;
+    }
+
+    const result = await transports.host.startRound("player-1", 0);
+    appendWebSocketLog(`startRound：${webSocketActionText(result)}。`);
+    await waitForRoundSnapshots([transports.host, transports.guest, ...helperTransports.current]);
     syncTransportState();
   }
 
   function handleResetWebSocketExperiment() {
     hostTransport.current?.close();
     guestTransport.current?.close();
+    helperTransports.current.forEach((transport) => transport.close());
     hostTransport.current = null;
     guestTransport.current = null;
+    helperTransports.current = [];
     setConnectionStatus("idle");
     setExperimentRoomId(createWebSocketExperimentRoomId());
     setHostState(null);
     setGuestState(null);
+    setHelperStates([]);
     setLogs([{ id: 1, text: "真实 WebSocket 实验区已重置；当前牌桌仍使用本地 mock transport。" }]);
   }
 
@@ -666,8 +851,23 @@ function WebSocketExperimentPanel() {
         <button type="button" onClick={handleJoinWebSocketRoom}>
           joinRoom
         </button>
+        <button type="button" onClick={handleHostTakeSeat}>
+          Host 占座
+        </button>
+        <button type="button" onClick={handleGuestTakeSeat}>
+          Guest 占座
+        </button>
+        <button type="button" onClick={handleHostReady}>
+          Host 准备
+        </button>
+        <button type="button" onClick={handleGuestReady}>
+          Guest 准备
+        </button>
+        <button type="button" onClick={handleStartWebSocketRound}>
+          补齐并开局
+        </button>
         <button type="button" onClick={handleRunWebSocketDemo}>
-          自动演示
+          一键完整流程
         </button>
         <button type="button" onClick={handleResetWebSocketExperiment}>
           重置实验
@@ -677,6 +877,14 @@ function WebSocketExperimentPanel() {
       <div className="websocket-snapshots">
         <WebSocketSnapshotCard title="Host 客户端" state={hostState} playerId="player-1" />
         <WebSocketSnapshotCard title="Guest 客户端" state={guestState} playerId="player-2" />
+        {helperStates.map((state, index) => (
+          <WebSocketSnapshotCard
+            key={`helper-${index + 3}`}
+            title={`辅助客户端 ${index + 3}`}
+            state={state}
+            playerId={`player-${index + 3}`}
+          />
+        ))}
       </div>
 
       <div className="websocket-log">
@@ -686,6 +894,43 @@ function WebSocketExperimentPanel() {
       </div>
     </section>
   );
+}
+
+async function waitForWebSocketView(
+  transport: WebSocketRoomTransport,
+  playerId: string,
+  predicate: (view: ClientVisibleRoomState) => boolean,
+  timeoutMs = 3_000,
+): Promise<ClientVisibleRoomState> {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() <= deadline) {
+    const view = transport.getClientView(playerId);
+
+    if (view !== undefined && predicate(view)) {
+      return view;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+
+  throw new Error(`Timed out waiting for ${playerId} WebSocket view.`);
+}
+
+async function waitForRoundSnapshots(transports: WebSocketRoomTransport[], timeoutMs = 3_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() <= deadline) {
+    const allStarted = transports.every((transport, index) => transport.getClientView(`player-${index + 1}`)?.round != null);
+
+    if (allStarted) {
+      return;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+
+  throw new Error("Timed out waiting for WebSocket round snapshots.");
 }
 
 function WebSocketSnapshotCard({
@@ -699,13 +944,20 @@ function WebSocketSnapshotCard({
 }) {
   const sessionToken = state?.sessionTokenByPlayerId[playerId];
   const snapshot = state?.snapshotByPlayerId[playerId];
+  const occupiedSeats = snapshot?.seats.filter((seat) => seat.playerId !== null).length ?? 0;
+  const readySeats = snapshot?.seats.filter((seat) => seat.ready).length ?? 0;
+  const localSeat = snapshot?.localSeatId;
+  const localPlayer = localSeat === null || localSeat === undefined ? null : snapshot?.round?.players[localSeat];
+  const hiddenHands = snapshot?.round?.players.filter((player) => player.hand === null).length ?? 0;
 
   return (
     <article className="websocket-snapshot-card">
       <h3>{title}</h3>
       <span>{sessionToken ?? "暂无 session"}</span>
       <p>状态：{state?.status ?? "未连接"}</p>
-      <p>座位：{snapshot?.seats.filter((seat) => seat.playerId !== null).length ?? 0}/4</p>
+      <p>座位：{occupiedSeats}/4 · 准备：{readySeats}/4</p>
+      <p>房间状态：{snapshot?.status ?? "未连接"} · 本地座位：{localSeat === null || localSeat === undefined ? "-" : localSeat + 1}</p>
+      <p>手牌摘要：{localPlayer?.hand?.length ?? 0} 张可见 · {hiddenHands} 家隐藏</p>
       <p>最新事件：{snapshot?.eventLog.at(-1)?.type ?? "暂无"}</p>
     </article>
   );
