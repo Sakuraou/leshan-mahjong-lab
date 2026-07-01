@@ -19,6 +19,7 @@ after the GitHub repository is imported in Vercel.
 - Real-time protocol draft: [docs/realtime-protocol.md](docs/realtime-protocol.md)
 - Room service interface: [docs/room-service.md](docs/room-service.md)
 - Socket adapter interface: [docs/socket-adapter.md](docs/socket-adapter.md)
+- WebSocket server core: [docs/websocket-server.md](docs/websocket-server.md)
 
 ## Deploy To Vercel
 
@@ -102,6 +103,10 @@ and AI-assisted development.
 - Frontend local mock transport that turns room UI actions into
   `RoomSocketClientMessage` objects, feeds them through `roomSocketAdapter`, and
   renders each simulated client from its own server-shaped redacted snapshot
+- Testable WebSocket server core that registers connections, parses raw JSON,
+  calls `roomSocketAdapter`, routes messages by `recipientSessionToken`, and
+  records undelivered session-targeted messages before a real network server is
+  started
 
 ## Screenshots
 
@@ -171,6 +176,8 @@ src/
     roomSocketAdapter.ts Pure WebSocket-shaped message adapter
     round.ts        Seeded shuffle, dealing, draw/discard state transitions
     win.ts          Self-draw and discard hu checks
+  server/
+    roomSocketServerCore.ts Testable WebSocket server core without a live port
 tests/
   game/             Rule, round, hu, and win tests
   docs/
@@ -182,6 +189,7 @@ tests/
     realtime-protocol.md WebSocket room protocol and server interface draft
     room-service.md Server-authoritative room service interface
     socket-adapter.md Pure socket adapter interface and frontend integration plan
+    websocket-server.md Testable server core and real WebSocket wrapper plan
 ```
 
 The current browser room flow is intentionally shaped like a future networked
@@ -191,6 +199,11 @@ server-like messages into `localRoomTransport`, which wraps
 snapshot per simulated session. Replacing this local transport with a real
 WebSocket transport should mainly change delivery and connection management,
 not the room lifecycle rules.
+
+The first server-side core is also in place. `src/server/roomSocketServerCore.ts`
+does not start a real WebSocket listener yet; it gives the future Node server a
+tested path for connection registration, JSON parsing, adapter calls, session
+routing, and undelivered-message handling.
 
 ## AI-Assisted Workflow
 
@@ -228,6 +241,8 @@ roles were used to split work into reviewable concerns:
   WebSocket server.
 - Connected the room UI to a local mock transport, proving the frontend can
   consume server-shaped snapshots before a real WebSocket server exists.
+- Added a tested WebSocket server core that is ready to be wrapped by a local
+  Node `ws` development server.
 - Used a multi-agent AI-assisted workflow to split product planning, rule
   modeling, implementation, test-case design, and review.
 - Prepared the repository as a portfolio case study with rule documentation,
