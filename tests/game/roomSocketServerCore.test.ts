@@ -1,0 +1,138 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+
+import {
+  createRoomSocketServerCoreState,
+  handleRoomSocketRawMessage,
+  registerRoomSocketConnection,
+  type RoomSocketServerCoreState,
+} from "../../src/server/index.ts";
+import type { PlayerId, RoomSocketClientMessage, RoomSocketServerMessage } from "../../src/game/index.ts";
+
+test("routes adapter messages to registered session connections", () => {
+  let server = createConnectedServer(["conn-host", "conn-guest"]);
+
+  const created = handleRoomSocketRawMessage(
+    server,
+    "conn-host",
+    JSON.stringify(createRoomMessage("m-create", "server-room-route", "Host")),
+  );
+  server = created.state;
+
+  assert.equal(created.errors.length, 0);
+  assert.equal(created.undelivered.length, 0);
+  assert.deepEqual(
+    created.outgoing.map((message) => message.connectionId),
+    ["conn-host", "conn-host"],
+  );
+  assert.equal(sessionFor(server, "conn-host"), "session-1");
+
+  const joined = handleRoomSocketRawMessage(
+    server,
+    "conn-guest",
+    JSON.stringify({
+      protocolVersion: 1,
+      clientMessageId: "m-join",
+      roomId: "server-room-route",
+      type: "joinRoom",
+      payload: { displayName: "Guest" },
+    } satisfies RoomSocketClientMessage),
+  );
+  server = joined.state;
+
+  assert.equal(joined.errors.length, 0);
+  assert.equal(joined.undelivered.length, 0);
+  assert.equal(sessionFor(server, "conn-guest"), "session-2");
+  assert.deepEqual(
+    joined.outgoing.map((message) => [message.connectionId, message.message.type]),
+    [
+      ["conn-guest", "actionAccepted"],
+      ["conn-host", "roomSnapshot"],
+      ["conn-guest", "roomSnapshot"],
+    ],
+  );
+});
+
+test("rejects invalid JSON before calling the room adapter", () => {
+  const server = createConnectedServer(["conn-host"]);
+  const result = handleRoomSocketRawMessage(server, "conn-host", "{not-json");
+
+  assert.equal(result.state, server);
+  assert.equal(result.outgoing.length, 0);
+  assert.equal(result.undelivered.length, 0);
+  assert.deepEqual(result.errors, [
+    {
+      connectionId: "conn-host",
+      type: "protocolError",
+      payload: {
+        code: "invalidJson",
+        message: "Message must be valid JSON.",
+      },
+    },
+  ]);
+});
+
+test("does not deliver messages addressed to an unknown session", () => {
+  let server = createConnectedServer(["conn-host", "conn-guest"]);
+  server = handleRoomSocketRawMessage(
+    server,
+    "conn-host",
+    JSON.stringify(createRoomMessage("m-create", "server-room-missing-session", "Host")),
+  ).state;
+
+  const result = handleRoomSocketRawMessage(
+    server,
+    "conn-guest",
+    JSON.stringify(takeSeatMessage("m-seat", "server-room-missing-session", "missing-session", 0)),
+  );
+
+  assert.equal(result.errors.length, 0);
+  assert.equal(result.outgoing.length, 0);
+  assert.equal(result.undelivered.length, 1);
+  assert.equal(result.undelivered[0].recipientSessionToken, "missing-session");
+  assert.equal(result.undelivered[0].message.type, "actionRejected");
+  assert.equal(actionRejected(result.undelivered[0].message).payload.code, "invalidSession");
+});
+
+function createConnectedServer(connectionIds: string[]): RoomSocketServerCoreState {
+  return connectionIds.reduce(
+    (server, connectionId) => registerRoomSocketConnection(server, connectionId),
+    createRoomSocketServerCoreState(),
+  );
+}
+
+function createRoomMessage(clientMessageId: string, roomId: string, displayName: string): RoomSocketClientMessage {
+  return {
+    protocolVersion: 1,
+    clientMessageId,
+    type: "createRoom",
+    payload: { roomId, seed: "server-seed", displayName },
+  };
+}
+
+function takeSeatMessage(
+  clientMessageId: string,
+  roomId: string,
+  sessionToken: string,
+  seatId: PlayerId,
+): RoomSocketClientMessage {
+  return {
+    protocolVersion: 1,
+    clientMessageId,
+    roomId,
+    sessionToken,
+    type: "takeSeat",
+    payload: { seatId },
+  };
+}
+
+function sessionFor(server: RoomSocketServerCoreState, connectionId: string): string | undefined {
+  return server.connections.find((connection) => connection.connectionId === connectionId)?.sessionToken;
+}
+
+function actionRejected(
+  message: RoomSocketServerMessage,
+): Extract<RoomSocketServerMessage, { type: "actionRejected" }> {
+  assert.equal(message.type, "actionRejected");
+  return message;
+}
