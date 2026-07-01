@@ -359,6 +359,144 @@ button {
   justify-self: start;
 }
 
+.websocket-panel {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #c9d5df;
+  border-radius: 8px;
+  padding: 14px;
+  background: #f7fbff;
+}
+
+.websocket-header,
+.websocket-controls,
+.websocket-actions,
+.websocket-snapshots {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.websocket-header {
+  justify-content: space-between;
+}
+
+.websocket-header h2,
+.websocket-header p,
+.websocket-snapshot-card h3,
+.websocket-snapshot-card p,
+.websocket-log p {
+  margin: 0;
+}
+
+.websocket-header h2 {
+  font-size: 16px;
+}
+
+.websocket-header p,
+.websocket-controls label span,
+.websocket-snapshot-card p,
+.websocket-log p {
+  color: #586775;
+  font-size: 13px;
+}
+
+.websocket-header > span {
+  border-radius: 999px;
+  padding: 4px 9px;
+  background: #e5edf4;
+  color: #31516a;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.websocket-header > span[data-status="connected"] {
+  background: #e3f1df;
+  color: #247a48;
+}
+
+.websocket-header > span[data-status="error"] {
+  background: #f8dfd8;
+  color: #9b3b27;
+}
+
+.websocket-controls {
+  flex-wrap: wrap;
+}
+
+.websocket-controls label {
+  display: grid;
+  gap: 4px;
+  min-width: 260px;
+}
+
+.websocket-controls input {
+  height: 38px;
+  border: 1px solid #c9d5df;
+  border-radius: 8px;
+  padding: 0 10px;
+  background: #ffffff;
+  color: #17211b;
+  font: inherit;
+}
+
+.websocket-actions {
+  flex-wrap: wrap;
+}
+
+.websocket-actions button {
+  min-width: 86px;
+  height: 36px;
+  border: 0;
+  border-radius: 8px;
+  background: #315f7a;
+  color: #ffffff;
+  cursor: pointer;
+}
+
+.websocket-actions button:disabled {
+  background: #a7b3bc;
+  cursor: not-allowed;
+}
+
+.websocket-actions button:last-child {
+  background: #36403a;
+}
+
+.websocket-snapshots {
+  align-items: stretch;
+  flex-wrap: wrap;
+}
+
+.websocket-snapshot-card {
+  display: grid;
+  gap: 5px;
+  min-width: 200px;
+  flex: 1 1 200px;
+  border: 1px solid #d5e0e8;
+  border-radius: 8px;
+  padding: 10px;
+  background: #ffffff;
+}
+
+.websocket-snapshot-card h3 {
+  font-size: 14px;
+}
+
+.websocket-snapshot-card > span {
+  color: #315f7a;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.websocket-log {
+  display: grid;
+  gap: 6px;
+  border-top: 1px solid #d5e0e8;
+  padding-top: 10px;
+}
+
 .missing-panel,
 .turn-hint,
 .hu-status {

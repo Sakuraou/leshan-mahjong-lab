@@ -27,9 +27,16 @@ import {
   toggleLocalRoomReady,
   type LocalRoomTransportResult,
 } from "./localRoomTransport.ts";
+import {
+  createWebSocketRoomTransport,
+  type WebSocketRoomTransport,
+  type WebSocketRoomTransportActionResult,
+  type WebSocketRoomTransportState,
+} from "./webSocketRoomTransport.ts";
 
 const seed = "portfolio-demo-001";
 const roomId = "LSMJ-001";
+const webSocketExperimentUrl = "ws://127.0.0.1:8787";
 const localPlayerId = "player-1";
 const localSeatId: PlayerId = 0;
 const suitOrder: Suit[] = ["bamboos", "dots", "characters"];
@@ -361,6 +368,8 @@ export function App() {
           )}
         </div>
 
+        <WebSocketExperimentPanel />
+
         {tableMode === "room" && room.round === null ? (
           <RoomPanel
             room={room}
@@ -501,6 +510,239 @@ function ClientViewSelector({
       </select>
     </label>
   );
+}
+
+function WebSocketExperimentPanel() {
+  const hostTransport = useRef<WebSocketRoomTransport | null>(null);
+  const guestTransport = useRef<WebSocketRoomTransport | null>(null);
+  const [serverUrl, setServerUrl] = useState(webSocketExperimentUrl);
+  const [experimentRoomId, setExperimentRoomId] = useState(createWebSocketExperimentRoomId);
+  const [connectionStatus, setConnectionStatus] = useState<"idle" | "connecting" | "connected" | "error">("idle");
+  const [hostState, setHostState] = useState<WebSocketRoomTransportState | null>(null);
+  const [guestState, setGuestState] = useState<WebSocketRoomTransportState | null>(null);
+  const [logs, setLogs] = useState<LogEntry[]>([
+    { id: 1, text: "真实 WebSocket 实验区尚未连接；当前牌桌仍使用本地 mock transport。" },
+  ]);
+
+  useEffect(
+    () => () => {
+      hostTransport.current?.close();
+      guestTransport.current?.close();
+    },
+    [],
+  );
+
+  const connected = connectionStatus === "connected";
+
+  async function ensureExperimentTransports(): Promise<{
+    host: WebSocketRoomTransport;
+    guest: WebSocketRoomTransport;
+  }> {
+    if (hostTransport.current !== null && guestTransport.current !== null) {
+      return { host: hostTransport.current, guest: guestTransport.current };
+    }
+
+    setConnectionStatus("connecting");
+    appendWebSocketLog("正在连接本地 WebSocket dev server。");
+
+    try {
+      const [host, guest] = await Promise.all([
+        createWebSocketRoomTransport({ url: serverUrl, roomId: experimentRoomId, seed: seed }),
+        createWebSocketRoomTransport({ url: serverUrl, roomId: experimentRoomId, seed: seed }),
+      ]);
+      hostTransport.current = host;
+      guestTransport.current = guest;
+      setConnectionStatus("connected");
+      syncTransportState();
+      appendWebSocketLog("已建立 host/guest 两条真实 WebSocket 连接。");
+      return { host, guest };
+    } catch {
+      setConnectionStatus("error");
+      appendWebSocketLog("连接失败：请先运行 npm run dev:server。");
+      throw new Error("WebSocket connection failed.");
+    }
+  }
+
+  function syncTransportState() {
+    setHostState(hostTransport.current?.getState() ?? null);
+    setGuestState(guestTransport.current?.getState() ?? null);
+  }
+
+  function appendWebSocketLog(text: string) {
+    setLogs((items) => [...items, { id: (items.at(-1)?.id ?? 0) + 1, text }].slice(-6));
+  }
+
+  async function handleConnectWebSocket() {
+    await ensureExperimentTransports().catch(() => undefined);
+  }
+
+  async function handleCreateWebSocketRoom() {
+    const transports = await ensureExperimentTransports().catch(() => null);
+
+    if (transports === null) {
+      return;
+    }
+
+    const result = await transports.host.createRoomSession({ displayName: "WebSocket 玩家 1" });
+    syncTransportState();
+    appendWebSocketLog(`createRoom：${webSocketActionText(result)}。`);
+  }
+
+  async function handleJoinWebSocketRoom() {
+    const transports = await ensureExperimentTransports().catch(() => null);
+
+    if (transports === null) {
+      return;
+    }
+
+    const result = await transports.guest.joinRoomSession({ displayName: "WebSocket 玩家 2" });
+    await transports.guest.waitForSnapshot("player-2").catch(() => undefined);
+    await transports.host.waitForMessageCount(3).catch(() => undefined);
+    syncTransportState();
+    appendWebSocketLog(`joinRoom：${webSocketActionText(result)}。`);
+  }
+
+  async function handleRunWebSocketDemo() {
+    const transports = await ensureExperimentTransports().catch(() => null);
+
+    if (transports === null) {
+      return;
+    }
+
+    if (transports.host.getSessionToken("player-1") === undefined) {
+      const created = await transports.host.createRoomSession({ displayName: "WebSocket 玩家 1" });
+      appendWebSocketLog(`createRoom：${webSocketActionText(created)}。`);
+    }
+
+    if (transports.guest.getSessionToken("player-2") === undefined) {
+      const joined = await transports.guest.joinRoomSession({ displayName: "WebSocket 玩家 2" });
+      await transports.guest.waitForSnapshot("player-2").catch(() => undefined);
+      await transports.host.waitForMessageCount(3).catch(() => undefined);
+      appendWebSocketLog(`joinRoom：${webSocketActionText(joined)}。`);
+    }
+
+    syncTransportState();
+  }
+
+  function handleResetWebSocketExperiment() {
+    hostTransport.current?.close();
+    guestTransport.current?.close();
+    hostTransport.current = null;
+    guestTransport.current = null;
+    setConnectionStatus("idle");
+    setExperimentRoomId(createWebSocketExperimentRoomId());
+    setHostState(null);
+    setGuestState(null);
+    setLogs([{ id: 1, text: "真实 WebSocket 实验区已重置；当前牌桌仍使用本地 mock transport。" }]);
+  }
+
+  return (
+    <section className="websocket-panel" aria-label="真实 WebSocket 连接演示">
+      <div className="websocket-header">
+        <div>
+          <h2>真实 WebSocket 连接演示</h2>
+          <p>实验性真实传输，只验证房间消息链路，不影响当前 mock 牌桌。</p>
+        </div>
+        <span data-status={connectionStatus}>{webSocketStatusText(connectionStatus)}</span>
+      </div>
+
+      <div className="websocket-controls">
+        <label>
+          <span>服务器地址</span>
+          <input value={serverUrl} onChange={(event) => setServerUrl(event.target.value)} disabled={connected} />
+        </label>
+        <Stat label="实验房间" value={experimentRoomId} />
+        <Stat label="Host 消息" value={(hostState?.messages.length ?? 0).toString()} />
+        <Stat label="Guest 消息" value={(guestState?.messages.length ?? 0).toString()} />
+      </div>
+
+      <div className="websocket-actions">
+        <button type="button" onClick={handleConnectWebSocket} disabled={connected || connectionStatus === "connecting"}>
+          连接
+        </button>
+        <button type="button" onClick={handleCreateWebSocketRoom}>
+          createRoom
+        </button>
+        <button type="button" onClick={handleJoinWebSocketRoom}>
+          joinRoom
+        </button>
+        <button type="button" onClick={handleRunWebSocketDemo}>
+          自动演示
+        </button>
+        <button type="button" onClick={handleResetWebSocketExperiment}>
+          重置实验
+        </button>
+      </div>
+
+      <div className="websocket-snapshots">
+        <WebSocketSnapshotCard title="Host 客户端" state={hostState} playerId="player-1" />
+        <WebSocketSnapshotCard title="Guest 客户端" state={guestState} playerId="player-2" />
+      </div>
+
+      <div className="websocket-log">
+        {logs.map((log) => (
+          <p key={log.id}>{log.text}</p>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function WebSocketSnapshotCard({
+  title,
+  state,
+  playerId,
+}: {
+  title: string;
+  state: WebSocketRoomTransportState | null;
+  playerId: string;
+}) {
+  const sessionToken = state?.sessionTokenByPlayerId[playerId];
+  const snapshot = state?.snapshotByPlayerId[playerId];
+
+  return (
+    <article className="websocket-snapshot-card">
+      <h3>{title}</h3>
+      <span>{sessionToken ?? "暂无 session"}</span>
+      <p>状态：{state?.status ?? "未连接"}</p>
+      <p>座位：{snapshot?.seats.filter((seat) => seat.playerId !== null).length ?? 0}/4</p>
+      <p>最新事件：{snapshot?.eventLog.at(-1)?.type ?? "暂无"}</p>
+    </article>
+  );
+}
+
+function createWebSocketExperimentRoomId(): string {
+  return `WS-${Date.now().toString(36).slice(-5).toUpperCase()}`;
+}
+
+function webSocketActionText(result: WebSocketRoomTransportActionResult): string {
+  if (result.ok) {
+    return "服务端已接受";
+  }
+
+  if (result.reason === "actionRejected") {
+    return `服务端拒绝 ${result.rejectedMessage?.payload.code ?? "unknown"}`;
+  }
+
+  if (result.reason === "missingSessionToken") {
+    return "缺少 sessionToken";
+  }
+
+  if (result.reason === "closed") {
+    return "连接已关闭";
+  }
+
+  return "等待响应超时";
+}
+
+function webSocketStatusText(status: "idle" | "connecting" | "connected" | "error"): string {
+  const names = {
+    idle: "未连接",
+    connecting: "连接中",
+    connected: "已连接",
+    error: "连接失败",
+  };
+  return names[status];
 }
 
 function RoomPanel({
