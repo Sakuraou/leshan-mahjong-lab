@@ -29,10 +29,18 @@ export type PatternScore = {
 
 export type PlayerId = 0 | 1 | 2 | 3;
 
+export type Meld = {
+  type: "peng";
+  tile: Tile;
+  tiles: Tile[];
+  fromPlayer: PlayerId;
+};
+
 export type PlayerState = {
   id: PlayerId;
   hand: Tile[];
   discards: Tile[];
+  melds: Meld[];
   hasWon: boolean;
   missingSuit: Suit | null;
 };

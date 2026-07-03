@@ -117,8 +117,8 @@ function makePlayer(id: PlayerState["id"], hand: Tile[] = []): PlayerState {
     id,
     hand,
     discards: [],
+    melds: [],
     hasWon: false,
     missingSuit: "bamboos",
   };
 }
-

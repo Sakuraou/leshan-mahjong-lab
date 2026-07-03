@@ -57,14 +57,15 @@ test("starts players with empty discards and active status", () => {
     round.players.map((player) => ({
       id: player.id,
       discards: player.discards,
+      melds: player.melds,
       hasWon: player.hasWon,
       missingSuit: player.missingSuit,
     })),
     [
-      { id: 0, discards: [], hasWon: false, missingSuit: null },
-      { id: 1, discards: [], hasWon: false, missingSuit: null },
-      { id: 2, discards: [], hasWon: false, missingSuit: null },
-      { id: 3, discards: [], hasWon: false, missingSuit: null },
+      { id: 0, discards: [], melds: [], hasWon: false, missingSuit: null },
+      { id: 1, discards: [], melds: [], hasWon: false, missingSuit: null },
+      { id: 2, discards: [], melds: [], hasWon: false, missingSuit: null },
+      { id: 3, discards: [], melds: [], hasWon: false, missingSuit: null },
     ],
   );
 });
@@ -187,6 +188,7 @@ function makePlayer(
     id,
     hand,
     discards: [],
+    melds: [],
     hasWon,
     missingSuit,
   };

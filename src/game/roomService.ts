@@ -1,5 +1,6 @@
 import {
   claimHu,
+  claimPeng,
   chooseMissingSuit,
   createRoom,
   discardRoomTile,
@@ -12,6 +13,7 @@ import {
   toggleReady,
   toClientVisibleRoomState,
   type ClaimHuResult,
+  type ClaimPengResult,
   type ChooseMissingSuitResult,
   type ClientVisibleRoomState,
   type DiscardRoomTileResult,
@@ -61,6 +63,7 @@ export type RoomAction =
   | { type: "discardTile"; tile: Tile }
   | { type: "passClaim" }
   | { type: "claimHu" }
+  | { type: "claimPeng" }
   | { type: "expireClaimWindow" };
 
 export type RoomServiceError =
@@ -73,6 +76,7 @@ export type RoomServiceError =
   | DrawRoomTileResult["reason"]
   | DiscardRoomTileResult["reason"]
   | ClaimHuResult["reason"]
+  | ClaimPengResult["reason"]
   | PassClaimResult["reason"]
   | ExpireClaimWindowResult["reason"];
 
@@ -251,6 +255,7 @@ function applyRoomAction(
   | DrawRoomTileResult
   | DiscardRoomTileResult
   | ClaimHuResult
+  | ClaimPengResult
   | PassClaimResult
   | ExpireClaimWindowResult {
   if (action.type === "takeSeat") {
@@ -279,6 +284,10 @@ function applyRoomAction(
 
   if (action.type === "claimHu") {
     return claimHu(room, playerId);
+  }
+
+  if (action.type === "claimPeng") {
+    return claimPeng(room, playerId);
   }
 
   if (action.type === "expireClaimWindow") {

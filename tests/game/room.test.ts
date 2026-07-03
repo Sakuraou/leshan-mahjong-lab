@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   createRoom,
   claimHu,
+  claimPeng,
   chooseMissingSuit,
   discardRoomTile,
   drawRoomTile,
@@ -402,6 +403,49 @@ test("lets a player claim discard hu from the claim window", () => {
     tile: discard,
     patterns: ["pingHu", "wuJi", "qingYiSe"],
     points: 16,
+  });
+});
+
+test("lets a player claim peng from the claim window", () => {
+  const { room, discard } = readyRoomForClaimHu();
+  const discarded = discardRoomTile(room, "p1", discard);
+
+  assert.equal(discarded.ok, true);
+
+  if (!discarded.ok) {
+    return;
+  }
+
+  const claimed = claimPeng(discarded.room, "p2");
+  assert.equal(claimed.ok, true);
+
+  if (!claimed.ok) {
+    return;
+  }
+
+  assert.equal(claimed.room.claimWindow, null);
+  assert.equal(claimed.room.round?.currentPlayer, 1);
+  assert.equal(claimed.room.round?.players[0].discards.length, 0);
+  assert.equal(claimed.room.round?.players[1].hand.length, 11);
+  assert.deepEqual(claimed.room.round?.players[1].melds, [
+    {
+      type: "peng",
+      tile: discard,
+      tiles: [tile("characters", 9), tile("characters", 9), discard],
+      fromPlayer: 0,
+    },
+  ]);
+  assert.deepEqual(claimed.room.eventLog.at(-2), {
+    type: "pengClaimed",
+    seatId: 1,
+    playerId: "p2",
+    tile: discard,
+    usedTiles: [tile("characters", 9), tile("characters", 9)],
+  });
+  assert.deepEqual(claimed.room.eventLog.at(-1), {
+    type: "claimWindowClosed",
+    reason: "claimed",
+    nextPlayer: 1,
   });
 });
 

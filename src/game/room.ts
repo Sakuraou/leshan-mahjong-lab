@@ -5,6 +5,7 @@ import {
   type DiscardTileResult,
   type DrawTileResult,
 } from "./round.ts";
+import { isYaoJi, sameTile } from "./tiles.ts";
 import { checkDiscardHu } from "./win.ts";
 import type { PlayerId, RoundState, ScorePattern, Suit, Tile } from "./types.ts";
 
@@ -55,7 +56,8 @@ export type RoomEvent =
   | { type: "claimWindowOpened"; discardedBySeatId: PlayerId; tile: Tile; pendingPlayerIds: PlayerId[] }
   | { type: "claimPassed"; seatId: PlayerId; playerId: string }
   | { type: "huClaimed"; seatId: PlayerId; playerId: string; tile: Tile; patterns: ScorePattern[]; points: number }
-  | { type: "claimWindowClosed"; reason: "allPassed" | "timeout"; nextPlayer: PlayerId };
+  | { type: "pengClaimed"; seatId: PlayerId; playerId: string; tile: Tile; usedTiles: Tile[] }
+  | { type: "claimWindowClosed"; reason: "allPassed" | "timeout" | "claimed"; nextPlayer: PlayerId };
 
 export type RoomState = {
   id: string;
@@ -73,6 +75,7 @@ export type VisiblePlayerState = {
   hand: Tile[] | null;
   handCount: number;
   discards: Tile[];
+  melds: RoundState["players"][number]["melds"];
   hasWon: boolean;
   missingSuit: RoundState["players"][number]["missingSuit"];
 };
@@ -171,6 +174,19 @@ export type ClaimHuResult =
         | "claimNotAllowed"
         | "claimAlreadyResponded"
         | "cannotHu";
+    };
+
+export type ClaimPengResult =
+  | { ok: true; room: RoomState }
+  | {
+      ok: false;
+      reason:
+        | "roundNotStarted"
+        | "playerNotSeated"
+        | "noClaimWindow"
+        | "claimNotAllowed"
+        | "claimAlreadyResponded"
+        | "cannotPeng";
     };
 
 export type ExpireClaimWindowResult =
@@ -544,6 +560,84 @@ export function claimHu(room: RoomState, playerId: string): ClaimHuResult {
   };
 }
 
+export function claimPeng(room: RoomState, playerId: string): ClaimPengResult {
+  if (room.round === null) {
+    return { ok: false, reason: "roundNotStarted" };
+  }
+
+  const seat = room.seats.find((value) => value.playerId === playerId);
+
+  if (seat === undefined) {
+    return { ok: false, reason: "playerNotSeated" };
+  }
+
+  if (room.claimWindow === null) {
+    return { ok: false, reason: "noClaimWindow" };
+  }
+
+  if (!room.claimWindow.pendingPlayerIds.includes(seat.seatId)) {
+    return { ok: false, reason: "claimNotAllowed" };
+  }
+
+  if (hasClaimResponse(room.claimWindow, seat.seatId)) {
+    return { ok: false, reason: "claimAlreadyResponded" };
+  }
+
+  if (room.claimWindow.huClaims.length > 0) {
+    return { ok: false, reason: "cannotPeng" };
+  }
+
+  const player = room.round.players[seat.seatId];
+  const usedTiles = choosePengTiles(player.hand, room.claimWindow.tile);
+
+  if (usedTiles === null) {
+    return { ok: false, reason: "cannotPeng" };
+  }
+
+  const nextPlayer = {
+    ...player,
+    hand: removeTiles(player.hand, usedTiles),
+    melds: [
+      ...player.melds,
+      {
+        type: "peng" as const,
+        tile: room.claimWindow.tile,
+        tiles: [...usedTiles, room.claimWindow.tile],
+        fromPlayer: room.claimWindow.discardedBySeatId,
+      },
+    ],
+  };
+  const nextRound: RoundState = {
+    ...room.round,
+    currentPlayer: seat.seatId,
+    players: room.round.players.map((value) => {
+      if (value.id === seat.seatId) {
+        return nextPlayer;
+      }
+
+      if (value.id === room.claimWindow!.discardedBySeatId) {
+        return { ...value, discards: removeLastTile(value.discards, room.claimWindow!.tile) };
+      }
+
+      return value;
+    }),
+  };
+  const nextRoom = {
+    ...room,
+    round: nextRound,
+    claimWindow: null,
+    eventLog: [
+      ...room.eventLog,
+      { type: "pengClaimed" as const, seatId: seat.seatId, playerId, tile: room.claimWindow.tile, usedTiles },
+    ],
+  };
+
+  return {
+    ok: true,
+    room: closeClaimWindow(nextRoom, room.claimWindow, "claimed", seat.seatId),
+  };
+}
+
 export function expireClaimWindow(room: RoomState): ExpireClaimWindowResult {
   if (room.claimWindow === null) {
     return { ok: false, reason: "noClaimWindow" };
@@ -576,6 +670,7 @@ export function toClientVisibleRoomState(room: RoomState, playerId: string): Cli
               hand: player.id === localSeatId ? player.hand : null,
               handCount: player.hand.length,
               discards: player.discards,
+              melds: player.melds,
               hasWon: player.hasWon,
               missingSuit: player.missingSuit,
             })),
@@ -620,8 +715,47 @@ function didAllClaimPlayersRespond(claimWindow: ClaimWindow): boolean {
   return claimWindow.pendingPlayerIds.every((seatId) => hasClaimResponse(claimWindow, seatId));
 }
 
-function closeClaimWindow(room: RoomState, claimWindow: ClaimWindow, reason: "allPassed" | "timeout"): RoomState {
-  const nextPlayer = room.round === null ? claimWindow.nextPlayer : findNextActivePlayer(room.round, claimWindow.discardedBySeatId);
+function choosePengTiles(hand: Tile[], claimedTile: Tile): Tile[] | null {
+  const sameTiles = hand.filter((tile) => sameTile(tile, claimedTile));
+  const laiziTiles = hand.filter(isYaoJi);
+  const usedTiles = [...sameTiles, ...laiziTiles].slice(0, 2);
+
+  return usedTiles.length === 2 ? usedTiles : null;
+}
+
+function removeTiles(hand: Tile[], tilesToRemove: Tile[]): Tile[] {
+  return tilesToRemove.reduce((nextHand, tile) => removeFirstTile(nextHand, tile), hand);
+}
+
+function removeFirstTile(hand: Tile[], tile: Tile): Tile[] {
+  const index = hand.findIndex((value) => sameTile(value, tile));
+
+  if (index === -1) {
+    return hand;
+  }
+
+  return [...hand.slice(0, index), ...hand.slice(index + 1)];
+}
+
+function removeLastTile(tiles: Tile[], tile: Tile): Tile[] {
+  const index = tiles.findLastIndex((value) => sameTile(value, tile));
+
+  if (index === -1) {
+    return tiles;
+  }
+
+  return [...tiles.slice(0, index), ...tiles.slice(index + 1)];
+}
+
+function closeClaimWindow(
+  room: RoomState,
+  claimWindow: ClaimWindow,
+  reason: "allPassed" | "timeout" | "claimed",
+  nextPlayerOverride?: PlayerId,
+): RoomState {
+  const nextPlayer =
+    nextPlayerOverride ??
+    (room.round === null ? claimWindow.nextPlayer : findNextActivePlayer(room.round, claimWindow.discardedBySeatId));
 
   return {
     ...room,
