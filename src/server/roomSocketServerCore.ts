@@ -255,6 +255,7 @@ function isRoomSocketClientMessage(value: unknown): value is RoomSocketClientMes
     value.type === "passClaim" ||
     value.type === "claimHu" ||
     value.type === "claimPeng" ||
+    value.type === "claimMingGang" ||
     value.type === "expireClaimWindow"
   ) {
     return isSessionRoomMessage(value) && isRecord(value.payload);

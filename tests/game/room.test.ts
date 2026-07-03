@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   createRoom,
   claimHu,
+  claimMingGang,
   claimPeng,
   chooseMissingSuit,
   discardRoomTile,
@@ -449,6 +450,49 @@ test("lets a player claim peng from the claim window", () => {
   });
 });
 
+test("lets a player claim ming gang from the claim window", () => {
+  const { room, discard } = readyRoomForClaimMingGang();
+  const discarded = discardRoomTile(room, "p1", discard);
+
+  assert.equal(discarded.ok, true);
+
+  if (!discarded.ok) {
+    return;
+  }
+
+  const claimed = claimMingGang(discarded.room, "p2");
+  assert.equal(claimed.ok, true);
+
+  if (!claimed.ok) {
+    return;
+  }
+
+  assert.equal(claimed.room.claimWindow, null);
+  assert.equal(claimed.room.round?.currentPlayer, 1);
+  assert.equal(claimed.room.round?.players[0].discards.length, 0);
+  assert.equal(claimed.room.round?.players[1].hand.length, 10);
+  assert.deepEqual(claimed.room.round?.players[1].melds, [
+    {
+      type: "mingGang",
+      tile: discard,
+      tiles: [tile("characters", 9), tile("characters", 9), tile("characters", 9), discard],
+      fromPlayer: 0,
+    },
+  ]);
+  assert.deepEqual(claimed.room.eventLog.at(-2), {
+    type: "mingGangClaimed",
+    seatId: 1,
+    playerId: "p2",
+    tile: discard,
+    usedTiles: [tile("characters", 9), tile("characters", 9), tile("characters", 9)],
+  });
+  assert.deepEqual(claimed.room.eventLog.at(-1), {
+    type: "claimWindowClosed",
+    reason: "claimed",
+    nextPlayer: 1,
+  });
+});
+
 test("rejects choosing missing suit before start, without a seat, or twice", () => {
   const waitingRoom = seatPlayers(createRoom({ id: "room-missing-waiting", seed: "missing-waiting-seed" }));
 
@@ -610,6 +654,42 @@ function readyRoomForClaimHu(): { room: RoomState; discard: Tile } {
 
           return { ...player, missingSuit: "dots" };
         }),
+      },
+    },
+  };
+}
+
+function readyRoomForClaimMingGang(): { room: RoomState; discard: Tile } {
+  const prepared = readyRoomForClaimHu();
+
+  return {
+    ...prepared,
+    room: {
+      ...prepared.room,
+      round: {
+        ...prepared.room.round!,
+        players: prepared.room.round!.players.map((player) =>
+          player.id === 1
+            ? {
+                ...player,
+                hand: [
+                  tile("characters", 2),
+                  tile("characters", 3),
+                  tile("characters", 4),
+                  tile("characters", 3),
+                  tile("characters", 4),
+                  tile("characters", 5),
+                  tile("characters", 5),
+                  tile("characters", 6),
+                  tile("characters", 7),
+                  tile("characters", 7),
+                  tile("characters", 9),
+                  tile("characters", 9),
+                  tile("characters", 9),
+                ],
+              }
+            : player,
+        ),
       },
     },
   };

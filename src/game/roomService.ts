@@ -1,5 +1,6 @@
 import {
   claimHu,
+  claimMingGang,
   claimPeng,
   chooseMissingSuit,
   createRoom,
@@ -13,6 +14,7 @@ import {
   toggleReady,
   toClientVisibleRoomState,
   type ClaimHuResult,
+  type ClaimMingGangResult,
   type ClaimPengResult,
   type ChooseMissingSuitResult,
   type ClientVisibleRoomState,
@@ -64,6 +66,7 @@ export type RoomAction =
   | { type: "passClaim" }
   | { type: "claimHu" }
   | { type: "claimPeng" }
+  | { type: "claimMingGang" }
   | { type: "expireClaimWindow" };
 
 export type RoomServiceError =
@@ -76,6 +79,7 @@ export type RoomServiceError =
   | DrawRoomTileResult["reason"]
   | DiscardRoomTileResult["reason"]
   | ClaimHuResult["reason"]
+  | ClaimMingGangResult["reason"]
   | ClaimPengResult["reason"]
   | PassClaimResult["reason"]
   | ExpireClaimWindowResult["reason"];
@@ -255,6 +259,7 @@ function applyRoomAction(
   | DrawRoomTileResult
   | DiscardRoomTileResult
   | ClaimHuResult
+  | ClaimMingGangResult
   | ClaimPengResult
   | PassClaimResult
   | ExpireClaimWindowResult {
@@ -288,6 +293,10 @@ function applyRoomAction(
 
   if (action.type === "claimPeng") {
     return claimPeng(room, playerId);
+  }
+
+  if (action.type === "claimMingGang") {
+    return claimMingGang(room, playerId);
   }
 
   if (action.type === "expireClaimWindow") {

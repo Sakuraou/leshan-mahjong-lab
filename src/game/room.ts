@@ -57,6 +57,7 @@ export type RoomEvent =
   | { type: "claimPassed"; seatId: PlayerId; playerId: string }
   | { type: "huClaimed"; seatId: PlayerId; playerId: string; tile: Tile; patterns: ScorePattern[]; points: number }
   | { type: "pengClaimed"; seatId: PlayerId; playerId: string; tile: Tile; usedTiles: Tile[] }
+  | { type: "mingGangClaimed"; seatId: PlayerId; playerId: string; tile: Tile; usedTiles: Tile[] }
   | { type: "claimWindowClosed"; reason: "allPassed" | "timeout" | "claimed"; nextPlayer: PlayerId };
 
 export type RoomState = {
@@ -187,6 +188,19 @@ export type ClaimPengResult =
         | "claimNotAllowed"
         | "claimAlreadyResponded"
         | "cannotPeng";
+    };
+
+export type ClaimMingGangResult =
+  | { ok: true; room: RoomState }
+  | {
+      ok: false;
+      reason:
+        | "roundNotStarted"
+        | "playerNotSeated"
+        | "noClaimWindow"
+        | "claimNotAllowed"
+        | "claimAlreadyResponded"
+        | "cannotMingGang";
     };
 
 export type ExpireClaimWindowResult =
@@ -561,6 +575,40 @@ export function claimHu(room: RoomState, playerId: string): ClaimHuResult {
 }
 
 export function claimPeng(room: RoomState, playerId: string): ClaimPengResult {
+  return claimMeldFromDiscard(room, playerId, {
+    meldType: "peng",
+    tilesNeededFromHand: 2,
+    eventType: "pengClaimed",
+    cannotReason: "cannotPeng",
+  });
+}
+
+export function claimMingGang(room: RoomState, playerId: string): ClaimMingGangResult {
+  return claimMeldFromDiscard(room, playerId, {
+    meldType: "mingGang",
+    tilesNeededFromHand: 3,
+    eventType: "mingGangClaimed",
+    cannotReason: "cannotMingGang",
+  });
+}
+
+function claimMeldFromDiscard(
+  room: RoomState,
+  playerId: string,
+  options:
+    | {
+        meldType: "peng";
+        tilesNeededFromHand: 2;
+        eventType: "pengClaimed";
+        cannotReason: "cannotPeng";
+      }
+    | {
+        meldType: "mingGang";
+        tilesNeededFromHand: 3;
+        eventType: "mingGangClaimed";
+        cannotReason: "cannotMingGang";
+      },
+): ClaimPengResult | ClaimMingGangResult {
   if (room.round === null) {
     return { ok: false, reason: "roundNotStarted" };
   }
@@ -584,14 +632,14 @@ export function claimPeng(room: RoomState, playerId: string): ClaimPengResult {
   }
 
   if (room.claimWindow.huClaims.length > 0) {
-    return { ok: false, reason: "cannotPeng" };
+    return { ok: false, reason: options.cannotReason };
   }
 
   const player = room.round.players[seat.seatId];
-  const usedTiles = choosePengTiles(player.hand, room.claimWindow.tile);
+  const usedTiles = chooseClaimMeldTiles(player.hand, room.claimWindow.tile, options.tilesNeededFromHand);
 
   if (usedTiles === null) {
-    return { ok: false, reason: "cannotPeng" };
+    return { ok: false, reason: options.cannotReason };
   }
 
   const nextPlayer = {
@@ -600,7 +648,7 @@ export function claimPeng(room: RoomState, playerId: string): ClaimPengResult {
     melds: [
       ...player.melds,
       {
-        type: "peng" as const,
+        type: options.meldType,
         tile: room.claimWindow.tile,
         tiles: [...usedTiles, room.claimWindow.tile],
         fromPlayer: room.claimWindow.discardedBySeatId,
@@ -628,7 +676,7 @@ export function claimPeng(room: RoomState, playerId: string): ClaimPengResult {
     claimWindow: null,
     eventLog: [
       ...room.eventLog,
-      { type: "pengClaimed" as const, seatId: seat.seatId, playerId, tile: room.claimWindow.tile, usedTiles },
+      { type: options.eventType, seatId: seat.seatId, playerId, tile: room.claimWindow.tile, usedTiles },
     ],
   };
 
@@ -715,12 +763,12 @@ function didAllClaimPlayersRespond(claimWindow: ClaimWindow): boolean {
   return claimWindow.pendingPlayerIds.every((seatId) => hasClaimResponse(claimWindow, seatId));
 }
 
-function choosePengTiles(hand: Tile[], claimedTile: Tile): Tile[] | null {
+function chooseClaimMeldTiles(hand: Tile[], claimedTile: Tile, tilesNeededFromHand: 2 | 3): Tile[] | null {
   const sameTiles = hand.filter((tile) => sameTile(tile, claimedTile));
   const laiziTiles = hand.filter(isYaoJi);
-  const usedTiles = [...sameTiles, ...laiziTiles].slice(0, 2);
+  const usedTiles = [...sameTiles, ...laiziTiles].slice(0, tilesNeededFromHand);
 
-  return usedTiles.length === 2 ? usedTiles : null;
+  return usedTiles.length === tilesNeededFromHand ? usedTiles : null;
 }
 
 function removeTiles(hand: Tile[], tilesToRemove: Tile[]): Tile[] {

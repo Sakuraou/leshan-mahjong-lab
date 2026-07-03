@@ -111,6 +111,14 @@ export type RoomSocketClientMessage =
       clientMessageId: string;
       roomId: string;
       sessionToken: string;
+      type: "claimMingGang";
+      payload: Record<string, never>;
+    }
+  | {
+      protocolVersion: 1;
+      clientMessageId: string;
+      roomId: string;
+      sessionToken: string;
       type: "expireClaimWindow";
       payload: Record<string, never>;
     }
@@ -288,6 +296,7 @@ function handleRoomServiceAction(
         | "passClaim"
         | "claimHu"
         | "claimPeng"
+        | "claimMingGang"
         | "expireClaimWindow";
     }
   >,
@@ -327,6 +336,7 @@ function clientMessageToRoomAction(
         | "passClaim"
         | "claimHu"
         | "claimPeng"
+        | "claimMingGang"
         | "expireClaimWindow";
     }
   >,
@@ -361,6 +371,10 @@ function clientMessageToRoomAction(
 
   if (message.type === "claimPeng") {
     return { type: "claimPeng" };
+  }
+
+  if (message.type === "claimMingGang") {
+    return { type: "claimMingGang" };
   }
 
   if (message.type === "expireClaimWindow") {
@@ -467,6 +481,7 @@ function errorMessage(code: RoomSocketErrorCode): string {
     claimAlreadyResponded: "This player has already responded to the claim window.",
     cannotHu: "This player cannot claim hu on the discarded tile.",
     cannotPeng: "This player cannot claim peng on the discarded tile.",
+    cannotMingGang: "This player cannot claim ming gang on the discarded tile.",
   };
   return messages[code];
 }
