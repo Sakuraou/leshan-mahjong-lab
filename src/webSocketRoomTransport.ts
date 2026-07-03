@@ -29,6 +29,7 @@ export type WebSocketRoomTransport = {
   startRound: (playerId: string, dealer?: PlayerId) => Promise<WebSocketRoomTransportActionResult>;
   chooseMissingSuit: (playerId: string, suit: Suit) => Promise<WebSocketRoomTransportActionResult>;
   drawTile: (playerId: string) => Promise<WebSocketRoomTransportActionResult>;
+  drawGangTile: (playerId: string) => Promise<WebSocketRoomTransportActionResult>;
   discardTile: (playerId: string, tile: Tile) => Promise<WebSocketRoomTransportActionResult>;
   passClaim: (playerId: string) => Promise<WebSocketRoomTransportActionResult>;
   claimHu: (playerId: string) => Promise<WebSocketRoomTransportActionResult>;
@@ -159,6 +160,7 @@ export async function createWebSocketRoomTransport(
             | "startRound"
             | "chooseMissingSuit"
             | "drawTile"
+            | "drawGangTile"
             | "discardTile"
             | "passClaim"
             | "claimHu"
@@ -228,6 +230,7 @@ export async function createWebSocketRoomTransport(
     startRound: (playerId, dealer) => sendSessionMessage(playerId, { type: "startRound", payload: { dealer } }),
     chooseMissingSuit: (playerId, suit) => sendSessionMessage(playerId, { type: "chooseMissingSuit", payload: { suit } }),
     drawTile: (playerId) => sendSessionMessage(playerId, { type: "drawTile", payload: {} }),
+    drawGangTile: (playerId) => sendSessionMessage(playerId, { type: "drawGangTile", payload: {} }),
     discardTile: (playerId, tile) => sendSessionMessage(playerId, { type: "discardTile", payload: { tile } }),
     passClaim: (playerId) => sendSessionMessage(playerId, { type: "passClaim", payload: {} }),
     claimHu: (playerId) => sendSessionMessage(playerId, { type: "claimHu", payload: {} }),

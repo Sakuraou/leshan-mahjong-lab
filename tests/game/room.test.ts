@@ -9,6 +9,7 @@ import {
   claimMingGang,
   claimPeng,
   chooseMissingSuit,
+  drawGangTile,
   discardRoomTile,
   drawRoomTile,
   passClaim,
@@ -539,6 +540,56 @@ test("lets the current player claim an gang after drawing", () => {
     playerId: "p1",
     tile: gangTile,
     usedTiles: [gangTile, gangTile, gangTile, gangTile],
+  });
+});
+
+test("lets the current gang player draw a replacement tile", () => {
+  const gangTile = tile("characters", 9);
+  const room = readyRoomForActiveGang({
+    hand: [
+      gangTile,
+      gangTile,
+      gangTile,
+      gangTile,
+      tile("characters", 2),
+      tile("characters", 3),
+      tile("characters", 4),
+      tile("dots", 2),
+      tile("dots", 3),
+      tile("dots", 4),
+      tile("bamboos", 2),
+      tile("bamboos", 3),
+      tile("bamboos", 4),
+      tile("characters", 5),
+    ],
+    melds: [],
+  });
+  const claimed = claimAnGang(room, "p1", gangTile);
+
+  assert.equal(claimed.ok, true);
+
+  if (!claimed.ok) {
+    return;
+  }
+
+  const beforeHandCount = claimed.room.round?.players[0].hand.length ?? 0;
+  const beforeWallCount = claimed.room.round?.wall.length ?? 0;
+  const drawn = drawGangTile(claimed.room, "p1");
+
+  assert.equal(drawn.ok, true);
+
+  if (!drawn.ok) {
+    return;
+  }
+
+  assert.equal(drawn.room.gangDraw, null);
+  assert.equal(drawn.room.round?.players[0].hand.length, beforeHandCount + 1);
+  assert.equal(drawn.room.round?.wall.length, beforeWallCount - 1);
+  assert.deepEqual(drawn.room.eventLog.at(-1), {
+    type: "gangTileDrawn",
+    seatId: 0,
+    playerId: "p1",
+    gangType: "anGang",
   });
 });
 

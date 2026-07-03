@@ -7,6 +7,7 @@ import {
   chooseMissingSuit,
   createRoom,
   discardRoomTile,
+  drawGangTile,
   drawRoomTile,
   expireClaimWindow,
   joinRoom,
@@ -23,6 +24,7 @@ import {
   type ChooseMissingSuitResult,
   type ClientVisibleRoomState,
   type DiscardRoomTileResult,
+  type DrawGangTileResult,
   type DrawRoomTileResult,
   type ExpireClaimWindowResult,
   type JoinRoomResult,
@@ -66,6 +68,7 @@ export type RoomAction =
   | { type: "startRound"; dealer?: PlayerId }
   | { type: "chooseMissingSuit"; suit: Suit }
   | { type: "drawTile" }
+  | { type: "drawGangTile" }
   | { type: "discardTile"; tile: Tile }
   | { type: "passClaim" }
   | { type: "claimHu" }
@@ -82,6 +85,7 @@ export type RoomServiceError =
   | ToggleReadyResult["reason"]
   | StartRoomRoundResult["reason"]
   | ChooseMissingSuitResult["reason"]
+  | DrawGangTileResult["reason"]
   | DrawRoomTileResult["reason"]
   | DiscardRoomTileResult["reason"]
   | ClaimAnGangResult["reason"]
@@ -264,6 +268,7 @@ function applyRoomAction(
   | ToggleReadyResult
   | StartRoomRoundResult
   | ChooseMissingSuitResult
+  | DrawGangTileResult
   | DrawRoomTileResult
   | DiscardRoomTileResult
   | ClaimAnGangResult
@@ -287,6 +292,10 @@ function applyRoomAction(
 
   if (action.type === "drawTile") {
     return drawRoomTile(room, playerId);
+  }
+
+  if (action.type === "drawGangTile") {
+    return drawGangTile(room, playerId);
   }
 
   if (action.type === "discardTile") {

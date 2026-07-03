@@ -39,6 +39,13 @@ export type BaGangClaimWindow = {
   huClaims: HuClaim[];
 };
 
+export type GangDrawState = {
+  seatId: PlayerId;
+  playerId: string;
+  gangType: "mingGang" | "anGang" | "baGang";
+  tile: Tile;
+};
+
 export type RoomMember = {
   playerId: string;
   displayName: string;
@@ -69,6 +76,7 @@ export type RoomEvent =
   | { type: "mingGangClaimed"; seatId: PlayerId; playerId: string; tile: Tile; usedTiles: Tile[] }
   | { type: "anGangClaimed"; seatId: PlayerId; playerId: string; tile: Tile; usedTiles: Tile[] }
   | { type: "baGangClaimed"; seatId: PlayerId; playerId: string; tile: Tile; usedTiles: Tile[] }
+  | { type: "gangTileDrawn"; seatId: PlayerId; playerId: string; gangType: GangDrawState["gangType"] }
   | { type: "claimWindowClosed"; reason: "allPassed" | "timeout" | "claimed"; nextPlayer: PlayerId };
 
 export type RoomState = {
@@ -80,6 +88,7 @@ export type RoomState = {
   round: RoundState | null;
   claimWindow: ClaimWindow | null;
   baGangClaimWindow: BaGangClaimWindow | null;
+  gangDraw: GangDrawState | null;
   eventLog: RoomEvent[];
 };
 
@@ -109,6 +118,7 @@ export type ClientVisibleRoomState = {
       };
   claimWindow: ClaimWindow | null;
   baGangClaimWindow: BaGangClaimWindow | null;
+  gangDraw: GangDrawState | null;
   eventLog: RoomEvent[];
 };
 
@@ -151,8 +161,23 @@ export type DrawRoomTileResult =
         | "playerNotSeated"
         | "missingSuitNotSet"
         | "claimWindowOpen"
+        | "gangDrawPending"
         | "notCurrentPlayer"
         | "notDrawPhase"
+        | DrawTileResult["reason"];
+    };
+
+export type DrawGangTileResult =
+  | { ok: true; room: RoomState }
+  | {
+      ok: false;
+      reason:
+        | "roundNotStarted"
+        | "playerNotSeated"
+        | "missingSuitNotSet"
+        | "claimWindowOpen"
+        | "noGangDraw"
+        | "notCurrentPlayer"
         | DrawTileResult["reason"];
     };
 
@@ -165,6 +190,7 @@ export type DiscardRoomTileResult =
         | "playerNotSeated"
         | "missingSuitNotSet"
         | "claimWindowOpen"
+        | "gangDrawPending"
         | "notCurrentPlayer"
         | "notDiscardPhase"
         | DiscardTileResult["reason"];
@@ -225,6 +251,7 @@ export type ClaimAnGangResult =
         | "playerNotSeated"
         | "missingSuitNotSet"
         | "claimWindowOpen"
+        | "gangDrawPending"
         | "notCurrentPlayer"
         | "notDiscardPhase"
         | "cannotAnGang";
@@ -239,6 +266,7 @@ export type ClaimBaGangResult =
         | "playerNotSeated"
         | "missingSuitNotSet"
         | "claimWindowOpen"
+        | "gangDrawPending"
         | "notCurrentPlayer"
         | "notDiscardPhase"
         | "cannotBaGang";
@@ -264,6 +292,7 @@ export function createRoom(input: CreateRoomInput): RoomState {
     round: null,
     claimWindow: null,
     baGangClaimWindow: null,
+    gangDraw: null,
     eventLog: [{ type: "roomCreated", roomId: input.id }],
   };
 }
@@ -371,6 +400,7 @@ export function startRoomRound(room: RoomState, dealer: PlayerId = 0): StartRoom
       round: startRound({ seed: room.seed, dealer }),
       claimWindow: null,
       baGangClaimWindow: null,
+      gangDraw: null,
       eventLog: [...room.eventLog, { type: "roundStarted", seed: room.seed, dealer }],
     },
   };
@@ -429,6 +459,10 @@ export function drawRoomTile(room: RoomState, playerId: string): DrawRoomTileRes
     return { ok: false, reason: "claimWindowOpen" };
   }
 
+  if (room.gangDraw !== null) {
+    return { ok: false, reason: "gangDrawPending" };
+  }
+
   if (room.round.currentPlayer !== seat.seatId) {
     return { ok: false, reason: "notCurrentPlayer" };
   }
@@ -456,6 +490,54 @@ export function drawRoomTile(room: RoomState, playerId: string): DrawRoomTileRes
   };
 }
 
+export function drawGangTile(room: RoomState, playerId: string): DrawGangTileResult {
+  if (room.round === null) {
+    return { ok: false, reason: "roundNotStarted" };
+  }
+
+  const seat = room.seats.find((value) => value.playerId === playerId);
+
+  if (seat === undefined) {
+    return { ok: false, reason: "playerNotSeated" };
+  }
+
+  if (room.round.players.some((player) => player.missingSuit === null)) {
+    return { ok: false, reason: "missingSuitNotSet" };
+  }
+
+  if (room.claimWindow !== null) {
+    return { ok: false, reason: "claimWindowOpen" };
+  }
+
+  if (room.gangDraw === null) {
+    return { ok: false, reason: "noGangDraw" };
+  }
+
+  if (room.round.currentPlayer !== seat.seatId || room.gangDraw.seatId !== seat.seatId) {
+    return { ok: false, reason: "notCurrentPlayer" };
+  }
+
+  const result = drawRoundTile(room.round);
+
+  if (!result.ok) {
+    return { ok: false, reason: result.reason };
+  }
+
+  return {
+    ok: true,
+    room: {
+      ...room,
+      round: result.round,
+      baGangClaimWindow: null,
+      gangDraw: null,
+      eventLog: [
+        ...room.eventLog,
+        { type: "gangTileDrawn", seatId: seat.seatId, playerId, gangType: room.gangDraw.gangType },
+      ],
+    },
+  };
+}
+
 export function discardRoomTile(room: RoomState, playerId: string, tile: Tile): DiscardRoomTileResult {
   if (room.round === null) {
     return { ok: false, reason: "roundNotStarted" };
@@ -473,6 +555,10 @@ export function discardRoomTile(room: RoomState, playerId: string, tile: Tile): 
 
   if (room.claimWindow !== null) {
     return { ok: false, reason: "claimWindowOpen" };
+  }
+
+  if (room.gangDraw !== null) {
+    return { ok: false, reason: "gangDrawPending" };
   }
 
   if (room.round.currentPlayer !== seat.seatId) {
@@ -676,6 +762,7 @@ export function claimAnGang(room: RoomState, playerId: string, tile: Tile): Clai
         ...room.eventLog,
         { type: "anGangClaimed", seatId: ready.seat.seatId, playerId, tile, usedTiles },
       ],
+      gangDraw: { seatId: ready.seat.seatId, playerId, gangType: "anGang", tile },
     },
   };
 }
@@ -724,6 +811,7 @@ export function claimBaGang(room: RoomState, playerId: string, tile: Tile): Clai
         ...room.eventLog,
         { type: "baGangClaimed", seatId: ready.seat.seatId, playerId, tile, usedTiles },
       ],
+      gangDraw: { seatId: ready.seat.seatId, playerId, gangType: "baGang", tile },
     },
   };
 }
@@ -810,6 +898,10 @@ function claimMeldFromDiscard(
     ...room,
     round: nextRound,
     claimWindow: null,
+    gangDraw:
+      options.meldType === "mingGang"
+        ? { seatId: seat.seatId, playerId, gangType: "mingGang", tile: room.claimWindow.tile }
+        : room.gangDraw,
     eventLog: [
       ...room.eventLog,
       { type: options.eventType, seatId: seat.seatId, playerId, tile: room.claimWindow.tile, usedTiles },
@@ -861,6 +953,7 @@ export function toClientVisibleRoomState(room: RoomState, playerId: string): Cli
           },
     claimWindow: room.claimWindow,
     baGangClaimWindow: room.baGangClaimWindow,
+    gangDraw: room.gangDraw,
     eventLog: room.eventLog,
   };
 }
@@ -922,6 +1015,7 @@ function prepareActiveGang(
         | "playerNotSeated"
         | "missingSuitNotSet"
         | "claimWindowOpen"
+        | "gangDrawPending"
         | "notCurrentPlayer"
         | "notDiscardPhase";
     } {
@@ -941,6 +1035,10 @@ function prepareActiveGang(
 
   if (room.claimWindow !== null || room.baGangClaimWindow !== null) {
     return { ok: false, reason: "claimWindowOpen" };
+  }
+
+  if (room.gangDraw !== null) {
+    return { ok: false, reason: "gangDrawPending" };
   }
 
   if (room.round.currentPlayer !== seat.seatId) {

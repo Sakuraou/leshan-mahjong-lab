@@ -79,6 +79,14 @@ export type RoomSocketClientMessage =
       clientMessageId: string;
       roomId: string;
       sessionToken: string;
+      type: "drawGangTile";
+      payload: Record<string, never>;
+    }
+  | {
+      protocolVersion: 1;
+      clientMessageId: string;
+      roomId: string;
+      sessionToken: string;
       type: "discardTile";
       payload: { tile: Tile };
     }
@@ -308,6 +316,7 @@ function handleRoomServiceAction(
         | "startRound"
         | "chooseMissingSuit"
         | "drawTile"
+        | "drawGangTile"
         | "discardTile"
         | "passClaim"
         | "claimHu"
@@ -350,6 +359,7 @@ function clientMessageToRoomAction(
         | "startRound"
         | "chooseMissingSuit"
         | "drawTile"
+        | "drawGangTile"
         | "discardTile"
         | "passClaim"
         | "claimHu"
@@ -375,6 +385,10 @@ function clientMessageToRoomAction(
 
   if (message.type === "drawTile") {
     return { type: "drawTile" };
+  }
+
+  if (message.type === "drawGangTile") {
+    return { type: "drawGangTile" };
   }
 
   if (message.type === "discardTile") {
@@ -504,7 +518,9 @@ function errorMessage(code: RoomSocketErrorCode): string {
     mustDiscardMissingSuitFirst: "Missing-suit tiles must be discarded first.",
     cannotDiscardYaoJi: "Yao ji cannot be actively discarded.",
     claimWindowOpen: "A claim window is currently open.",
+    gangDrawPending: "A gang draw is pending.",
     noClaimWindow: "There is no active claim window.",
+    noGangDraw: "There is no active gang draw.",
     claimNotAllowed: "This player cannot respond to the claim window.",
     claimAlreadyResponded: "This player has already responded to the claim window.",
     cannotAnGang: "This player cannot claim an gang with this tile.",
