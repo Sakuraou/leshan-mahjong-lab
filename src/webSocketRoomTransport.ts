@@ -33,6 +33,7 @@ export type WebSocketRoomTransport = {
   discardTile: (playerId: string, tile: Tile) => Promise<WebSocketRoomTransportActionResult>;
   passClaim: (playerId: string) => Promise<WebSocketRoomTransportActionResult>;
   claimHu: (playerId: string) => Promise<WebSocketRoomTransportActionResult>;
+  claimSelfDrawHu: (playerId: string) => Promise<WebSocketRoomTransportActionResult>;
   claimPeng: (playerId: string) => Promise<WebSocketRoomTransportActionResult>;
   claimMingGang: (playerId: string) => Promise<WebSocketRoomTransportActionResult>;
   claimAnGang: (playerId: string, tile: Tile) => Promise<WebSocketRoomTransportActionResult>;
@@ -164,6 +165,7 @@ export async function createWebSocketRoomTransport(
             | "discardTile"
             | "passClaim"
             | "claimHu"
+            | "claimSelfDrawHu"
             | "claimPeng"
             | "claimMingGang"
             | "claimAnGang"
@@ -234,6 +236,7 @@ export async function createWebSocketRoomTransport(
     discardTile: (playerId, tile) => sendSessionMessage(playerId, { type: "discardTile", payload: { tile } }),
     passClaim: (playerId) => sendSessionMessage(playerId, { type: "passClaim", payload: {} }),
     claimHu: (playerId) => sendSessionMessage(playerId, { type: "claimHu", payload: {} }),
+    claimSelfDrawHu: (playerId) => sendSessionMessage(playerId, { type: "claimSelfDrawHu", payload: {} }),
     claimPeng: (playerId) => sendSessionMessage(playerId, { type: "claimPeng", payload: {} }),
     claimMingGang: (playerId) => sendSessionMessage(playerId, { type: "claimMingGang", payload: {} }),
     claimAnGang: (playerId, tile) => sendSessionMessage(playerId, { type: "claimAnGang", payload: { tile } }),

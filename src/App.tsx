@@ -113,6 +113,7 @@ type WebSocketPreviewActions = {
   discardTile: (playerId: string, tile: Tile) => Promise<void>;
   passClaim: (playerId: string) => Promise<void>;
   claimHu: (playerId: string) => Promise<void>;
+  claimSelfDrawHu: (playerId: string) => Promise<void>;
   claimPeng: (playerId: string) => Promise<void>;
   claimMingGang: (playerId: string) => Promise<void>;
   claimAnGang: (playerId: string, tile: Tile) => Promise<void>;
@@ -502,6 +503,7 @@ export function App() {
             onDiscardTile={(playerId, tile) => webSocketPreviewActions.current?.discardTile(playerId, tile)}
             onPassClaim={(playerId) => webSocketPreviewActions.current?.passClaim(playerId)}
             onClaimHu={(playerId) => webSocketPreviewActions.current?.claimHu(playerId)}
+            onClaimSelfDrawHu={(playerId) => webSocketPreviewActions.current?.claimSelfDrawHu(playerId)}
             onClaimPeng={(playerId) => webSocketPreviewActions.current?.claimPeng(playerId)}
             onClaimMingGang={(playerId) => webSocketPreviewActions.current?.claimMingGang(playerId)}
             onClaimAnGang={(playerId, tile) => webSocketPreviewActions.current?.claimAnGang(playerId, tile)}
@@ -638,6 +640,7 @@ function WebSocketTablePreview({
   onDiscardTile,
   onPassClaim,
   onClaimHu,
+  onClaimSelfDrawHu,
   onClaimPeng,
   onClaimMingGang,
   onClaimAnGang,
@@ -652,6 +655,7 @@ function WebSocketTablePreview({
   onDiscardTile: (playerId: string, tile: Tile) => void;
   onPassClaim: (playerId: string) => void;
   onClaimHu: (playerId: string) => void;
+  onClaimSelfDrawHu: (playerId: string) => void;
   onClaimPeng: (playerId: string) => void;
   onClaimMingGang: (playerId: string) => void;
   onClaimAnGang: (playerId: string, tile: Tile) => void;
@@ -664,6 +668,7 @@ function WebSocketTablePreview({
   const round = snapshot?.round ?? null;
   const occupiedSeats = snapshot?.seats.filter((seat) => seat.playerId !== null).length ?? 0;
   const readySeats = snapshot?.seats.filter((seat) => seat.ready).length ?? 0;
+  const remainingPlayers = round?.players.filter((player) => !player.hasWon).length ?? 0;
 
   return (
     <section className="websocket-table-preview" aria-label="真实 WebSocket 桌面预览">
@@ -682,8 +687,15 @@ function WebSocketTablePreview({
         <Stat label="房间状态" value={snapshot?.status ?? "待快照"} />
         <Stat label="座位" value={`${occupiedSeats}/4`} />
         <Stat label="准备" value={`${readySeats}/4`} />
+        <Stat label="未胡" value={round === null ? "-" : `${remainingPlayers}`} />
         <Stat label="牌墙" value={round?.wallCount?.toString() ?? "-"} />
       </div>
+
+      {(snapshot?.roundEnd ?? null) !== null && (
+        <div className="preview-empty">
+          牌局结束：{snapshot?.roundEnd?.reason === "onePlayerLeft" ? "只剩一位未胡玩家" : "牌墙已摸完"}
+        </div>
+      )}
 
       {snapshot === null ? (
         <div className="preview-empty">
@@ -712,6 +724,7 @@ function WebSocketTablePreview({
                 onDiscardTile={onDiscardTile}
                 onPassClaim={onPassClaim}
                 onClaimHu={onClaimHu}
+                onClaimSelfDrawHu={onClaimSelfDrawHu}
                 onClaimPeng={onClaimPeng}
                 onClaimMingGang={onClaimMingGang}
                 onClaimAnGang={onClaimAnGang}
@@ -762,6 +775,7 @@ function WebSocketPreviewClientCard({
   onDiscardTile,
   onPassClaim,
   onClaimHu,
+  onClaimSelfDrawHu,
   onClaimPeng,
   onClaimMingGang,
   onClaimAnGang,
@@ -775,6 +789,7 @@ function WebSocketPreviewClientCard({
   onDiscardTile: (playerId: string, tile: Tile) => void;
   onPassClaim: (playerId: string) => void;
   onClaimHu: (playerId: string) => void;
+  onClaimSelfDrawHu: (playerId: string) => void;
   onClaimPeng: (playerId: string) => void;
   onClaimMingGang: (playerId: string) => void;
   onClaimAnGang: (playerId: string, tile: Tile) => void;
@@ -785,6 +800,7 @@ function WebSocketPreviewClientCard({
   const round = snapshot?.round ?? null;
   const claimWindow = snapshot?.claimWindow ?? null;
   const gangDraw = snapshot?.gangDraw ?? null;
+  const roundEnd = snapshot?.roundEnd ?? null;
   const localSeat = snapshot?.localSeatId;
   const players = round?.players ?? [];
   const localPlayer = localSeat === null || localSeat === undefined ? null : round?.players[localSeat];
@@ -792,6 +808,7 @@ function WebSocketPreviewClientCard({
   const canChooseMissingSuit = round !== null && localPlayer?.missingSuit === null && client.sessionToken !== null;
   const canDrawTile =
     round !== null &&
+    roundEnd === null &&
     claimWindow === null &&
     gangDraw === null &&
     localSeat === round.currentPlayer &&
@@ -801,6 +818,7 @@ function WebSocketPreviewClientCard({
     client.sessionToken !== null;
   const canDiscardTile =
     round !== null &&
+    roundEnd === null &&
     claimWindow === null &&
     gangDraw === null &&
     localSeat === round.currentPlayer &&
@@ -818,10 +836,21 @@ function WebSocketPreviewClientCard({
     !claimWindow.huClaims.some((claim) => claim.seatId === localSeat) &&
     client.sessionToken !== null;
   const localClaimHuCheck = getLocalClaimHuCheck(snapshot, localSeat);
+  const localSelfDrawHuCheck = getLocalSelfDrawHuCheck(snapshot, localSeat);
   const canClaimHu = canPassClaim && (localClaimHuCheck?.canHu ?? false);
+  const canClaimSelfDrawHu =
+    roundEnd === null &&
+    claimWindow === null &&
+    gangDraw === null &&
+    localSeat === round?.currentPlayer &&
+    localPlayer?.hand !== null &&
+    localPlayer?.hand !== undefined &&
+    localPlayer.handCount % 3 === 2 &&
+    (localSelfDrawHuCheck?.canHu ?? false) &&
+    client.sessionToken !== null;
   const canClaimPeng = canPassClaim && canLocalClaimPeng(snapshot, localSeat);
   const canClaimMingGang = canPassClaim && canLocalClaimMingGang(snapshot, localSeat);
-  const claimOrGangWindowOpen = claimWindow !== null || gangDraw !== null;
+  const claimOrGangWindowOpen = claimWindow !== null || gangDraw !== null || roundEnd !== null;
   const activeAnGangCandidates = getActiveAnGangCandidates(round, localSeat, localPlayer, allMissingSuitsChosen, claimOrGangWindowOpen);
   const activeBaGangCandidates = getActiveBaGangCandidates(round, localSeat, localPlayer, allMissingSuitsChosen, claimOrGangWindowOpen);
   const canDrawGangTile =
@@ -832,6 +861,7 @@ function WebSocketPreviewClientCard({
     client.sessionToken !== null;
   const canExpireClaimWindow = claimWindow !== null && client.sessionToken !== null;
   const visibleHand = localPlayer?.hand ?? [];
+  const remainingPlayerCount = players.filter((player) => !player.hasWon).length;
 
   return (
     <article className="preview-client-card">
@@ -839,12 +869,15 @@ function WebSocketPreviewClientCard({
       <p>session：{client.sessionToken ?? "暂无"}</p>
       <p>本地座位：{localSeat === null || localSeat === undefined ? "-" : localSeat + 1}</p>
       <p>房间状态：{snapshot?.status ?? "待快照"}</p>
+      <p>血战状态：{round === null ? "未开局" : `未胡 ${remainingPlayerCount} 人，${localPlayer?.hasWon ? "本家已胡" : "本家未胡"}`}</p>
+      <p>牌局结束：{roundEnd === null ? "未结束" : roundEnd.reason === "onePlayerLeft" ? "只剩一位未胡玩家" : "牌墙已摸完"}</p>
       <p>定缺状态：{round === null ? "开局后可选" : suitText(localPlayer?.missingSuit ?? null)}</p>
       <p>摸牌状态：{webSocketDrawHint(round, localSeat, localPlayer, allMissingSuitsChosen, claimWindow !== null, gangDraw)}</p>
       <p>出牌状态：{webSocketDiscardHint(round, localSeat, localPlayer, allMissingSuitsChosen, claimOrGangWindowOpen)}</p>
       <p>杠后状态：{gangDraw === null ? "暂无杠后补牌" : `玩家 ${gangDraw.seatId + 1} 等待补牌`}</p>
       <p>响应状态：{webSocketClaimHint(snapshot, localSeat)}</p>
       <p>胡牌提示：{webSocketClaimHuHint(localClaimHuCheck, canPassClaim)}</p>
+      <p>自摸提示：{webSocketClaimHuHint(localSelfDrawHuCheck, canClaimSelfDrawHu)}</p>
       <p>碰牌提示：{canPassClaim ? (canClaimPeng ? "可碰，服务端会移出两张牌并记录副露" : "当前不能碰") : "暂无可响应碰牌"}</p>
       <p>杠牌提示：{canPassClaim ? (canClaimMingGang ? "可明杠，服务端会记录副露并进入杠后摸牌" : "当前不能杠") : "暂无可响应杠牌"}</p>
       <p>
@@ -910,6 +943,9 @@ function WebSocketPreviewClientCard({
         ))}
         <button type="button" disabled={!canClaimHu} onClick={() => onClaimHu(client.playerId)}>
           胡牌
+        </button>
+        <button type="button" disabled={!canClaimSelfDrawHu} onClick={() => onClaimSelfDrawHu(client.playerId)}>
+          自摸胡
         </button>
         <button type="button" disabled={!canClaimPeng} onClick={() => onClaimPeng(client.playerId)}>
           碰牌
@@ -1081,6 +1117,42 @@ function getLocalClaimHuCheck(
     localSeat,
     snapshot.claimWindow.tile,
   );
+}
+
+function getLocalSelfDrawHuCheck(
+  snapshot: ClientVisibleRoomState | null,
+  localSeat: PlayerId | null | undefined,
+): ReturnType<typeof checkCurrentPlayerHu> | null {
+  if (
+    snapshot?.round === null ||
+    snapshot?.round === undefined ||
+    localSeat === null ||
+    localSeat === undefined ||
+    snapshot.round.currentPlayer !== localSeat
+  ) {
+    return null;
+  }
+
+  const localPlayer = snapshot.round.players[localSeat];
+
+  if (localPlayer.hand === null) {
+    return null;
+  }
+
+  return checkCurrentPlayerHu({
+    seed: snapshot.round.seed,
+    dealer: snapshot.round.dealer,
+    currentPlayer: snapshot.round.currentPlayer,
+    wall: [],
+    players: snapshot.round.players.map((player) => ({
+      id: player.id,
+      hand: player.id === localSeat ? localPlayer.hand ?? [] : [],
+      discards: player.discards,
+      melds: player.melds,
+      hasWon: player.hasWon,
+      missingSuit: player.missingSuit,
+    })),
+  });
 }
 
 function webSocketClaimHuHint(check: ReturnType<typeof checkDiscardHu> | null, canRespond: boolean): string {
@@ -1257,6 +1329,7 @@ function WebSocketExperimentPanel({
       discardTile: handleDiscardWebSocketTile,
       passClaim: handlePassWebSocketClaim,
       claimHu: handleClaimWebSocketHu,
+      claimSelfDrawHu: handleClaimWebSocketSelfDrawHu,
       claimPeng: handleClaimWebSocketPeng,
       claimMingGang: handleClaimWebSocketMingGang,
       claimAnGang: handleClaimWebSocketAnGang,
@@ -1814,6 +1887,33 @@ function WebSocketExperimentPanel({
       setWebSocketStep("claim", "success", `${playerId} 已由服务端确认点炮胡。`);
     } else {
       setWebSocketStep("claim", "error", `胡牌失败：${webSocketActionErrorText(result)}。`);
+    }
+
+    syncTransportState();
+  }
+
+  async function handleClaimWebSocketSelfDrawHu(playerId: string) {
+    const transport = webSocketTransportForPlayer(playerId);
+
+    if (transport === null) {
+      setWebSocketStep("claim", "error", `自摸胡失败：${playerId} 还没有可用的 WebSocket session。`);
+      appendWebSocketLog(`claimSelfDrawHu：${playerId} 缺少 WebSocket session。`);
+      syncTransportState();
+      return;
+    }
+
+    setWebSocketStep("claim", "running", `${playerId} 正在请求自摸胡。`);
+    const result = await transport.claimSelfDrawHu(playerId);
+    appendWebSocketLog(`claimSelfDrawHu：${playerId}，${webSocketActionText(result)}。`);
+
+    if (result.ok) {
+      await waitForWebSocketView(transport, playerId, (view) => {
+        const seatId = view.localSeatId;
+        return seatId !== null && seatId !== undefined && (view.round?.players[seatId].hasWon ?? false);
+      }).catch(() => undefined);
+      setWebSocketStep("claim", "success", `${playerId} 已由服务端确认自摸胡，血战继续。`);
+    } else {
+      setWebSocketStep("claim", "error", `自摸胡失败：${webSocketActionErrorText(result)}。`);
     }
 
     syncTransportState();
@@ -2553,6 +2653,7 @@ function webSocketErrorCodeText(code: string): string {
     notCurrentPlayer: "还没轮到该玩家",
     notDrawPhase: "当前不是摸牌阶段",
     notDiscardPhase: "当前不是出牌阶段",
+    roundFinished: "本局已经结束",
     gangDrawPending: "当前正在等待杠后补牌",
     noGangDraw: "当前没有杠后补牌状态",
     wallEmpty: "牌墙已经摸完",
@@ -2988,6 +3089,8 @@ function roomEventText(event: RoomEvent, room: RoomState): string {
       return `${roomPlayerName(room, event.playerId)} 过牌。`;
     case "huClaimed":
       return `${roomPlayerName(room, event.playerId)} 点炮胡 ${tileText(event.tile)}，约 ${event.points} 分。`;
+    case "selfDrawHuClaimed":
+      return `${roomPlayerName(room, event.playerId)} 自摸胡，约 ${event.points} 分。`;
     case "pengClaimed":
       return `${roomPlayerName(room, event.playerId)} 碰 ${tileText(event.tile)}。`;
     case "mingGangClaimed":
@@ -2996,6 +3099,10 @@ function roomEventText(event: RoomEvent, room: RoomState): string {
       return `${roomPlayerName(room, event.playerId)} 暗杠 ${tileText(event.tile)}。`;
     case "baGangClaimed":
       return `${roomPlayerName(room, event.playerId)} 巴杠 ${tileText(event.tile)}。`;
+    case "roundEnded":
+      return event.reason === "onePlayerLeft"
+        ? `血战结束，只剩玩家 ${event.remainingPlayerIds.map((seatId) => seatId + 1).join("、")} 未胡。`
+        : "血战结束，牌墙已摸完。";
     case "claimWindowClosed":
       return event.reason === "timeout"
         ? `响应窗口超时，轮到玩家 ${event.nextPlayer + 1} 摸牌。`

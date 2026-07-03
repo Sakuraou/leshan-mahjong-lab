@@ -8,6 +8,7 @@ import {
   claimHu,
   claimMingGang,
   claimPeng,
+  claimSelfDrawHu,
   chooseMissingSuit,
   drawGangTile,
   discardRoomTile,
@@ -407,6 +408,64 @@ test("lets a player claim discard hu from the claim window", () => {
     tile: discard,
     patterns: ["pingHu", "wuJi", "qingYiSe"],
     points: 16,
+  });
+});
+
+test("continues blood battle by skipping a player who claimed discard hu", () => {
+  const { room, discard } = readyRoomForClaimHu();
+  const discarded = discardRoomTile(room, "p1", discard);
+
+  assert.equal(discarded.ok, true);
+
+  if (!discarded.ok) {
+    return;
+  }
+
+  const claimed = claimHu(discarded.room, "p2");
+  assert.equal(claimed.ok, true);
+
+  if (!claimed.ok) {
+    return;
+  }
+
+  const playerThreePassed = passClaim(claimed.room, "p3");
+  assert.equal(playerThreePassed.ok, true);
+
+  if (!playerThreePassed.ok) {
+    return;
+  }
+
+  const playerFourPassed = passClaim(playerThreePassed.room, "p4");
+  assert.equal(playerFourPassed.ok, true);
+
+  if (!playerFourPassed.ok) {
+    return;
+  }
+
+  assert.equal(playerFourPassed.room.round?.players[1].hasWon, true);
+  assert.equal(playerFourPassed.room.claimWindow, null);
+  assert.equal(playerFourPassed.room.round?.currentPlayer, 2);
+});
+
+test("lets the current player claim self-draw hu and keeps the round moving", () => {
+  const room = readyRoomForSelfDrawHu();
+  const claimed = claimSelfDrawHu(room, "p1");
+
+  assert.equal(claimed.ok, true);
+
+  if (!claimed.ok) {
+    return;
+  }
+
+  assert.equal(claimed.room.round?.players[0].hasWon, true);
+  assert.equal(claimed.room.round?.currentPlayer, 1);
+  assert.equal(claimed.room.roundEnd, null);
+  assert.deepEqual(claimed.room.eventLog.at(-1), {
+    type: "selfDrawHuClaimed",
+    seatId: 0,
+    playerId: "p1",
+    patterns: ["pingHu"],
+    points: 2,
   });
 });
 
@@ -846,6 +905,42 @@ function readyRoomForClaimMingGang(): { room: RoomState; discard: Tile } {
             : player,
         ),
       },
+    },
+  };
+}
+
+function readyRoomForSelfDrawHu(): RoomState {
+  const started = startReadyRoom();
+
+  return {
+    ...started,
+    round: {
+      ...started.round!,
+      currentPlayer: 0,
+      players: started.round!.players.map((player) =>
+        player.id === 0
+          ? {
+              ...player,
+              missingSuit: "bamboos",
+              hand: [
+                tile("characters", 2),
+                tile("characters", 3),
+                tile("characters", 4),
+                tile("characters", 7),
+                tile("characters", 8),
+                tile("characters", 9),
+                tile("dots", 3),
+                tile("dots", 4),
+                tile("dots", 5),
+                tile("dots", 6),
+                tile("dots", 7),
+                tile("dots", 8),
+                tile("characters", 5),
+                tile("bamboos", 1),
+              ],
+            }
+          : { ...player, missingSuit: "dots" },
+      ),
     },
   };
 }

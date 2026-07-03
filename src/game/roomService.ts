@@ -4,6 +4,7 @@ import {
   claimHu,
   claimMingGang,
   claimPeng,
+  claimSelfDrawHu,
   chooseMissingSuit,
   createRoom,
   discardRoomTile,
@@ -21,6 +22,7 @@ import {
   type ClaimBaGangResult,
   type ClaimMingGangResult,
   type ClaimPengResult,
+  type ClaimSelfDrawHuResult,
   type ChooseMissingSuitResult,
   type ClientVisibleRoomState,
   type DiscardRoomTileResult,
@@ -72,6 +74,7 @@ export type RoomAction =
   | { type: "discardTile"; tile: Tile }
   | { type: "passClaim" }
   | { type: "claimHu" }
+  | { type: "claimSelfDrawHu" }
   | { type: "claimPeng" }
   | { type: "claimMingGang" }
   | { type: "claimAnGang"; tile: Tile }
@@ -93,6 +96,7 @@ export type RoomServiceError =
   | ClaimHuResult["reason"]
   | ClaimMingGangResult["reason"]
   | ClaimPengResult["reason"]
+  | ClaimSelfDrawHuResult["reason"]
   | PassClaimResult["reason"]
   | ExpireClaimWindowResult["reason"];
 
@@ -276,6 +280,7 @@ function applyRoomAction(
   | ClaimHuResult
   | ClaimMingGangResult
   | ClaimPengResult
+  | ClaimSelfDrawHuResult
   | PassClaimResult
   | ExpireClaimWindowResult {
   if (action.type === "takeSeat") {
@@ -308,6 +313,10 @@ function applyRoomAction(
 
   if (action.type === "claimHu") {
     return claimHu(room, playerId);
+  }
+
+  if (action.type === "claimSelfDrawHu") {
+    return claimSelfDrawHu(room, playerId);
   }
 
   if (action.type === "claimPeng") {

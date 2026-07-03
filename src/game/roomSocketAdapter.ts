@@ -111,6 +111,14 @@ export type RoomSocketClientMessage =
       clientMessageId: string;
       roomId: string;
       sessionToken: string;
+      type: "claimSelfDrawHu";
+      payload: Record<string, never>;
+    }
+  | {
+      protocolVersion: 1;
+      clientMessageId: string;
+      roomId: string;
+      sessionToken: string;
       type: "claimPeng";
       payload: Record<string, never>;
     }
@@ -320,6 +328,7 @@ function handleRoomServiceAction(
         | "discardTile"
         | "passClaim"
         | "claimHu"
+        | "claimSelfDrawHu"
         | "claimPeng"
         | "claimMingGang"
         | "claimAnGang"
@@ -363,6 +372,7 @@ function clientMessageToRoomAction(
         | "discardTile"
         | "passClaim"
         | "claimHu"
+        | "claimSelfDrawHu"
         | "claimPeng"
         | "claimMingGang"
         | "claimAnGang"
@@ -401,6 +411,10 @@ function clientMessageToRoomAction(
 
   if (message.type === "claimHu") {
     return { type: "claimHu" };
+  }
+
+  if (message.type === "claimSelfDrawHu") {
+    return { type: "claimSelfDrawHu" };
   }
 
   if (message.type === "claimPeng") {
@@ -512,6 +526,7 @@ function errorMessage(code: RoomSocketErrorCode): string {
     notCurrentPlayer: "It is not this player's turn.",
     notDrawPhase: "The current player is not in a draw phase.",
     notDiscardPhase: "The current player is not in a discard phase.",
+    roundFinished: "Round is already finished.",
     wallEmpty: "Wall is empty.",
     playerAlreadyWon: "Player has already won.",
     tileNotInHand: "Tile is not in hand.",

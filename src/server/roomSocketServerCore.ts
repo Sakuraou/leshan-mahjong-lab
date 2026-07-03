@@ -254,6 +254,7 @@ function isRoomSocketClientMessage(value: unknown): value is RoomSocketClientMes
   if (
     value.type === "passClaim" ||
     value.type === "claimHu" ||
+    value.type === "claimSelfDrawHu" ||
     value.type === "claimPeng" ||
     value.type === "claimMingGang" ||
     value.type === "drawGangTile" ||
