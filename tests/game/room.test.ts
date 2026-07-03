@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   createRoom,
+  claimHu,
   chooseMissingSuit,
   discardRoomTile,
   drawRoomTile,
@@ -10,6 +11,7 @@ import {
   joinRoom,
   startRoomRound,
   takeSeat,
+  tile,
   toggleReady,
   toClientVisibleRoomState,
   type RoomState,
@@ -374,6 +376,35 @@ test("closes the claim window after all eligible players pass", () => {
   });
 });
 
+test("lets a player claim discard hu from the claim window", () => {
+  const { room, discard } = readyRoomForClaimHu();
+  const discarded = discardRoomTile(room, "p1", discard);
+
+  assert.equal(discarded.ok, true);
+
+  if (!discarded.ok) {
+    return;
+  }
+
+  const claimed = claimHu(discarded.room, "p2");
+  assert.equal(claimed.ok, true);
+
+  if (!claimed.ok) {
+    return;
+  }
+
+  assert.equal(claimed.room.round?.players[1].hasWon, true);
+  assert.equal(claimed.room.claimWindow?.huClaims[0].seatId, 1);
+  assert.deepEqual(claimed.room.eventLog.at(-1), {
+    type: "huClaimed",
+    seatId: 1,
+    playerId: "p2",
+    tile: discard,
+    patterns: ["pingHu", "wuJi", "qingYiSe"],
+    points: 16,
+  });
+});
+
 test("rejects choosing missing suit before start, without a seat, or twice", () => {
   const waitingRoom = seatPlayers(createRoom({ id: "room-missing-waiting", seed: "missing-waiting-seed" }));
 
@@ -474,6 +505,70 @@ function readyRoomForDealerDiscard(): { room: RoomState; discard: Tile } {
   }, started);
 
   return { room, discard };
+}
+
+function readyRoomForClaimHu(): { room: RoomState; discard: Tile } {
+  const started = startReadyRoom();
+  const discard = tile("characters", 9);
+
+  return {
+    discard,
+    room: {
+      ...started,
+      round: {
+        ...started.round!,
+        currentPlayer: 0,
+        players: started.round!.players.map((player) => {
+          if (player.id === 0) {
+            return {
+              ...player,
+              missingSuit: "characters",
+              hand: [
+                tile("characters", 1),
+                tile("characters", 2),
+                tile("characters", 3),
+                tile("characters", 4),
+                tile("characters", 5),
+                tile("characters", 6),
+                tile("characters", 7),
+                tile("characters", 8),
+                tile("characters", 9),
+                tile("dots", 2),
+                tile("dots", 3),
+                tile("dots", 4),
+                tile("bamboos", 3),
+                tile("bamboos", 4),
+              ],
+            };
+          }
+
+          if (player.id === 1) {
+            return {
+              ...player,
+              missingSuit: "bamboos",
+              hand: [
+                tile("characters", 2),
+                tile("characters", 3),
+                tile("characters", 4),
+                tile("characters", 3),
+                tile("characters", 4),
+                tile("characters", 5),
+                tile("characters", 5),
+                tile("characters", 6),
+                tile("characters", 7),
+                tile("characters", 7),
+                tile("characters", 8),
+                tile("characters", 9),
+                tile("characters", 9),
+              ],
+            };
+          }
+
+          return { ...player, missingSuit: "dots" };
+        }),
+      },
+    },
+  };
 }
 
 function findDiscardCandidate(hand: Tile[]): Tile {

@@ -95,6 +95,14 @@ export type RoomSocketClientMessage =
       clientMessageId: string;
       roomId: string;
       sessionToken: string;
+      type: "claimHu";
+      payload: Record<string, never>;
+    }
+  | {
+      protocolVersion: 1;
+      clientMessageId: string;
+      roomId: string;
+      sessionToken: string;
       type: "expireClaimWindow";
       payload: Record<string, never>;
     }
@@ -270,6 +278,7 @@ function handleRoomServiceAction(
         | "drawTile"
         | "discardTile"
         | "passClaim"
+        | "claimHu"
         | "expireClaimWindow";
     }
   >,
@@ -307,6 +316,7 @@ function clientMessageToRoomAction(
         | "drawTile"
         | "discardTile"
         | "passClaim"
+        | "claimHu"
         | "expireClaimWindow";
     }
   >,
@@ -333,6 +343,10 @@ function clientMessageToRoomAction(
 
   if (message.type === "passClaim") {
     return { type: "passClaim" };
+  }
+
+  if (message.type === "claimHu") {
+    return { type: "claimHu" };
   }
 
   if (message.type === "expireClaimWindow") {
@@ -436,7 +450,8 @@ function errorMessage(code: RoomSocketErrorCode): string {
     claimWindowOpen: "A claim window is currently open.",
     noClaimWindow: "There is no active claim window.",
     claimNotAllowed: "This player cannot respond to the claim window.",
-    claimAlreadyPassed: "This player has already passed the claim window.",
+    claimAlreadyResponded: "This player has already responded to the claim window.",
+    cannotHu: "This player cannot claim hu on the discarded tile.",
   };
   return messages[code];
 }

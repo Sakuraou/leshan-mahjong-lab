@@ -31,6 +31,7 @@ export type WebSocketRoomTransport = {
   drawTile: (playerId: string) => Promise<WebSocketRoomTransportActionResult>;
   discardTile: (playerId: string, tile: Tile) => Promise<WebSocketRoomTransportActionResult>;
   passClaim: (playerId: string) => Promise<WebSocketRoomTransportActionResult>;
+  claimHu: (playerId: string) => Promise<WebSocketRoomTransportActionResult>;
   expireClaimWindow: (playerId: string) => Promise<WebSocketRoomTransportActionResult>;
   waitForSnapshot: (playerId: string, timeoutMs?: number) => Promise<ClientVisibleRoomState>;
   waitForMessageCount: (count: number, timeoutMs?: number) => Promise<RoomSocketServerMessage[]>;
@@ -156,6 +157,7 @@ export async function createWebSocketRoomTransport(
             | "drawTile"
             | "discardTile"
             | "passClaim"
+            | "claimHu"
             | "expireClaimWindow";
         }
       >,
@@ -220,6 +222,7 @@ export async function createWebSocketRoomTransport(
     drawTile: (playerId) => sendSessionMessage(playerId, { type: "drawTile", payload: {} }),
     discardTile: (playerId, tile) => sendSessionMessage(playerId, { type: "discardTile", payload: { tile } }),
     passClaim: (playerId) => sendSessionMessage(playerId, { type: "passClaim", payload: {} }),
+    claimHu: (playerId) => sendSessionMessage(playerId, { type: "claimHu", payload: {} }),
     expireClaimWindow: (playerId) => sendSessionMessage(playerId, { type: "expireClaimWindow", payload: {} }),
     waitForSnapshot: (playerId, timeoutMs = actionTimeoutMs) => waitForSnapshot(state, snapshotWaiters, playerId, timeoutMs),
     waitForMessageCount: (count, timeoutMs = actionTimeoutMs) =>

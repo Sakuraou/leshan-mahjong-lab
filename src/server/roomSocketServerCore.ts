@@ -251,7 +251,7 @@ function isRoomSocketClientMessage(value: unknown): value is RoomSocketClientMes
     return isSessionRoomMessage(value) && isRecord(value.payload) && isTile(value.payload.tile);
   }
 
-  if (value.type === "passClaim" || value.type === "expireClaimWindow") {
+  if (value.type === "passClaim" || value.type === "claimHu" || value.type === "expireClaimWindow") {
     return isSessionRoomMessage(value) && isRecord(value.payload);
   }
 

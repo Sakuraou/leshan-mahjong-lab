@@ -5,7 +5,8 @@ import {
   type DiscardTileResult,
   type DrawTileResult,
 } from "./round.ts";
-import type { PlayerId, RoundState, Suit, Tile } from "./types.ts";
+import { checkDiscardHu } from "./win.ts";
+import type { PlayerId, RoundState, ScorePattern, Suit, Tile } from "./types.ts";
 
 const seatIds: PlayerId[] = [0, 1, 2, 3];
 
@@ -18,6 +19,14 @@ export type ClaimWindow = {
   nextPlayer: PlayerId;
   pendingPlayerIds: PlayerId[];
   passedPlayerIds: PlayerId[];
+  huClaims: HuClaim[];
+};
+
+export type HuClaim = {
+  seatId: PlayerId;
+  playerId: string;
+  patterns: ScorePattern[];
+  points: number;
 };
 
 export type RoomMember = {
@@ -45,6 +54,7 @@ export type RoomEvent =
   | { type: "tileDiscarded"; seatId: PlayerId; playerId: string; tile: Tile }
   | { type: "claimWindowOpened"; discardedBySeatId: PlayerId; tile: Tile; pendingPlayerIds: PlayerId[] }
   | { type: "claimPassed"; seatId: PlayerId; playerId: string }
+  | { type: "huClaimed"; seatId: PlayerId; playerId: string; tile: Tile; patterns: ScorePattern[]; points: number }
   | { type: "claimWindowClosed"; reason: "allPassed" | "timeout"; nextPlayer: PlayerId };
 
 export type RoomState = {
@@ -147,7 +157,20 @@ export type PassClaimResult =
   | { ok: true; room: RoomState }
   | {
       ok: false;
-      reason: "roundNotStarted" | "playerNotSeated" | "noClaimWindow" | "claimNotAllowed" | "claimAlreadyPassed";
+      reason: "roundNotStarted" | "playerNotSeated" | "noClaimWindow" | "claimNotAllowed" | "claimAlreadyResponded";
+    };
+
+export type ClaimHuResult =
+  | { ok: true; room: RoomState }
+  | {
+      ok: false;
+      reason:
+        | "roundNotStarted"
+        | "playerNotSeated"
+        | "noClaimWindow"
+        | "claimNotAllowed"
+        | "claimAlreadyResponded"
+        | "cannotHu";
     };
 
 export type ExpireClaimWindowResult =
@@ -433,26 +456,91 @@ export function passClaim(room: RoomState, playerId: string): PassClaimResult {
     return { ok: false, reason: "claimNotAllowed" };
   }
 
-  if (room.claimWindow.passedPlayerIds.includes(seat.seatId)) {
-    return { ok: false, reason: "claimAlreadyPassed" };
+  if (hasClaimResponse(room.claimWindow, seat.seatId)) {
+    return { ok: false, reason: "claimAlreadyResponded" };
   }
 
   const passedPlayerIds = [...room.claimWindow.passedPlayerIds, seat.seatId];
-  const allPassed = room.claimWindow.pendingPlayerIds.every((value) => passedPlayerIds.includes(value));
+  const nextClaimWindow = { ...room.claimWindow, passedPlayerIds };
+  const allResponded = didAllClaimPlayersRespond(nextClaimWindow);
+  const nextRoom = {
+    ...room,
+    claimWindow: allResponded ? null : nextClaimWindow,
+    eventLog: [
+      ...room.eventLog,
+      { type: "claimPassed" as const, seatId: seat.seatId, playerId },
+    ],
+  };
 
   return {
     ok: true,
-    room: {
-      ...room,
-      claimWindow: allPassed ? null : { ...room.claimWindow, passedPlayerIds },
-      eventLog: [
-        ...room.eventLog,
-        { type: "claimPassed", seatId: seat.seatId, playerId },
-        ...(allPassed
-          ? [{ type: "claimWindowClosed", reason: "allPassed" as const, nextPlayer: room.claimWindow.nextPlayer }]
-          : []),
-      ],
-    },
+    room: allResponded ? closeClaimWindow(nextRoom, room.claimWindow, "allPassed") : nextRoom,
+  };
+}
+
+export function claimHu(room: RoomState, playerId: string): ClaimHuResult {
+  if (room.round === null) {
+    return { ok: false, reason: "roundNotStarted" };
+  }
+
+  const seat = room.seats.find((value) => value.playerId === playerId);
+
+  if (seat === undefined) {
+    return { ok: false, reason: "playerNotSeated" };
+  }
+
+  if (room.claimWindow === null) {
+    return { ok: false, reason: "noClaimWindow" };
+  }
+
+  if (!room.claimWindow.pendingPlayerIds.includes(seat.seatId)) {
+    return { ok: false, reason: "claimNotAllowed" };
+  }
+
+  if (hasClaimResponse(room.claimWindow, seat.seatId)) {
+    return { ok: false, reason: "claimAlreadyResponded" };
+  }
+
+  const huCheck = checkDiscardHu(room.round, seat.seatId, room.claimWindow.tile);
+
+  if (!huCheck.canHu) {
+    return { ok: false, reason: "cannotHu" };
+  }
+
+  const huClaim: HuClaim = {
+    seatId: seat.seatId,
+    playerId,
+    patterns: huCheck.patterns,
+    points: huCheck.score.cappedPoints,
+  };
+  const nextRound: RoundState = {
+    ...room.round,
+    players: room.round.players.map((player) =>
+      player.id === seat.seatId ? { ...player, hasWon: true } : player,
+    ),
+  };
+  const nextClaimWindow = { ...room.claimWindow, huClaims: [...room.claimWindow.huClaims, huClaim] };
+  const allResponded = didAllClaimPlayersRespond(nextClaimWindow);
+  const nextRoom = {
+    ...room,
+    round: nextRound,
+    claimWindow: allResponded ? null : nextClaimWindow,
+    eventLog: [
+      ...room.eventLog,
+      {
+        type: "huClaimed" as const,
+        seatId: seat.seatId,
+        playerId,
+        tile: room.claimWindow.tile,
+        patterns: huClaim.patterns,
+        points: huClaim.points,
+      },
+    ],
+  };
+
+  return {
+    ok: true,
+    room: allResponded ? closeClaimWindow(nextRoom, room.claimWindow, "allPassed") : nextRoom,
   };
 }
 
@@ -463,14 +551,7 @@ export function expireClaimWindow(room: RoomState): ExpireClaimWindowResult {
 
   return {
     ok: true,
-    room: {
-      ...room,
-      claimWindow: null,
-      eventLog: [
-        ...room.eventLog,
-        { type: "claimWindowClosed", reason: "timeout", nextPlayer: room.claimWindow.nextPlayer },
-      ],
-    },
+    room: closeClaimWindow({ ...room, claimWindow: null }, room.claimWindow, "timeout"),
   };
 }
 
@@ -518,6 +599,7 @@ function createClaimWindow(
     nextPlayer,
     pendingPlayerIds: claimPendingPlayerIds(round, discardedBySeatId),
     passedPlayerIds: [],
+    huClaims: [],
   };
 }
 
@@ -525,6 +607,40 @@ function claimPendingPlayerIds(round: RoundState, discardedBySeatId: PlayerId): 
   return round.players
     .filter((player) => player.id !== discardedBySeatId && !player.hasWon)
     .map((player) => player.id);
+}
+
+function hasClaimResponse(claimWindow: ClaimWindow, seatId: PlayerId): boolean {
+  return (
+    claimWindow.passedPlayerIds.includes(seatId) ||
+    claimWindow.huClaims.some((claim) => claim.seatId === seatId)
+  );
+}
+
+function didAllClaimPlayersRespond(claimWindow: ClaimWindow): boolean {
+  return claimWindow.pendingPlayerIds.every((seatId) => hasClaimResponse(claimWindow, seatId));
+}
+
+function closeClaimWindow(room: RoomState, claimWindow: ClaimWindow, reason: "allPassed" | "timeout"): RoomState {
+  const nextPlayer = room.round === null ? claimWindow.nextPlayer : findNextActivePlayer(room.round, claimWindow.discardedBySeatId);
+
+  return {
+    ...room,
+    round: room.round === null ? null : { ...room.round, currentPlayer: nextPlayer },
+    claimWindow: null,
+    eventLog: [...room.eventLog, { type: "claimWindowClosed", reason, nextPlayer }],
+  };
+}
+
+function findNextActivePlayer(round: RoundState, fromPlayer: PlayerId): PlayerId {
+  for (let offset = 1; offset <= seatIds.length; offset += 1) {
+    const candidate = ((fromPlayer + offset) % seatIds.length) as PlayerId;
+
+    if (!round.players[candidate].hasWon) {
+      return candidate;
+    }
+  }
+
+  return fromPlayer;
 }
 
 function replaceSeat(seats: SeatState[], seatId: PlayerId, nextSeat: SeatState): SeatState[] {
