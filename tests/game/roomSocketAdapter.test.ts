@@ -229,7 +229,9 @@ test("maps discardTile and broadcasts redacted snapshots to every session", () =
   });
   assert.deepEqual(snapshots[0].payload.events, [
     { type: "tileDiscarded", seatId: 0, playerId: "player-1", tile: prepared.discard },
+    { type: "claimWindowOpened", discardedBySeatId: 0, tile: prepared.discard, pendingPlayerIds: [1, 2, 3] },
   ]);
+  assert.equal(snapshots[1].payload.view.claimWindow?.pendingPlayerIds.length, 3);
 });
 
 function fillReadyAdapter(roomId: string): { adapter: RoomSocketAdapterState; sessions: string[] } {

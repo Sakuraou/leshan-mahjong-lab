@@ -87,6 +87,10 @@ test("websocket room transport tracks session snapshots over a real dev server",
     assert.equal(discarded.ok, true);
     await waitForDiscardSnapshots(transports, hostDiscard);
 
+    const expiredClaim = await transports[1].expireClaimWindow("player-2");
+    assert.equal(expiredClaim.ok, true);
+    await waitForClaimWindowClosed(transports);
+
     const playerTwoDraw = await transports[1].drawTile("player-2");
     assert.equal(playerTwoDraw.ok, true);
     await waitForPlayerHandCount(transports, 1, 14);
@@ -275,6 +279,18 @@ async function waitForPlayerHandCount(
   ) {
     if (Date.now() > deadline) {
       throw new Error("Timed out waiting for WebSocket hand count snapshots.");
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
+async function waitForClaimWindowClosed(transports: WebSocketRoomTransport[]): Promise<void> {
+  const deadline = Date.now() + 3_000;
+
+  while (transports.some((transport, index) => transport.getClientView(`player-${index + 1}`)?.claimWindow !== null)) {
+    if (Date.now() > deadline) {
+      throw new Error("Timed out waiting for WebSocket claim window to close.");
     }
 
     await new Promise((resolve) => setTimeout(resolve, 10));

@@ -3,7 +3,9 @@ import {
   createRoom,
   discardRoomTile,
   drawRoomTile,
+  expireClaimWindow,
   joinRoom,
+  passClaim,
   startRoomRound,
   takeSeat,
   toggleReady,
@@ -12,7 +14,9 @@ import {
   type ClientVisibleRoomState,
   type DiscardRoomTileResult,
   type DrawRoomTileResult,
+  type ExpireClaimWindowResult,
   type JoinRoomResult,
+  type PassClaimResult,
   type RoomEvent,
   type RoomState,
   type StartRoomRoundResult,
@@ -52,7 +56,9 @@ export type RoomAction =
   | { type: "startRound"; dealer?: PlayerId }
   | { type: "chooseMissingSuit"; suit: Suit }
   | { type: "drawTile" }
-  | { type: "discardTile"; tile: Tile };
+  | { type: "discardTile"; tile: Tile }
+  | { type: "passClaim" }
+  | { type: "expireClaimWindow" };
 
 export type RoomServiceError =
   | "invalidSession"
@@ -62,7 +68,9 @@ export type RoomServiceError =
   | StartRoomRoundResult["reason"]
   | ChooseMissingSuitResult["reason"]
   | DrawRoomTileResult["reason"]
-  | DiscardRoomTileResult["reason"];
+  | DiscardRoomTileResult["reason"]
+  | PassClaimResult["reason"]
+  | ExpireClaimWindowResult["reason"];
 
 export type RoomServiceResponse = {
   service: RoomServiceState;
@@ -237,7 +245,9 @@ function applyRoomAction(
   | StartRoomRoundResult
   | ChooseMissingSuitResult
   | DrawRoomTileResult
-  | DiscardRoomTileResult {
+  | DiscardRoomTileResult
+  | PassClaimResult
+  | ExpireClaimWindowResult {
   if (action.type === "takeSeat") {
     return takeSeat(room, playerId, action.seatId);
   }
@@ -256,6 +266,14 @@ function applyRoomAction(
 
   if (action.type === "discardTile") {
     return discardRoomTile(room, playerId, action.tile);
+  }
+
+  if (action.type === "passClaim") {
+    return passClaim(room, playerId);
+  }
+
+  if (action.type === "expireClaimWindow") {
+    return expireClaimWindow(room);
   }
 
   return chooseMissingSuit(room, playerId, action.suit);

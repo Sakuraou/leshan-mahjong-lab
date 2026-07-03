@@ -6,6 +6,7 @@ import {
   chooseMissingSuit,
   discardRoomTile,
   drawRoomTile,
+  passClaim,
   joinRoom,
   startRoomRound,
   takeSeat,
@@ -278,12 +279,19 @@ test("discards a tile for the current seated player after dingque is complete", 
   assert.equal(result.room.round?.players[0].hand.length, (beforeHandCount ?? 0) - 1);
   assert.equal(result.room.round?.players[0].discards.length, 1);
   assert.equal(result.room.round?.currentPlayer, 1);
-  assert.deepEqual(result.room.eventLog.at(-1), {
+  assert.deepEqual(result.room.eventLog.at(-2), {
     type: "tileDiscarded",
     seatId: 0,
     playerId: "p1",
     tile: discard,
   });
+  assert.deepEqual(result.room.eventLog.at(-1), {
+    type: "claimWindowOpened",
+    discardedBySeatId: 0,
+    tile: discard,
+    pendingPlayerIds: [1, 2, 3],
+  });
+  assert.equal(result.room.claimWindow?.nextPlayer, 1);
 
   const visibleToP1 = toClientVisibleRoomState(result.room, "p1");
   const visibleToP2 = toClientVisibleRoomState(result.room, "p2");
@@ -292,6 +300,7 @@ test("discards a tile for the current seated player after dingque is complete", 
   assert.equal(visibleToP2.round?.players[0].hand, null);
   assert.equal(visibleToP2.round?.players[0].handCount, 13);
   assert.deepEqual(visibleToP2.round?.players[0].discards, [discard]);
+  assert.equal(visibleToP2.claimWindow?.pendingPlayerIds.length, 3);
 });
 
 test("rejects discard before start, before dingque, out of turn, and outside discard phase", () => {
@@ -321,6 +330,47 @@ test("rejects discard before start, before dingque, out of turn, and outside dis
   assert.deepEqual(discardRoomTile({ ...room, round: { ...room.round!, currentPlayer: 1 } }, "p2", discard), {
     ok: false,
     reason: "notDiscardPhase",
+  });
+});
+
+test("closes the claim window after all eligible players pass", () => {
+  const { room, discard } = readyRoomForDealerDiscard();
+  const discarded = discardRoomTile(room, "p1", discard);
+
+  assert.equal(discarded.ok, true);
+
+  if (!discarded.ok) {
+    return;
+  }
+
+  const playerTwoPassed = passClaim(discarded.room, "p2");
+  assert.equal(playerTwoPassed.ok, true);
+
+  if (!playerTwoPassed.ok) {
+    return;
+  }
+
+  assert.deepEqual(playerTwoPassed.room.claimWindow?.passedPlayerIds, [1]);
+
+  const playerThreePassed = passClaim(playerTwoPassed.room, "p3");
+  assert.equal(playerThreePassed.ok, true);
+
+  if (!playerThreePassed.ok) {
+    return;
+  }
+
+  const playerFourPassed = passClaim(playerThreePassed.room, "p4");
+  assert.equal(playerFourPassed.ok, true);
+
+  if (!playerFourPassed.ok) {
+    return;
+  }
+
+  assert.equal(playerFourPassed.room.claimWindow, null);
+  assert.deepEqual(playerFourPassed.room.eventLog.at(-1), {
+    type: "claimWindowClosed",
+    reason: "allPassed",
+    nextPlayer: 1,
   });
 });
 

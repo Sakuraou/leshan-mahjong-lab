@@ -11,6 +11,15 @@ const seatIds: PlayerId[] = [0, 1, 2, 3];
 
 export type RoomStatus = "waiting" | "dingque";
 
+export type ClaimWindow = {
+  discardedBySeatId: PlayerId;
+  discardedByPlayerId: string;
+  tile: Tile;
+  nextPlayer: PlayerId;
+  pendingPlayerIds: PlayerId[];
+  passedPlayerIds: PlayerId[];
+};
+
 export type RoomMember = {
   playerId: string;
   displayName: string;
@@ -33,7 +42,10 @@ export type RoomEvent =
   | { type: "roundStarted"; seed: string; dealer: PlayerId }
   | { type: "missingSuitChosen"; seatId: PlayerId; playerId: string; suit: Suit }
   | { type: "tileDrawn"; seatId: PlayerId; playerId: string }
-  | { type: "tileDiscarded"; seatId: PlayerId; playerId: string; tile: Tile };
+  | { type: "tileDiscarded"; seatId: PlayerId; playerId: string; tile: Tile }
+  | { type: "claimWindowOpened"; discardedBySeatId: PlayerId; tile: Tile; pendingPlayerIds: PlayerId[] }
+  | { type: "claimPassed"; seatId: PlayerId; playerId: string }
+  | { type: "claimWindowClosed"; reason: "allPassed" | "timeout"; nextPlayer: PlayerId };
 
 export type RoomState = {
   id: string;
@@ -42,6 +54,7 @@ export type RoomState = {
   members: RoomMember[];
   seats: SeatState[];
   round: RoundState | null;
+  claimWindow: ClaimWindow | null;
   eventLog: RoomEvent[];
 };
 
@@ -68,6 +81,7 @@ export type ClientVisibleRoomState = {
         wallCount: number;
         players: VisiblePlayerState[];
       };
+  claimWindow: ClaimWindow | null;
   eventLog: RoomEvent[];
 };
 
@@ -109,6 +123,7 @@ export type DrawRoomTileResult =
         | "roundNotStarted"
         | "playerNotSeated"
         | "missingSuitNotSet"
+        | "claimWindowOpen"
         | "notCurrentPlayer"
         | "notDrawPhase"
         | DrawTileResult["reason"];
@@ -122,10 +137,22 @@ export type DiscardRoomTileResult =
         | "roundNotStarted"
         | "playerNotSeated"
         | "missingSuitNotSet"
+        | "claimWindowOpen"
         | "notCurrentPlayer"
         | "notDiscardPhase"
         | DiscardTileResult["reason"];
     };
+
+export type PassClaimResult =
+  | { ok: true; room: RoomState }
+  | {
+      ok: false;
+      reason: "roundNotStarted" | "playerNotSeated" | "noClaimWindow" | "claimNotAllowed" | "claimAlreadyPassed";
+    };
+
+export type ExpireClaimWindowResult =
+  | { ok: true; room: RoomState }
+  | { ok: false; reason: "noClaimWindow" };
 
 export function createRoom(input: CreateRoomInput): RoomState {
   return {
@@ -141,6 +168,7 @@ export function createRoom(input: CreateRoomInput): RoomState {
       ready: false,
     })),
     round: null,
+    claimWindow: null,
     eventLog: [{ type: "roomCreated", roomId: input.id }],
   };
 }
@@ -246,6 +274,7 @@ export function startRoomRound(room: RoomState, dealer: PlayerId = 0): StartRoom
       ...room,
       status: "dingque",
       round: startRound({ seed: room.seed, dealer }),
+      claimWindow: null,
       eventLog: [...room.eventLog, { type: "roundStarted", seed: room.seed, dealer }],
     },
   };
@@ -300,6 +329,10 @@ export function drawRoomTile(room: RoomState, playerId: string): DrawRoomTileRes
     return { ok: false, reason: "missingSuitNotSet" };
   }
 
+  if (room.claimWindow !== null) {
+    return { ok: false, reason: "claimWindowOpen" };
+  }
+
   if (room.round.currentPlayer !== seat.seatId) {
     return { ok: false, reason: "notCurrentPlayer" };
   }
@@ -341,6 +374,10 @@ export function discardRoomTile(room: RoomState, playerId: string, tile: Tile): 
     return { ok: false, reason: "missingSuitNotSet" };
   }
 
+  if (room.claimWindow !== null) {
+    return { ok: false, reason: "claimWindowOpen" };
+  }
+
   if (room.round.currentPlayer !== seat.seatId) {
     return { ok: false, reason: "notCurrentPlayer" };
   }
@@ -362,7 +399,77 @@ export function discardRoomTile(room: RoomState, playerId: string, tile: Tile): 
     room: {
       ...room,
       round: result.round,
-      eventLog: [...room.eventLog, { type: "tileDiscarded", seatId: seat.seatId, playerId, tile }],
+      claimWindow: createClaimWindow(result.round, seat.seatId, playerId, tile, result.nextPlayer),
+      eventLog: [
+        ...room.eventLog,
+        { type: "tileDiscarded", seatId: seat.seatId, playerId, tile },
+        {
+          type: "claimWindowOpened",
+          discardedBySeatId: seat.seatId,
+          tile,
+          pendingPlayerIds: claimPendingPlayerIds(result.round, seat.seatId),
+        },
+      ],
+    },
+  };
+}
+
+export function passClaim(room: RoomState, playerId: string): PassClaimResult {
+  if (room.round === null) {
+    return { ok: false, reason: "roundNotStarted" };
+  }
+
+  const seat = room.seats.find((value) => value.playerId === playerId);
+
+  if (seat === undefined) {
+    return { ok: false, reason: "playerNotSeated" };
+  }
+
+  if (room.claimWindow === null) {
+    return { ok: false, reason: "noClaimWindow" };
+  }
+
+  if (!room.claimWindow.pendingPlayerIds.includes(seat.seatId)) {
+    return { ok: false, reason: "claimNotAllowed" };
+  }
+
+  if (room.claimWindow.passedPlayerIds.includes(seat.seatId)) {
+    return { ok: false, reason: "claimAlreadyPassed" };
+  }
+
+  const passedPlayerIds = [...room.claimWindow.passedPlayerIds, seat.seatId];
+  const allPassed = room.claimWindow.pendingPlayerIds.every((value) => passedPlayerIds.includes(value));
+
+  return {
+    ok: true,
+    room: {
+      ...room,
+      claimWindow: allPassed ? null : { ...room.claimWindow, passedPlayerIds },
+      eventLog: [
+        ...room.eventLog,
+        { type: "claimPassed", seatId: seat.seatId, playerId },
+        ...(allPassed
+          ? [{ type: "claimWindowClosed", reason: "allPassed" as const, nextPlayer: room.claimWindow.nextPlayer }]
+          : []),
+      ],
+    },
+  };
+}
+
+export function expireClaimWindow(room: RoomState): ExpireClaimWindowResult {
+  if (room.claimWindow === null) {
+    return { ok: false, reason: "noClaimWindow" };
+  }
+
+  return {
+    ok: true,
+    room: {
+      ...room,
+      claimWindow: null,
+      eventLog: [
+        ...room.eventLog,
+        { type: "claimWindowClosed", reason: "timeout", nextPlayer: room.claimWindow.nextPlayer },
+      ],
     },
   };
 }
@@ -392,8 +499,32 @@ export function toClientVisibleRoomState(room: RoomState, playerId: string): Cli
               missingSuit: player.missingSuit,
             })),
           },
+    claimWindow: room.claimWindow,
     eventLog: room.eventLog,
   };
+}
+
+function createClaimWindow(
+  round: RoundState,
+  discardedBySeatId: PlayerId,
+  discardedByPlayerId: string,
+  tile: Tile,
+  nextPlayer: PlayerId,
+): ClaimWindow {
+  return {
+    discardedBySeatId,
+    discardedByPlayerId,
+    tile,
+    nextPlayer,
+    pendingPlayerIds: claimPendingPlayerIds(round, discardedBySeatId),
+    passedPlayerIds: [],
+  };
+}
+
+function claimPendingPlayerIds(round: RoundState, discardedBySeatId: PlayerId): PlayerId[] {
+  return round.players
+    .filter((player) => player.id !== discardedBySeatId && !player.hasWon)
+    .map((player) => player.id);
 }
 
 function replaceSeat(seats: SeatState[], seatId: PlayerId, nextSeat: SeatState): SeatState[] {

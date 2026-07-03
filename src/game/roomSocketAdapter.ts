@@ -87,6 +87,22 @@ export type RoomSocketClientMessage =
       clientMessageId: string;
       roomId: string;
       sessionToken: string;
+      type: "passClaim";
+      payload: Record<string, never>;
+    }
+  | {
+      protocolVersion: 1;
+      clientMessageId: string;
+      roomId: string;
+      sessionToken: string;
+      type: "expireClaimWindow";
+      payload: Record<string, never>;
+    }
+  | {
+      protocolVersion: 1;
+      clientMessageId: string;
+      roomId: string;
+      sessionToken: string;
       type: "resumeSession";
       payload: { lastSeenEventId?: number };
     };
@@ -245,7 +261,17 @@ function handleRoomServiceAction(
   service: RoomServiceState,
   message: Extract<
     RoomSocketClientMessage,
-    { type: "takeSeat" | "toggleReady" | "startRound" | "chooseMissingSuit" | "drawTile" | "discardTile" }
+    {
+      type:
+        | "takeSeat"
+        | "toggleReady"
+        | "startRound"
+        | "chooseMissingSuit"
+        | "drawTile"
+        | "discardTile"
+        | "passClaim"
+        | "expireClaimWindow";
+    }
   >,
   action: RoomAction,
 ): RoomSocketAdapterResult {
@@ -272,7 +298,17 @@ function handleRoomServiceAction(
 function clientMessageToRoomAction(
   message: Extract<
     RoomSocketClientMessage,
-    { type: "takeSeat" | "toggleReady" | "startRound" | "chooseMissingSuit" | "drawTile" | "discardTile" }
+    {
+      type:
+        | "takeSeat"
+        | "toggleReady"
+        | "startRound"
+        | "chooseMissingSuit"
+        | "drawTile"
+        | "discardTile"
+        | "passClaim"
+        | "expireClaimWindow";
+    }
   >,
 ): RoomAction {
   if (message.type === "takeSeat") {
@@ -293,6 +329,14 @@ function clientMessageToRoomAction(
 
   if (message.type === "discardTile") {
     return { type: "discardTile", tile: message.payload.tile };
+  }
+
+  if (message.type === "passClaim") {
+    return { type: "passClaim" };
+  }
+
+  if (message.type === "expireClaimWindow") {
+    return { type: "expireClaimWindow" };
   }
 
   return { type: "chooseMissingSuit", suit: message.payload.suit };
@@ -389,6 +433,10 @@ function errorMessage(code: RoomSocketErrorCode): string {
     tileNotInHand: "Tile is not in hand.",
     mustDiscardMissingSuitFirst: "Missing-suit tiles must be discarded first.",
     cannotDiscardYaoJi: "Yao ji cannot be actively discarded.",
+    claimWindowOpen: "A claim window is currently open.",
+    noClaimWindow: "There is no active claim window.",
+    claimNotAllowed: "This player cannot respond to the claim window.",
+    claimAlreadyPassed: "This player has already passed the claim window.",
   };
   return messages[code];
 }

@@ -142,7 +142,9 @@ test("discards through the authoritative service and returns a redacted view", (
   assert.equal(discarded.view.round?.players[0].discards.length, 1);
   assert.deepEqual(discarded.events, [
     { type: "tileDiscarded", seatId: 0, playerId: "player-1", tile: prepared.discard },
+    { type: "claimWindowOpened", discardedBySeatId: 0, tile: prepared.discard, pendingPlayerIds: [1, 2, 3] },
   ]);
+  assert.equal(discarded.view.claimWindow?.pendingPlayerIds.length, 3);
 });
 
 test("rejects service draw when dingque is missing, out of turn, or outside draw phase", () => {

@@ -30,6 +30,8 @@ export type WebSocketRoomTransport = {
   chooseMissingSuit: (playerId: string, suit: Suit) => Promise<WebSocketRoomTransportActionResult>;
   drawTile: (playerId: string) => Promise<WebSocketRoomTransportActionResult>;
   discardTile: (playerId: string, tile: Tile) => Promise<WebSocketRoomTransportActionResult>;
+  passClaim: (playerId: string) => Promise<WebSocketRoomTransportActionResult>;
+  expireClaimWindow: (playerId: string) => Promise<WebSocketRoomTransportActionResult>;
   waitForSnapshot: (playerId: string, timeoutMs?: number) => Promise<ClientVisibleRoomState>;
   waitForMessageCount: (count: number, timeoutMs?: number) => Promise<RoomSocketServerMessage[]>;
   getClientView: (playerId: string) => ClientVisibleRoomState | undefined;
@@ -145,7 +147,17 @@ export async function createWebSocketRoomTransport(
     message: Omit<
       Extract<
         RoomSocketClientMessage,
-        { type: "takeSeat" | "toggleReady" | "startRound" | "chooseMissingSuit" | "drawTile" | "discardTile" }
+        {
+          type:
+            | "takeSeat"
+            | "toggleReady"
+            | "startRound"
+            | "chooseMissingSuit"
+            | "drawTile"
+            | "discardTile"
+            | "passClaim"
+            | "expireClaimWindow";
+        }
       >,
       "protocolVersion" | "clientMessageId" | "roomId" | "sessionToken"
     >,
@@ -207,6 +219,8 @@ export async function createWebSocketRoomTransport(
     chooseMissingSuit: (playerId, suit) => sendSessionMessage(playerId, { type: "chooseMissingSuit", payload: { suit } }),
     drawTile: (playerId) => sendSessionMessage(playerId, { type: "drawTile", payload: {} }),
     discardTile: (playerId, tile) => sendSessionMessage(playerId, { type: "discardTile", payload: { tile } }),
+    passClaim: (playerId) => sendSessionMessage(playerId, { type: "passClaim", payload: {} }),
+    expireClaimWindow: (playerId) => sendSessionMessage(playerId, { type: "expireClaimWindow", payload: {} }),
     waitForSnapshot: (playerId, timeoutMs = actionTimeoutMs) => waitForSnapshot(state, snapshotWaiters, playerId, timeoutMs),
     waitForMessageCount: (count, timeoutMs = actionTimeoutMs) =>
       waitForMessageCount(state, messageCountWaiters, count, timeoutMs),
