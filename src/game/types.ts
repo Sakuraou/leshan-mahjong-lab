@@ -30,10 +30,10 @@ export type PatternScore = {
 export type PlayerId = 0 | 1 | 2 | 3;
 
 export type Meld = {
-  type: "peng" | "mingGang";
+  type: "peng" | "mingGang" | "anGang" | "baGang";
   tile: Tile;
   tiles: Tile[];
-  fromPlayer: PlayerId;
+  fromPlayer: PlayerId | null;
 };
 
 export type PlayerState = {

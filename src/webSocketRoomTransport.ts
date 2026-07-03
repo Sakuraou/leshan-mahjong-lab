@@ -34,6 +34,8 @@ export type WebSocketRoomTransport = {
   claimHu: (playerId: string) => Promise<WebSocketRoomTransportActionResult>;
   claimPeng: (playerId: string) => Promise<WebSocketRoomTransportActionResult>;
   claimMingGang: (playerId: string) => Promise<WebSocketRoomTransportActionResult>;
+  claimAnGang: (playerId: string, tile: Tile) => Promise<WebSocketRoomTransportActionResult>;
+  claimBaGang: (playerId: string, tile: Tile) => Promise<WebSocketRoomTransportActionResult>;
   expireClaimWindow: (playerId: string) => Promise<WebSocketRoomTransportActionResult>;
   waitForSnapshot: (playerId: string, timeoutMs?: number) => Promise<ClientVisibleRoomState>;
   waitForMessageCount: (count: number, timeoutMs?: number) => Promise<RoomSocketServerMessage[]>;
@@ -162,6 +164,8 @@ export async function createWebSocketRoomTransport(
             | "claimHu"
             | "claimPeng"
             | "claimMingGang"
+            | "claimAnGang"
+            | "claimBaGang"
             | "expireClaimWindow";
         }
       >,
@@ -229,6 +233,8 @@ export async function createWebSocketRoomTransport(
     claimHu: (playerId) => sendSessionMessage(playerId, { type: "claimHu", payload: {} }),
     claimPeng: (playerId) => sendSessionMessage(playerId, { type: "claimPeng", payload: {} }),
     claimMingGang: (playerId) => sendSessionMessage(playerId, { type: "claimMingGang", payload: {} }),
+    claimAnGang: (playerId, tile) => sendSessionMessage(playerId, { type: "claimAnGang", payload: { tile } }),
+    claimBaGang: (playerId, tile) => sendSessionMessage(playerId, { type: "claimBaGang", payload: { tile } }),
     expireClaimWindow: (playerId) => sendSessionMessage(playerId, { type: "expireClaimWindow", payload: {} }),
     waitForSnapshot: (playerId, timeoutMs = actionTimeoutMs) => waitForSnapshot(state, snapshotWaiters, playerId, timeoutMs),
     waitForMessageCount: (count, timeoutMs = actionTimeoutMs) =>

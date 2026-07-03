@@ -114,6 +114,8 @@ type WebSocketPreviewActions = {
   claimHu: (playerId: string) => Promise<void>;
   claimPeng: (playerId: string) => Promise<void>;
   claimMingGang: (playerId: string) => Promise<void>;
+  claimAnGang: (playerId: string, tile: Tile) => Promise<void>;
+  claimBaGang: (playerId: string, tile: Tile) => Promise<void>;
   expireClaimWindow: (playerId: string) => Promise<void>;
 };
 
@@ -500,6 +502,8 @@ export function App() {
             onClaimHu={(playerId) => webSocketPreviewActions.current?.claimHu(playerId)}
             onClaimPeng={(playerId) => webSocketPreviewActions.current?.claimPeng(playerId)}
             onClaimMingGang={(playerId) => webSocketPreviewActions.current?.claimMingGang(playerId)}
+            onClaimAnGang={(playerId, tile) => webSocketPreviewActions.current?.claimAnGang(playerId, tile)}
+            onClaimBaGang={(playerId, tile) => webSocketPreviewActions.current?.claimBaGang(playerId, tile)}
             onExpireClaimWindow={(playerId) => webSocketPreviewActions.current?.expireClaimWindow(playerId)}
           />
         ) : tableMode === "room" && room.round === null ? (
@@ -633,6 +637,8 @@ function WebSocketTablePreview({
   onClaimHu,
   onClaimPeng,
   onClaimMingGang,
+  onClaimAnGang,
+  onClaimBaGang,
   onExpireClaimWindow,
 }: {
   preview: WebSocketPreviewState;
@@ -644,6 +650,8 @@ function WebSocketTablePreview({
   onClaimHu: (playerId: string) => void;
   onClaimPeng: (playerId: string) => void;
   onClaimMingGang: (playerId: string) => void;
+  onClaimAnGang: (playerId: string, tile: Tile) => void;
+  onClaimBaGang: (playerId: string, tile: Tile) => void;
   onExpireClaimWindow: (playerId: string) => void;
 }) {
   const clients = getWebSocketPreviewClients(preview);
@@ -701,6 +709,8 @@ function WebSocketTablePreview({
                 onClaimHu={onClaimHu}
                 onClaimPeng={onClaimPeng}
                 onClaimMingGang={onClaimMingGang}
+                onClaimAnGang={onClaimAnGang}
+                onClaimBaGang={onClaimBaGang}
                 onExpireClaimWindow={onExpireClaimWindow}
               />
             ))}
@@ -748,6 +758,8 @@ function WebSocketPreviewClientCard({
   onClaimHu,
   onClaimPeng,
   onClaimMingGang,
+  onClaimAnGang,
+  onClaimBaGang,
   onExpireClaimWindow,
 }: {
   client: WebSocketPreviewClient;
@@ -758,6 +770,8 @@ function WebSocketPreviewClientCard({
   onClaimHu: (playerId: string) => void;
   onClaimPeng: (playerId: string) => void;
   onClaimMingGang: (playerId: string) => void;
+  onClaimAnGang: (playerId: string, tile: Tile) => void;
+  onClaimBaGang: (playerId: string, tile: Tile) => void;
   onExpireClaimWindow: (playerId: string) => void;
 }) {
   const snapshot = client.snapshot;
@@ -797,6 +811,8 @@ function WebSocketPreviewClientCard({
   const canClaimHu = canPassClaim && (localClaimHuCheck?.canHu ?? false);
   const canClaimPeng = canPassClaim && canLocalClaimPeng(snapshot, localSeat);
   const canClaimMingGang = canPassClaim && canLocalClaimMingGang(snapshot, localSeat);
+  const activeAnGangCandidates = getActiveAnGangCandidates(round, localSeat, localPlayer, allMissingSuitsChosen, claimWindow !== null);
+  const activeBaGangCandidates = getActiveBaGangCandidates(round, localSeat, localPlayer, allMissingSuitsChosen, claimWindow !== null);
   const canExpireClaimWindow = claimWindow !== null && client.sessionToken !== null;
   const visibleHand = localPlayer?.hand ?? [];
 
@@ -813,6 +829,12 @@ function WebSocketPreviewClientCard({
       <p>胡牌提示：{webSocketClaimHuHint(localClaimHuCheck, canPassClaim)}</p>
       <p>碰牌提示：{canPassClaim ? (canClaimPeng ? "可碰，服务端会移出两张牌并记录副露" : "当前不能碰") : "暂无可响应碰牌"}</p>
       <p>杠牌提示：{canPassClaim ? (canClaimMingGang ? "可明杠，服务端会记录副露并进入杠后摸牌" : "当前不能杠") : "暂无可响应杠牌"}</p>
+      <p>
+        主动杠提示：
+        {activeAnGangCandidates.length > 0 || activeBaGangCandidates.length > 0
+          ? "当前出牌阶段可尝试暗杠或巴杠"
+          : "摸牌后如满足牌型会显示暗杠/巴杠"}
+      </p>
       <div className="preview-missing-actions">
         {suitOrder.map((suit) => (
           <button
@@ -850,6 +872,16 @@ function WebSocketPreviewClientCard({
         )}
       </div>
       <div className="preview-claim-actions">
+        {activeAnGangCandidates.map((tile, index) => (
+          <button key={`an-${tileText(tile)}-${index}`} type="button" onClick={() => onClaimAnGang(client.playerId, tile)}>
+            暗杠 {tileText(tile)}
+          </button>
+        ))}
+        {activeBaGangCandidates.map((tile, index) => (
+          <button key={`ba-${tileText(tile)}-${index}`} type="button" onClick={() => onClaimBaGang(client.playerId, tile)}>
+            巴杠 {tileText(tile)}
+          </button>
+        ))}
         <button type="button" disabled={!canClaimHu} onClick={() => onClaimHu(client.playerId)}>
           胡牌
         </button>
@@ -1076,6 +1108,65 @@ function canLocalClaimMeld(
   return usableCount >= tilesNeededFromHand;
 }
 
+function getActiveAnGangCandidates(
+  round: ClientVisibleRoomState["round"],
+  localSeat: PlayerId | null | undefined,
+  localPlayer: VisiblePlayerState | null | undefined,
+  allMissingSuitsChosen: boolean,
+  claimWindowOpen: boolean,
+): Tile[] {
+  if (!canTryActiveGang(round, localSeat, localPlayer, allMissingSuitsChosen, claimWindowOpen)) {
+    return [];
+  }
+
+  const hand = localPlayer.hand ?? [];
+  return uniqueTiles(hand).filter((tile) => countUsableGangTiles(hand, tile) >= 4);
+}
+
+function getActiveBaGangCandidates(
+  round: ClientVisibleRoomState["round"],
+  localSeat: PlayerId | null | undefined,
+  localPlayer: VisiblePlayerState | null | undefined,
+  allMissingSuitsChosen: boolean,
+  claimWindowOpen: boolean,
+): Tile[] {
+  if (!canTryActiveGang(round, localSeat, localPlayer, allMissingSuitsChosen, claimWindowOpen)) {
+    return [];
+  }
+
+  const hand = localPlayer.hand ?? [];
+  return localPlayer.melds
+    .filter((meld) => meld.type === "peng" && countUsableGangTiles(hand, meld.tile) >= 1)
+    .map((meld) => meld.tile);
+}
+
+function canTryActiveGang(
+  round: ClientVisibleRoomState["round"],
+  localSeat: PlayerId | null | undefined,
+  localPlayer: VisiblePlayerState | null | undefined,
+  allMissingSuitsChosen: boolean,
+  claimWindowOpen: boolean,
+): localPlayer is VisiblePlayerState & { hand: Tile[] } {
+  return (
+    round !== null &&
+    localSeat === round.currentPlayer &&
+    localPlayer !== null &&
+    localPlayer !== undefined &&
+    localPlayer.hand !== null &&
+    allMissingSuitsChosen &&
+    !claimWindowOpen &&
+    localPlayer.handCount % 3 === 2
+  );
+}
+
+function uniqueTiles(tiles: Tile[]): Tile[] {
+  return tiles.filter((tile, index) => tiles.findIndex((value) => tilesEqual(value, tile)) === index);
+}
+
+function countUsableGangTiles(hand: Tile[], target: Tile): number {
+  return hand.filter((tile) => tilesEqual(tile, target) || (isYaoJiTile(tile) && !tilesEqual(tile, target))).length;
+}
+
 function ClientViewSelector({
   value,
   onChange,
@@ -1136,6 +1227,8 @@ function WebSocketExperimentPanel({
       claimHu: handleClaimWebSocketHu,
       claimPeng: handleClaimWebSocketPeng,
       claimMingGang: handleClaimWebSocketMingGang,
+      claimAnGang: handleClaimWebSocketAnGang,
+      claimBaGang: handleClaimWebSocketBaGang,
       expireClaimWindow: handleExpireWebSocketClaimWindow,
     };
 
@@ -1675,6 +1768,80 @@ function WebSocketExperimentPanel({
       errorText: "明杠失败",
       send: (transport) => transport.claimMingGang(playerId),
     });
+  }
+
+  async function handleClaimWebSocketAnGang(playerId: string, tile: Tile) {
+    await handleActiveWebSocketGang({
+      playerId,
+      tile,
+      actionName: "claimAnGang",
+      missingSessionText: "暗杠失败",
+      runningText: `${playerId} 正在请求暗杠 ${tileText(tile)}。`,
+      successText: `${playerId} 已由服务端确认暗杠 ${tileText(tile)}。`,
+      errorText: "暗杠失败",
+      send: (transport) => transport.claimAnGang(playerId, tile),
+    });
+  }
+
+  async function handleClaimWebSocketBaGang(playerId: string, tile: Tile) {
+    await handleActiveWebSocketGang({
+      playerId,
+      tile,
+      actionName: "claimBaGang",
+      missingSessionText: "巴杠失败",
+      runningText: `${playerId} 正在请求巴杠 ${tileText(tile)}。`,
+      successText: `${playerId} 已由服务端确认巴杠 ${tileText(tile)}，已预留抢杠胡窗口。`,
+      errorText: "巴杠失败",
+      send: (transport) => transport.claimBaGang(playerId, tile),
+    });
+  }
+
+  async function handleActiveWebSocketGang(input: {
+    playerId: string;
+    tile: Tile;
+    actionName: "claimAnGang" | "claimBaGang";
+    missingSessionText: string;
+    runningText: string;
+    successText: string;
+    errorText: string;
+    send: (transport: WebSocketRoomTransport) => Promise<WebSocketRoomTransportActionResult>;
+  }) {
+    const transport = webSocketTransportForPlayer(input.playerId);
+
+    if (transport === null) {
+      setWebSocketStep("claim", "error", `${input.missingSessionText}：${input.playerId} 还没有可用的 WebSocket session。`);
+      appendWebSocketLog(`${input.actionName}：${input.playerId} 缺少 WebSocket session。`);
+      syncTransportState();
+      return;
+    }
+
+    const beforeView = transport.getClientView(input.playerId);
+    const beforeLocalSeat = beforeView?.localSeatId;
+    const beforeMeldCount =
+      beforeLocalSeat === null || beforeLocalSeat === undefined
+        ? null
+        : beforeView?.round?.players[beforeLocalSeat].melds.length;
+
+    setWebSocketStep("claim", "running", input.runningText);
+    const result = await input.send(transport);
+    appendWebSocketLog(`${input.actionName}：${input.playerId} ${tileText(input.tile)}，${webSocketActionText(result)}。`);
+
+    if (result.ok) {
+      await waitForWebSocketView(transport, input.playerId, (view) => {
+        const seatId = view.localSeatId;
+
+        if (seatId === null || seatId === undefined) {
+          return false;
+        }
+
+        return beforeMeldCount === null || view.round?.players[seatId].melds.length === beforeMeldCount + 1;
+      }).catch(() => undefined);
+      setWebSocketStep("claim", "success", input.successText);
+    } else {
+      setWebSocketStep("claim", "error", `${input.errorText}：${webSocketActionErrorText(result)}。`);
+    }
+
+    syncTransportState();
   }
 
   async function handleClaimWebSocketMeld(input: {
@@ -2322,6 +2489,8 @@ function webSocketErrorCodeText(code: string): string {
     noClaimWindow: "当前没有响应窗口",
     claimNotAllowed: "这个玩家不能响应当前出牌",
     claimAlreadyResponded: "这个玩家已经响应过",
+    cannotAnGang: "当前不能暗杠这张牌",
+    cannotBaGang: "当前不能巴杠这张牌",
     cannotHu: "当前不能点炮胡",
     cannotPeng: "当前不能碰这张牌",
     cannotMingGang: "当前不能明杠这张牌",
@@ -2746,6 +2915,10 @@ function roomEventText(event: RoomEvent, room: RoomState): string {
       return `${roomPlayerName(room, event.playerId)} 碰 ${tileText(event.tile)}。`;
     case "mingGangClaimed":
       return `${roomPlayerName(room, event.playerId)} 明杠 ${tileText(event.tile)}。`;
+    case "anGangClaimed":
+      return `${roomPlayerName(room, event.playerId)} 暗杠 ${tileText(event.tile)}。`;
+    case "baGangClaimed":
+      return `${roomPlayerName(room, event.playerId)} 巴杠 ${tileText(event.tile)}。`;
     case "claimWindowClosed":
       return event.reason === "timeout"
         ? `响应窗口超时，轮到玩家 ${event.nextPlayer + 1} 摸牌。`

@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 
 import {
   createRoom,
+  claimAnGang,
+  claimBaGang,
   claimHu,
   claimMingGang,
   claimPeng,
@@ -493,6 +495,108 @@ test("lets a player claim ming gang from the claim window", () => {
   });
 });
 
+test("lets the current player claim an gang after drawing", () => {
+  const gangTile = tile("characters", 9);
+  const room = readyRoomForActiveGang({
+    hand: [
+      gangTile,
+      gangTile,
+      gangTile,
+      gangTile,
+      tile("characters", 2),
+      tile("characters", 3),
+      tile("characters", 4),
+      tile("dots", 2),
+      tile("dots", 3),
+      tile("dots", 4),
+      tile("bamboos", 2),
+      tile("bamboos", 3),
+      tile("bamboos", 4),
+      tile("characters", 5),
+    ],
+    melds: [],
+  });
+
+  const claimed = claimAnGang(room, "p1", gangTile);
+  assert.equal(claimed.ok, true);
+
+  if (!claimed.ok) {
+    return;
+  }
+
+  assert.equal(claimed.room.round?.players[0].hand.length, 10);
+  assert.deepEqual(claimed.room.round?.players[0].melds, [
+    {
+      type: "anGang",
+      tile: gangTile,
+      tiles: [gangTile, gangTile, gangTile, gangTile],
+      fromPlayer: null,
+    },
+  ]);
+  assert.deepEqual(claimed.room.eventLog.at(-1), {
+    type: "anGangClaimed",
+    seatId: 0,
+    playerId: "p1",
+    tile: gangTile,
+    usedTiles: [gangTile, gangTile, gangTile, gangTile],
+  });
+});
+
+test("lets the current player claim ba gang from an existing peng meld", () => {
+  const gangTile = tile("characters", 9);
+  const room = readyRoomForActiveGang({
+    hand: [
+      gangTile,
+      tile("characters", 2),
+      tile("characters", 3),
+      tile("characters", 4),
+      tile("characters", 5),
+      tile("characters", 6),
+      tile("characters", 7),
+      tile("dots", 2),
+      tile("dots", 3),
+      tile("dots", 4),
+      tile("bamboos", 2),
+      tile("bamboos", 3),
+      tile("bamboos", 4),
+      tile("characters", 8),
+    ],
+    melds: [{ type: "peng", tile: gangTile, tiles: [gangTile, gangTile, gangTile], fromPlayer: 2 }],
+  });
+
+  const claimed = claimBaGang(room, "p1", gangTile);
+  assert.equal(claimed.ok, true);
+
+  if (!claimed.ok) {
+    return;
+  }
+
+  assert.equal(claimed.room.round?.players[0].hand.length, 13);
+  assert.deepEqual(claimed.room.round?.players[0].melds, [
+    {
+      type: "baGang",
+      tile: gangTile,
+      tiles: [gangTile, gangTile, gangTile, gangTile],
+      fromPlayer: 2,
+    },
+  ]);
+  assert.deepEqual(claimed.room.baGangClaimWindow, {
+    upgradedBySeatId: 0,
+    upgradedByPlayerId: "p1",
+    tile: gangTile,
+    pendingPlayerIds: [1, 2, 3],
+    passedPlayerIds: [],
+    huClaims: [],
+  });
+  assert.deepEqual(claimed.room.eventLog.at(-1), {
+    type: "baGangClaimed",
+    seatId: 0,
+    playerId: "p1",
+    tile: gangTile,
+    usedTiles: [gangTile],
+  });
+});
+
 test("rejects choosing missing suit before start, without a seat, or twice", () => {
   const waitingRoom = seatPlayers(createRoom({ id: "room-missing-waiting", seed: "missing-waiting-seed" }));
 
@@ -691,6 +795,26 @@ function readyRoomForClaimMingGang(): { room: RoomState; discard: Tile } {
             : player,
         ),
       },
+    },
+  };
+}
+
+function readyRoomForActiveGang(input: {
+  hand: Tile[];
+  melds: NonNullable<RoomState["round"]>["players"][number]["melds"];
+}): RoomState {
+  const started = startReadyRoom();
+
+  return {
+    ...started,
+    round: {
+      ...started.round!,
+      currentPlayer: 0,
+      players: started.round!.players.map((player) =>
+        player.id === 0
+          ? { ...player, hand: input.hand, melds: input.melds, missingSuit: "bamboos" }
+          : { ...player, missingSuit: "dots" },
+      ),
     },
   };
 }

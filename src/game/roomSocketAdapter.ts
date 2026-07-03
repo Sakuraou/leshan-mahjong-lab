@@ -119,6 +119,22 @@ export type RoomSocketClientMessage =
       clientMessageId: string;
       roomId: string;
       sessionToken: string;
+      type: "claimAnGang";
+      payload: { tile: Tile };
+    }
+  | {
+      protocolVersion: 1;
+      clientMessageId: string;
+      roomId: string;
+      sessionToken: string;
+      type: "claimBaGang";
+      payload: { tile: Tile };
+    }
+  | {
+      protocolVersion: 1;
+      clientMessageId: string;
+      roomId: string;
+      sessionToken: string;
       type: "expireClaimWindow";
       payload: Record<string, never>;
     }
@@ -297,6 +313,8 @@ function handleRoomServiceAction(
         | "claimHu"
         | "claimPeng"
         | "claimMingGang"
+        | "claimAnGang"
+        | "claimBaGang"
         | "expireClaimWindow";
     }
   >,
@@ -337,6 +355,8 @@ function clientMessageToRoomAction(
         | "claimHu"
         | "claimPeng"
         | "claimMingGang"
+        | "claimAnGang"
+        | "claimBaGang"
         | "expireClaimWindow";
     }
   >,
@@ -375,6 +395,14 @@ function clientMessageToRoomAction(
 
   if (message.type === "claimMingGang") {
     return { type: "claimMingGang" };
+  }
+
+  if (message.type === "claimAnGang") {
+    return { type: "claimAnGang", tile: message.payload.tile };
+  }
+
+  if (message.type === "claimBaGang") {
+    return { type: "claimBaGang", tile: message.payload.tile };
   }
 
   if (message.type === "expireClaimWindow") {
@@ -479,6 +507,8 @@ function errorMessage(code: RoomSocketErrorCode): string {
     noClaimWindow: "There is no active claim window.",
     claimNotAllowed: "This player cannot respond to the claim window.",
     claimAlreadyResponded: "This player has already responded to the claim window.",
+    cannotAnGang: "This player cannot claim an gang with this tile.",
+    cannotBaGang: "This player cannot claim ba gang with this tile.",
     cannotHu: "This player cannot claim hu on the discarded tile.",
     cannotPeng: "This player cannot claim peng on the discarded tile.",
     cannotMingGang: "This player cannot claim ming gang on the discarded tile.",

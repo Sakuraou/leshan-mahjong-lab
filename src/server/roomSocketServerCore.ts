@@ -247,7 +247,7 @@ function isRoomSocketClientMessage(value: unknown): value is RoomSocketClientMes
     return isSessionRoomMessage(value) && isRecord(value.payload);
   }
 
-  if (value.type === "discardTile") {
+  if (value.type === "discardTile" || value.type === "claimAnGang" || value.type === "claimBaGang") {
     return isSessionRoomMessage(value) && isRecord(value.payload) && isTile(value.payload.tile);
   }
 
