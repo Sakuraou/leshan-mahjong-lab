@@ -984,6 +984,10 @@ function claimMeldFromDiscard(
     return { ok: false, reason: options.cannotReason };
   }
 
+  if (hasUnresolvedHuOpportunity(room.round, room.claimWindow)) {
+    return { ok: false, reason: options.cannotReason };
+  }
+
   const player = room.round.players[seat.seatId];
   const usedTiles = chooseClaimMeldTiles(player.hand, room.claimWindow.tile, options.tilesNeededFromHand);
 
@@ -1202,6 +1206,16 @@ function hasClaimResponse(claimWindow: ClaimWindow, seatId: PlayerId): boolean {
 
 function didAllClaimPlayersRespond(claimWindow: ClaimWindow): boolean {
   return claimWindow.pendingPlayerIds.every((seatId) => hasClaimResponse(claimWindow, seatId));
+}
+
+function hasUnresolvedHuOpportunity(round: RoundState, claimWindow: ClaimWindow): boolean {
+  return claimWindow.pendingPlayerIds.some((seatId) => {
+    if (hasClaimResponse(claimWindow, seatId)) {
+      return false;
+    }
+
+    return checkDiscardHu(round, seatId, claimWindow.tile).canHu;
+  });
 }
 
 function chooseClaimMeldTiles(hand: Tile[], claimedTile: Tile, tilesNeededFromHand: 2 | 3): Tile[] | null {

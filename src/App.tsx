@@ -838,6 +838,7 @@ function WebSocketPreviewClientCard({
   const localClaimHuCheck = getLocalClaimHuCheck(snapshot, localSeat);
   const localSelfDrawHuCheck = getLocalSelfDrawHuCheck(snapshot, localSeat);
   const canClaimHu = canPassClaim && (localClaimHuCheck?.canHu ?? false);
+  const huPriorityActive = claimWindowHasHuPriority(snapshot);
   const canClaimSelfDrawHu =
     roundEnd === null &&
     claimWindow === null &&
@@ -848,8 +849,8 @@ function WebSocketPreviewClientCard({
     localPlayer.handCount % 3 === 2 &&
     (localSelfDrawHuCheck?.canHu ?? false) &&
     client.sessionToken !== null;
-  const canClaimPeng = canPassClaim && canLocalClaimPeng(snapshot, localSeat);
-  const canClaimMingGang = canPassClaim && canLocalClaimMingGang(snapshot, localSeat);
+  const canClaimPeng = canPassClaim && !huPriorityActive && canLocalClaimPeng(snapshot, localSeat);
+  const canClaimMingGang = canPassClaim && !huPriorityActive && canLocalClaimMingGang(snapshot, localSeat);
   const claimOrGangWindowOpen = claimWindow !== null || gangDraw !== null || roundEnd !== null;
   const activeAnGangCandidates = getActiveAnGangCandidates(round, localSeat, localPlayer, allMissingSuitsChosen, claimOrGangWindowOpen);
   const activeBaGangCandidates = getActiveBaGangCandidates(round, localSeat, localPlayer, allMissingSuitsChosen, claimOrGangWindowOpen);
@@ -876,6 +877,7 @@ function WebSocketPreviewClientCard({
       <p>出牌状态：{webSocketDiscardHint(round, localSeat, localPlayer, allMissingSuitsChosen, claimOrGangWindowOpen)}</p>
       <p>杠后状态：{gangDraw === null ? "暂无杠后补牌" : `玩家 ${gangDraw.seatId + 1} 等待补牌`}</p>
       <p>响应状态：{webSocketClaimHint(snapshot, localSeat)}</p>
+      <p>胡优先：{claimWindow === null ? "暂无响应窗口" : huPriorityActive ? "胡牌响应优先，碰/明杠暂时不可用" : "暂无胡牌优先锁定"}</p>
       <p>胡牌提示：{webSocketClaimHuHint(localClaimHuCheck, canPassClaim)}</p>
       <p>自摸提示：{webSocketClaimHuHint(localSelfDrawHuCheck, canClaimSelfDrawHu)}</p>
       <p>碰牌提示：{canPassClaim ? (canClaimPeng ? "可碰，服务端会移出两张牌并记录副露" : "当前不能碰") : "暂无可响应碰牌"}</p>
@@ -969,6 +971,7 @@ function WebSocketPreviewClientCard({
               玩家 {player.id + 1}：
               {player.hand !== null ? `${player.hand.length} 张可见` : `${player.handCount} 张隐藏`}
               · 副露 {player.melds.length}
+              {player.hasWon ? " · 已胡" : ""}
             </span>
           ))
         )}
@@ -1069,14 +1072,18 @@ function webSocketClaimHint(
     claimWindow.passedPlayerIds.length === 0
       ? "暂无"
       : claimWindow.passedPlayerIds.map((seatId) => `玩家 ${seatId + 1}`).join("、");
+  const huText =
+    claimWindow.huClaims.length === 0
+      ? "暂无胡牌响应"
+      : `已胡：${claimWindow.huClaims.map((claim) => `玩家 ${claim.seatId + 1}`).join("、")}`;
 
   if (localSeat !== null && localSeat !== undefined && claimWindow.pendingPlayerIds.includes(localSeat)) {
     return claimWindow.passedPlayerIds.includes(localSeat)
       ? `已过牌，等待其他玩家响应；已过：${passedText}`
-      : `你可以响应 ${tileText(claimWindow.tile)}，可尝试胡、碰、明杠或过牌；待响应：${pendingText}`;
+      : `你可以响应 ${tileText(claimWindow.tile)}，胡牌优先；待响应：${pendingText}；${huText}`;
   }
 
-  return `等待 ${pendingText} 响应 ${tileText(claimWindow.tile)}；已过：${passedText}`;
+  return `等待 ${pendingText} 响应 ${tileText(claimWindow.tile)}；已过：${passedText}；${huText}`;
 }
 
 function getLocalClaimHuCheck(
@@ -1180,6 +1187,26 @@ function canLocalClaimMingGang(
   localSeat: PlayerId | null | undefined,
 ): boolean {
   return canLocalClaimMeld(snapshot, localSeat, 3);
+}
+
+function claimWindowHasHuPriority(snapshot: ClientVisibleRoomState | null): boolean {
+  const claimWindow = snapshot?.claimWindow ?? null;
+
+  if (claimWindow === null) {
+    return false;
+  }
+
+  if (claimWindow.huClaims.length > 0) {
+    return true;
+  }
+
+  return claimWindow.pendingPlayerIds.some((seatId) => {
+    if (claimWindow.passedPlayerIds.includes(seatId) || claimWindow.huClaims.some((claim) => claim.seatId === seatId)) {
+      return false;
+    }
+
+    return getLocalClaimHuCheck(snapshot, seatId)?.canHu ?? false;
+  });
 }
 
 function canLocalClaimMeld(

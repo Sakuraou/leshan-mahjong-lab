@@ -447,6 +447,61 @@ test("continues blood battle by skipping a player who claimed discard hu", () =>
   assert.equal(playerFourPassed.room.round?.currentPlayer, 2);
 });
 
+test("keeps hu priority over peng while a hu-capable player is unresolved", () => {
+  const { room, discard } = readyRoomForHuPriority();
+  const discarded = discardRoomTile(room, "p1", discard);
+
+  assert.equal(discarded.ok, true);
+
+  if (!discarded.ok) {
+    return;
+  }
+
+  assert.deepEqual(claimPeng(discarded.room, "p3"), {
+    ok: false,
+    reason: "cannotPeng",
+  });
+});
+
+test("records multiple discard hu claims before closing the claim window", () => {
+  const { room, discard } = readyRoomForMultiHu();
+  const discarded = discardRoomTile(room, "p1", discard);
+
+  assert.equal(discarded.ok, true);
+
+  if (!discarded.ok) {
+    return;
+  }
+
+  const playerTwoClaimed = claimHu(discarded.room, "p2");
+  assert.equal(playerTwoClaimed.ok, true);
+
+  if (!playerTwoClaimed.ok) {
+    return;
+  }
+
+  const playerThreeClaimed = claimHu(playerTwoClaimed.room, "p3");
+  assert.equal(playerThreeClaimed.ok, true);
+
+  if (!playerThreeClaimed.ok) {
+    return;
+  }
+
+  assert.deepEqual(playerThreeClaimed.room.claimWindow?.huClaims.map((claim) => claim.seatId), [1, 2]);
+
+  const playerFourPassed = passClaim(playerThreeClaimed.room, "p4");
+  assert.equal(playerFourPassed.ok, true);
+
+  if (!playerFourPassed.ok) {
+    return;
+  }
+
+  assert.equal(playerFourPassed.room.claimWindow, null);
+  assert.equal(playerFourPassed.room.round?.players[1].hasWon, true);
+  assert.equal(playerFourPassed.room.round?.players[2].hasWon, true);
+  assert.equal(playerFourPassed.room.round?.currentPlayer, 3);
+});
+
 test("lets the current player claim self-draw hu and keeps the round moving", () => {
   const room = readyRoomForSelfDrawHu();
   const claimed = claimSelfDrawHu(room, "p1");
@@ -470,7 +525,7 @@ test("lets the current player claim self-draw hu and keeps the round moving", ()
 });
 
 test("lets a player claim peng from the claim window", () => {
-  const { room, discard } = readyRoomForClaimHu();
+  const { room, discard } = readyRoomForPengOnly();
   const discarded = discardRoomTile(room, "p1", discard);
 
   assert.equal(discarded.ok, true);
@@ -868,6 +923,104 @@ function readyRoomForClaimHu(): { room: RoomState; discard: Tile } {
 
           return { ...player, missingSuit: "dots" };
         }),
+      },
+    },
+  };
+}
+
+function readyRoomForHuPriority(): { room: RoomState; discard: Tile } {
+  const prepared = readyRoomForClaimHu();
+
+  return {
+    ...prepared,
+    room: {
+      ...prepared.room,
+      round: {
+        ...prepared.room.round!,
+        players: prepared.room.round!.players.map((player) =>
+          player.id === 2
+            ? {
+                ...player,
+                missingSuit: "bamboos",
+                hand: [
+                  tile("characters", 9),
+                  tile("characters", 9),
+                  tile("characters", 2),
+                  tile("characters", 3),
+                  tile("characters", 4),
+                  tile("characters", 5),
+                  tile("characters", 6),
+                  tile("characters", 7),
+                  tile("dots", 2),
+                  tile("dots", 3),
+                  tile("dots", 4),
+                  tile("bamboos", 2),
+                  tile("bamboos", 3),
+                ],
+              }
+            : player,
+        ),
+      },
+    },
+  };
+}
+
+function readyRoomForPengOnly(): { room: RoomState; discard: Tile } {
+  const prepared = readyRoomForClaimHu();
+
+  return {
+    ...prepared,
+    room: {
+      ...prepared.room,
+      round: {
+        ...prepared.room.round!,
+        players: prepared.room.round!.players.map((player) =>
+          player.id === 1
+            ? {
+                ...player,
+                missingSuit: "bamboos",
+                hand: [
+                  tile("characters", 9),
+                  tile("characters", 9),
+                  tile("characters", 2),
+                  tile("characters", 4),
+                  tile("characters", 6),
+                  tile("characters", 8),
+                  tile("dots", 2),
+                  tile("dots", 4),
+                  tile("dots", 6),
+                  tile("dots", 8),
+                  tile("bamboos", 2),
+                  tile("bamboos", 3),
+                  tile("bamboos", 4),
+                ],
+              }
+            : player,
+        ),
+      },
+    },
+  };
+}
+
+function readyRoomForMultiHu(): { room: RoomState; discard: Tile } {
+  const prepared = readyRoomForClaimHu();
+  const playerTwo = prepared.room.round!.players[1];
+
+  return {
+    ...prepared,
+    room: {
+      ...prepared.room,
+      round: {
+        ...prepared.room.round!,
+        players: prepared.room.round!.players.map((player) =>
+          player.id === 2
+            ? {
+                ...player,
+                missingSuit: playerTwo.missingSuit,
+                hand: playerTwo.hand,
+              }
+            : player,
+        ),
       },
     },
   };
