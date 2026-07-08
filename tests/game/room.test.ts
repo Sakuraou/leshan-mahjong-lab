@@ -524,6 +524,28 @@ test("lets the current player claim self-draw hu and keeps the round moving", ()
   });
 });
 
+test("marks wall-empty round end with cha jiao placeholder results", () => {
+  const room = readyRoomForSelfDrawHu();
+  const roomWithEmptyWall: RoomState = {
+    ...room,
+    round: {
+      ...room.round!,
+      wall: [],
+    },
+  };
+  const claimed = claimSelfDrawHu(roomWithEmptyWall, "p1");
+
+  assert.equal(claimed.ok, true);
+
+  if (!claimed.ok) {
+    return;
+  }
+
+  assert.equal(claimed.room.roundEnd?.reason, "wallEmpty");
+  assert.equal(claimed.room.chaJiao?.reason, "wallEmpty");
+  assert.deepEqual(claimed.room.chaJiao?.players.map((player) => player.seatId), [1, 2, 3]);
+  assert.equal(claimed.room.chaJiao?.players.every((player) => typeof player.isListening === "boolean"), true);
+});
 test("lets a player claim peng from the claim window", () => {
   const { room, discard } = readyRoomForPengOnly();
   const discarded = discardRoomTile(room, "p1", discard);

@@ -5,9 +5,9 @@ import {
   type DiscardTileResult,
   type DrawTileResult,
 } from "./round.ts";
-import { isYaoJi, sameTile } from "./tiles.ts";
+import { isYaoJi, sameTile, tile } from "./tiles.ts";
 import { checkCurrentPlayerHu, checkDiscardHu } from "./win.ts";
-import type { PlayerId, RoundState, ScorePattern, Suit, Tile } from "./types.ts";
+import type { PlayerId, Rank, RoundState, ScorePattern, Suit, Tile } from "./types.ts";
 
 const seatIds: PlayerId[] = [0, 1, 2, 3];
 
@@ -49,6 +49,18 @@ export type GangDrawState = {
 export type RoundEndState = {
   reason: "onePlayerLeft" | "wallEmpty";
   remainingPlayerIds: PlayerId[];
+};
+
+export type ChaJiaoPlayerResult = {
+  seatId: PlayerId;
+  playerId: string | null;
+  isListening: boolean;
+  maxHuPoints: number | null;
+};
+
+export type ChaJiaoResult = {
+  reason: "wallEmpty";
+  players: ChaJiaoPlayerResult[];
 };
 
 export type RoomMember = {
@@ -97,6 +109,7 @@ export type RoomState = {
   baGangClaimWindow: BaGangClaimWindow | null;
   gangDraw: GangDrawState | null;
   roundEnd: RoundEndState | null;
+  chaJiao: ChaJiaoResult | null;
   eventLog: RoomEvent[];
 };
 
@@ -128,6 +141,7 @@ export type ClientVisibleRoomState = {
   baGangClaimWindow: BaGangClaimWindow | null;
   gangDraw: GangDrawState | null;
   roundEnd: RoundEndState | null;
+  chaJiao: ChaJiaoResult | null;
   eventLog: RoomEvent[];
 };
 
@@ -327,6 +341,7 @@ export function createRoom(input: CreateRoomInput): RoomState {
     baGangClaimWindow: null,
     gangDraw: null,
     roundEnd: null,
+    chaJiao: null,
     eventLog: [{ type: "roomCreated", roomId: input.id }],
   };
 }
@@ -436,6 +451,7 @@ export function startRoomRound(room: RoomState, dealer: PlayerId = 0): StartRoom
       baGangClaimWindow: null,
       gangDraw: null,
       roundEnd: null,
+      chaJiao: null,
       eventLog: [...room.eventLog, { type: "roundStarted", seed: room.seed, dealer }],
     },
   };
@@ -1084,6 +1100,7 @@ export function toClientVisibleRoomState(room: RoomState, playerId: string): Cli
     baGangClaimWindow: room.baGangClaimWindow,
     gangDraw: room.gangDraw,
     roundEnd: room.roundEnd,
+    chaJiao: room.chaJiao,
     eventLog: room.eventLog,
   };
 }
@@ -1269,13 +1286,21 @@ function closeClaimWindow(
 }
 
 function finishRoundIfNeeded(room: RoomState): RoomState {
-  if (room.round === null || room.roundEnd !== null) {
+  if (room.round === null) {
     return room;
   }
 
   const remainingPlayerIds = room.round.players.filter((player) => !player.hasWon).map((player) => player.id);
   const reason =
     remainingPlayerIds.length <= 1 ? "onePlayerLeft" : room.round.wall.length === 0 ? "wallEmpty" : null;
+
+  if (room.roundEnd !== null) {
+    if (room.roundEnd.reason === "wallEmpty" && room.chaJiao === null) {
+      return { ...room, chaJiao: buildChaJiaoResult(room) };
+    }
+
+    return room;
+  }
 
   if (reason === null) {
     return room;
@@ -1286,10 +1311,46 @@ function finishRoundIfNeeded(room: RoomState): RoomState {
   return {
     ...room,
     roundEnd,
+    chaJiao: reason === "wallEmpty" ? buildChaJiaoResult(room) : null,
     claimWindow: null,
     gangDraw: null,
     eventLog: [...room.eventLog, { type: "roundEnded", ...roundEnd }],
   };
+}
+
+function buildChaJiaoResult(room: RoomState): ChaJiaoResult {
+  if (room.round === null) {
+    return { reason: "wallEmpty", players: [] };
+  }
+
+  const candidates = allTileCandidates();
+
+  return {
+    reason: "wallEmpty",
+    players: room.round.players
+      .filter((player) => !player.hasWon)
+      .map((player) => {
+        const possibleScores = candidates.flatMap((candidate) => {
+          const result = checkDiscardHu(room.round!, player.id, candidate);
+
+          return result.canHu ? [result.score.cappedPoints] : [];
+        });
+
+        return {
+          seatId: player.id,
+          playerId: room.seats[player.id]?.playerId ?? null,
+          isListening: possibleScores.length > 0,
+          maxHuPoints: possibleScores.length > 0 ? Math.max(...possibleScores) : null,
+        };
+      }),
+  };
+}
+
+function allTileCandidates(): Tile[] {
+  const suits: Suit[] = ["characters", "dots", "bamboos"];
+  const ranks: Rank[] = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+
+  return suits.flatMap((suit) => ranks.map((rank) => tile(suit, rank)));
 }
 
 function findNextActivePlayer(round: RoundState, fromPlayer: PlayerId): PlayerId {

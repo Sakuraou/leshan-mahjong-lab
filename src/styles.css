@@ -420,7 +420,7 @@ button {
 
 .preview-summary {
   display: grid;
-  grid-template-columns: repeat(5, minmax(88px, 1fr));
+  grid-template-columns: repeat(6, minmax(88px, 1fr));
   gap: 8px;
 }
 
@@ -431,6 +431,18 @@ button {
   background: #ffffff;
 }
 
+
+.preview-cha-jiao {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #d5e0e8;
+}
+
+.preview-cha-jiao span {
+  display: block;
+}
 .preview-seat-grid,
 .preview-client-grid {
   display: grid;

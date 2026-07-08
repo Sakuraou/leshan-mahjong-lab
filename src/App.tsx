@@ -669,6 +669,7 @@ function WebSocketTablePreview({
   const occupiedSeats = snapshot?.seats.filter((seat) => seat.playerId !== null).length ?? 0;
   const readySeats = snapshot?.seats.filter((seat) => seat.ready).length ?? 0;
   const remainingPlayers = round?.players.filter((player) => !player.hasWon).length ?? 0;
+  const chaJiao = snapshot?.chaJiao ?? null;
 
   return (
     <section className="websocket-table-preview" aria-label="真实 WebSocket 桌面预览">
@@ -689,11 +690,27 @@ function WebSocketTablePreview({
         <Stat label="准备" value={`${readySeats}/4`} />
         <Stat label="未胡" value={round === null ? "-" : `${remainingPlayers}`} />
         <Stat label="牌墙" value={round?.wallCount?.toString() ?? "-"} />
+        <Stat label="查叫" value={chaJiao === null ? "未生成" : "已生成"} />
       </div>
 
       {(snapshot?.roundEnd ?? null) !== null && (
         <div className="preview-empty">
           牌局结束：{snapshot?.roundEnd?.reason === "onePlayerLeft" ? "只剩一位未胡玩家" : "牌墙已摸完"}
+          {chaJiao !== null && (
+            <div className="preview-cha-jiao">
+              <strong>流局查叫占位：</strong>
+              {chaJiao.players.length === 0 ? (
+                <span>暂无未胡玩家需要查叫。</span>
+              ) : (
+                chaJiao.players.map((player) => (
+                  <span key={player.seatId}>
+                    玩家 {player.seatId + 1}：{player.isListening ? `已听牌，最大可胡约 ${player.maxHuPoints ?? "-"} 分` : "未听牌"}
+                  </span>
+                ))
+              )}
+              <span>下一步会接入完整赔付结算，这里先展示服务端权威结果骨架。</span>
+            </div>
+          )}
         </div>
       )}
 
@@ -801,6 +818,7 @@ function WebSocketPreviewClientCard({
   const claimWindow = snapshot?.claimWindow ?? null;
   const gangDraw = snapshot?.gangDraw ?? null;
   const roundEnd = snapshot?.roundEnd ?? null;
+  const chaJiao = snapshot?.chaJiao ?? null;
   const localSeat = snapshot?.localSeatId;
   const players = round?.players ?? [];
   const localPlayer = localSeat === null || localSeat === undefined ? null : round?.players[localSeat];
@@ -872,6 +890,7 @@ function WebSocketPreviewClientCard({
       <p>房间状态：{snapshot?.status ?? "待快照"}</p>
       <p>血战状态：{round === null ? "未开局" : `未胡 ${remainingPlayerCount} 人，${localPlayer?.hasWon ? "本家已胡" : "本家未胡"}`}</p>
       <p>牌局结束：{roundEnd === null ? "未结束" : roundEnd.reason === "onePlayerLeft" ? "只剩一位未胡玩家" : "牌墙已摸完"}</p>
+      <p>查叫状态：{chaJiao === null ? "未生成" : `已生成，占位记录 ${chaJiao.players.length} 位未胡玩家`}</p>
       <p>定缺状态：{round === null ? "开局后可选" : suitText(localPlayer?.missingSuit ?? null)}</p>
       <p>摸牌状态：{webSocketDrawHint(round, localSeat, localPlayer, allMissingSuitsChosen, claimWindow !== null, gangDraw)}</p>
       <p>出牌状态：{webSocketDiscardHint(round, localSeat, localPlayer, allMissingSuitsChosen, claimOrGangWindowOpen)}</p>
