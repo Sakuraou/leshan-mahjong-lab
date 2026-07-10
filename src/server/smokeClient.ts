@@ -26,7 +26,7 @@ export async function runRoomSocketSmokeClient(input: { url: string; roomId?: st
         protocolVersion: 1,
         clientMessageId: "smoke-create",
         type: "createRoom",
-        payload: { roomId, seed: "smoke-seed", displayName: "Smoke Host" },
+        payload: { roomId, displayName: "Smoke Host" },
       } satisfies RoomSocketClientMessage),
     );
     await waitForMessages(hostMessages, 2);

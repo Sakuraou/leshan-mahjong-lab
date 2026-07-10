@@ -176,7 +176,7 @@ test("starts a round after four seated players are ready", () => {
   assert.equal(result.room.round?.players.length, 4);
   assert.equal(result.room.round?.players[0].hand.length, 14);
   assert.equal(result.room.round?.players[1].hand.length, 13);
-  assert.deepEqual(result.room.eventLog.at(-1), { type: "roundStarted", seed: "start-seed", dealer: 0 });
+  assert.deepEqual(result.room.eventLog.at(-1), { type: "roundStarted", dealer: 0 });
 });
 
 test("redacts other players' hands in client-visible room state", () => {
@@ -187,6 +187,8 @@ test("redacts other players' hands in client-visible room state", () => {
   assert.equal(visible.round?.players[1].hand?.length, 13);
   assert.equal(visible.round?.players[0].hand, null);
   assert.equal(visible.round?.players[0].handCount, 14);
+  assert.equal(visible.round === null ? false : "seed" in visible.round, false);
+  assert.equal(visible.round === null ? false : "wall" in visible.round, false);
   assert.deepEqual(
     visible.round?.players.map((player) => ({
       id: player.id,
@@ -676,6 +678,20 @@ test("lets the current player claim an gang after drawing", () => {
     playerId: "p1",
     tile: gangTile,
     usedTiles: [gangTile, gangTile, gangTile, gangTile],
+  });
+
+  const ownerView = toClientVisibleRoomState(claimed.room, "p1");
+  const opponentView = toClientVisibleRoomState(claimed.room, "p2");
+
+  assert.deepEqual(ownerView.gangDraw?.tile, gangTile);
+  assert.equal(opponentView.gangDraw?.tile, null);
+  assert.deepEqual(opponentView.round?.players[0].melds, [
+    { type: "anGang", tile: null, tiles: [], fromPlayer: null },
+  ]);
+  assert.deepEqual(opponentView.eventLog.at(-1), {
+    type: "anGangClaimed",
+    seatId: 0,
+    playerId: "p1",
   });
 });
 

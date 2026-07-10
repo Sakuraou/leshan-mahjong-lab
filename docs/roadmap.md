@@ -6,6 +6,7 @@
 - [x] Record rule assumptions and pending questions
 - [x] Record multi-agent workflow
 - [x] Initialize Git and connect to GitHub
+- [x] Add strict TypeScript `typecheck` and combined `check` quality gates
 
 ## Phase 1: Frontend Multiplayer-Table Prototype
 
@@ -87,6 +88,10 @@ server authoritative.
   WebSocket connections
 - [x] Add a frontend WebSocket transport wrapper for room lifecycle messages
   while keeping mock transport as the default UI path
+- [x] Move shuffle seed generation behind the server adapter and remove seed,
+  wall order, opponent hands, and concealed gang details from client snapshots
+- [x] Replace predictable session counters with secure random session tokens and
+  injectable factories for deterministic tests
 - Wrap `roomSocketAdapter` with a production-ready WebSocket server entry
 - Connect table UI to WebSocket room snapshots
 - Add reconnect with a local session token

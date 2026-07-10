@@ -57,13 +57,17 @@ The adapter accepts a typed subset of the protocol from
 
 ```ts
 type RoomSocketClientMessage =
-  | { type: "createRoom"; payload: { roomId: string; seed: string; displayName: string } }
+  | { type: "createRoom"; payload: { roomId: string; displayName: string } }
   | { type: "joinRoom"; roomId: string; payload: { displayName: string } }
   | { type: "takeSeat"; roomId: string; sessionToken: string; payload: { seatId: PlayerId } }
   | { type: "toggleReady"; roomId: string; sessionToken: string; payload: {} }
   | { type: "startRound"; roomId: string; sessionToken: string; payload: { dealer?: PlayerId } }
   | { type: "resumeSession"; roomId: string; sessionToken: string; payload: { lastSeenEventId?: number } };
 ```
+
+The adapter generates the private shuffle seed and secure session tokens on the
+server side. Tests may inject deterministic factories, but neither value is
+accepted from an untrusted client.
 
 All messages include:
 

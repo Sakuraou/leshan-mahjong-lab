@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  createRoomSession,
+  createRoomSession as createRoomSessionBase,
   getClientRoomView,
   handleRoomAction,
   joinRoomSession,
@@ -12,6 +12,43 @@ import {
   type Suit,
   type Tile,
 } from "../../src/game/index.ts";
+
+function createRoomSession(input: Parameters<typeof createRoomSessionBase>[0]) {
+  let nextSession = 1;
+
+  return createRoomSessionBase(input, {
+    sessionTokenFactory: () => `session-${nextSession++}`,
+  });
+}
+
+test("uses secure unpredictable session tokens by default", () => {
+  const first = createRoomSessionBase({ roomId: "secure-room-a", seed: "seed-a", displayName: "Host A" });
+  const second = createRoomSessionBase({ roomId: "secure-room-b", seed: "seed-b", displayName: "Host B" });
+
+  assert.notEqual(first.session.sessionToken, second.session.sessionToken);
+  assert.doesNotMatch(first.session.sessionToken, /^session-\d+$/);
+  assert.ok(first.session.sessionToken.length >= 40);
+});
+
+test("keeps injected session token factories deterministic", () => {
+  const issued = ["test-token-host", "test-token-guest"];
+  let calls = 0;
+  const host = createRoomSessionBase(
+    { roomId: "factory-room", seed: "factory-seed", displayName: "Host" },
+    {
+      sessionTokenFactory: () => {
+        calls += 1;
+        return issued[calls - 1];
+      },
+    },
+  );
+  const guest = joinRoomSession(host.service, { displayName: "Guest" });
+
+  assert.equal(host.session.sessionToken, "test-token-host");
+  assert.equal(guest.ok, true);
+  assert.equal(guest.ok ? guest.session.sessionToken : null, "test-token-guest");
+  assert.equal(calls, 2);
+});
 
 test("creates a server-authoritative room session for the host", () => {
   const result = createRoomSession({
@@ -79,7 +116,7 @@ test("starts a round after four sessions are seated and ready", () => {
   assert.equal(started.service.room.status, "dingque");
   assert.equal(started.service.room.round?.players[0].hand.length, 14);
   assert.equal(started.service.room.round?.players[1].hand.length, 13);
-  assert.deepEqual(started.events, [{ type: "roundStarted", seed: "svc-seed", dealer: 0 }]);
+  assert.deepEqual(started.events, [{ type: "roundStarted", dealer: 0 }]);
 
   const playerTwoView = getClientRoomView(started.service, filled.sessions[1].sessionToken);
 

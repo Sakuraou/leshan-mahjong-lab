@@ -7,7 +7,7 @@ import {
 } from "./round.ts";
 import { isYaoJi, sameTile, tile } from "./tiles.ts";
 import { checkCurrentPlayerHu, checkDiscardHu } from "./win.ts";
-import type { PlayerId, Rank, RoundState, ScorePattern, Suit, Tile } from "./types.ts";
+import type { Meld, PlayerId, Rank, RoundState, ScorePattern, Suit, Tile } from "./types.ts";
 
 const seatIds: PlayerId[] = [0, 1, 2, 3];
 
@@ -82,7 +82,7 @@ export type RoomEvent =
   | { type: "playerJoined"; playerId: string; displayName: string }
   | { type: "seatTaken"; seatId: PlayerId; playerId: string }
   | { type: "readyChanged"; seatId: PlayerId; playerId: string; ready: boolean }
-  | { type: "roundStarted"; seed: string; dealer: PlayerId }
+  | { type: "roundStarted"; dealer: PlayerId }
   | { type: "missingSuitChosen"; seatId: PlayerId; playerId: string; suit: Suit }
   | { type: "tileDrawn"; seatId: PlayerId; playerId: string }
   | { type: "tileDiscarded"; seatId: PlayerId; playerId: string; tile: Tile }
@@ -97,6 +97,18 @@ export type RoomEvent =
   | { type: "gangTileDrawn"; seatId: PlayerId; playerId: string; gangType: GangDrawState["gangType"] }
   | { type: "roundEnded"; reason: RoundEndState["reason"]; remainingPlayerIds: PlayerId[] }
   | { type: "claimWindowClosed"; reason: "allPassed" | "timeout" | "claimed"; nextPlayer: PlayerId };
+
+export type ClientRoomEvent =
+  | RoomEvent
+  | { type: "anGangClaimed"; seatId: PlayerId; playerId: string };
+
+export type ClientVisibleGangDrawState = Omit<GangDrawState, "tile"> & {
+  tile: Tile | null;
+};
+
+export type ClientVisibleMeld =
+  | Meld
+  | { type: "anGang"; tile: null; tiles: []; fromPlayer: null };
 
 export type RoomState = {
   id: string;
@@ -118,7 +130,7 @@ export type VisiblePlayerState = {
   hand: Tile[] | null;
   handCount: number;
   discards: Tile[];
-  melds: RoundState["players"][number]["melds"];
+  melds: ClientVisibleMeld[];
   hasWon: boolean;
   missingSuit: RoundState["players"][number]["missingSuit"];
 };
@@ -131,7 +143,6 @@ export type ClientVisibleRoomState = {
   round:
     | null
     | {
-        seed: string;
         dealer: PlayerId;
         currentPlayer: PlayerId;
         wallCount: number;
@@ -139,10 +150,10 @@ export type ClientVisibleRoomState = {
       };
   claimWindow: ClaimWindow | null;
   baGangClaimWindow: BaGangClaimWindow | null;
-  gangDraw: GangDrawState | null;
+  gangDraw: ClientVisibleGangDrawState | null;
   roundEnd: RoundEndState | null;
   chaJiao: ChaJiaoResult | null;
-  eventLog: RoomEvent[];
+  eventLog: ClientRoomEvent[];
 };
 
 export type CreateRoomInput = {
@@ -188,7 +199,7 @@ export type DrawRoomTileResult =
         | "gangDrawPending"
         | "notCurrentPlayer"
         | "notDrawPhase"
-        | DrawTileResult["reason"];
+        | ResultFailureReason<DrawTileResult>;
     };
 
 export type DrawGangTileResult =
@@ -203,7 +214,7 @@ export type DrawGangTileResult =
         | "claimWindowOpen"
         | "noGangDraw"
         | "notCurrentPlayer"
-        | DrawTileResult["reason"];
+        | ResultFailureReason<DrawTileResult>;
     };
 
 export type DiscardRoomTileResult =
@@ -219,8 +230,10 @@ export type DiscardRoomTileResult =
         | "gangDrawPending"
         | "notCurrentPlayer"
         | "notDiscardPhase"
-        | DiscardTileResult["reason"];
+        | ResultFailureReason<DiscardTileResult>;
     };
+
+type ResultFailureReason<TResult> = TResult extends { ok: false; reason: infer TReason } ? TReason : never;
 
 export type PassClaimResult =
   | { ok: true; room: RoomState }
@@ -452,7 +465,7 @@ export function startRoomRound(room: RoomState, dealer: PlayerId = 0): StartRoom
       gangDraw: null,
       roundEnd: null,
       chaJiao: null,
-      eventLog: [...room.eventLog, { type: "roundStarted", seed: room.seed, dealer }],
+      eventLog: [...room.eventLog, { type: "roundStarted", dealer }],
     },
   };
 }
@@ -953,22 +966,26 @@ export function claimBaGang(room: RoomState, playerId: string, tile: Tile): Clai
   };
 }
 
+type PengClaimOptions = {
+  meldType: "peng";
+  tilesNeededFromHand: 2;
+  eventType: "pengClaimed";
+  cannotReason: "cannotPeng";
+};
+
+type MingGangClaimOptions = {
+  meldType: "mingGang";
+  tilesNeededFromHand: 3;
+  eventType: "mingGangClaimed";
+  cannotReason: "cannotMingGang";
+};
+
+function claimMeldFromDiscard(room: RoomState, playerId: string, options: PengClaimOptions): ClaimPengResult;
+function claimMeldFromDiscard(room: RoomState, playerId: string, options: MingGangClaimOptions): ClaimMingGangResult;
 function claimMeldFromDiscard(
   room: RoomState,
   playerId: string,
-  options:
-    | {
-        meldType: "peng";
-        tilesNeededFromHand: 2;
-        eventType: "pengClaimed";
-        cannotReason: "cannotPeng";
-      }
-    | {
-        meldType: "mingGang";
-        tilesNeededFromHand: 3;
-        eventType: "mingGangClaimed";
-        cannotReason: "cannotMingGang";
-      },
+  options: PengClaimOptions | MingGangClaimOptions,
 ): ClaimPengResult | ClaimMingGangResult {
   if (room.round === null) {
     return { ok: false, reason: "roundNotStarted" };
@@ -1039,7 +1056,7 @@ function claimMeldFromDiscard(
       return value;
     }),
   };
-  const nextRoom = {
+  const nextRoom: RoomState = {
     ...room,
     round: nextRound,
     claimWindow: null,
@@ -1082,7 +1099,6 @@ export function toClientVisibleRoomState(room: RoomState, playerId: string): Cli
       room.round === null
         ? null
         : {
-            seed: room.round.seed,
             dealer: room.round.dealer,
             currentPlayer: room.round.currentPlayer,
             wallCount: room.round.wall.length,
@@ -1091,17 +1107,48 @@ export function toClientVisibleRoomState(room: RoomState, playerId: string): Cli
               hand: player.id === localSeatId ? player.hand : null,
               handCount: player.hand.length,
               discards: player.discards,
-              melds: player.melds,
+              melds:
+                player.id === localSeatId
+                  ? player.melds
+                  : player.melds.map((meld) =>
+                      meld.type === "anGang"
+                        ? { type: "anGang" as const, tile: null, tiles: [] as [], fromPlayer: null }
+                        : meld,
+                    ),
               hasWon: player.hasWon,
               missingSuit: player.missingSuit,
             })),
           },
     claimWindow: room.claimWindow,
     baGangClaimWindow: room.baGangClaimWindow,
-    gangDraw: room.gangDraw,
+    gangDraw:
+      room.gangDraw === null
+        ? null
+        : {
+            ...room.gangDraw,
+            tile:
+              room.gangDraw.gangType === "anGang" && room.gangDraw.seatId !== localSeatId
+                ? null
+                : room.gangDraw.tile,
+          },
     roundEnd: room.roundEnd,
     chaJiao: room.chaJiao,
-    eventLog: room.eventLog,
+    eventLog: room.eventLog.map((event) => toClientVisibleRoomEvent(event, localSeatId)),
+  };
+}
+
+export function toClientVisibleRoomEvent(
+  event: RoomEvent,
+  localSeatId: PlayerId | null,
+): ClientRoomEvent {
+  if (event.type !== "anGangClaimed" || event.seatId === localSeatId) {
+    return event;
+  }
+
+  return {
+    type: "anGangClaimed",
+    seatId: event.seatId,
+    playerId: event.playerId,
   };
 }
 
@@ -1306,7 +1353,7 @@ function finishRoundIfNeeded(room: RoomState): RoomState {
     return room;
   }
 
-  const roundEnd = { reason, remainingPlayerIds };
+  const roundEnd: RoundEndState = { reason, remainingPlayerIds };
 
   return {
     ...room,

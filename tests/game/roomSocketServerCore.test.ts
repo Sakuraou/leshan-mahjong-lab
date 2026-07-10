@@ -217,9 +217,14 @@ test("rebinds a resumed session to the newest connection", () => {
 });
 
 function createConnectedServer(connectionIds: string[]): RoomSocketServerCoreState {
+  let nextSession = 1;
+
   return connectionIds.reduce(
     (server, connectionId) => registerRoomSocketConnection(server, connectionId),
-    createRoomSocketServerCoreState(),
+    createRoomSocketServerCoreState({
+      roomSeedFactory: () => "server-seed",
+      sessionTokenFactory: () => `session-${nextSession++}`,
+    }),
   );
 }
 
@@ -228,7 +233,7 @@ function createRoomMessage(clientMessageId: string, roomId: string, displayName:
     protocolVersion: 1,
     clientMessageId,
     type: "createRoom",
-    payload: { roomId, seed: "server-seed", displayName },
+    payload: { roomId, displayName },
   };
 }
 

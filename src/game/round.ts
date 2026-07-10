@@ -19,8 +19,10 @@ export type DiscardTileResult =
   | { ok: true; round: RoundState; nextPlayer: PlayerId }
   | {
       ok: false;
-      reason: "notCurrentPlayer" | "playerAlreadyWon" | "missingSuitNotSet" | DiscardCheckResult["reason"];
+      reason: "notCurrentPlayer" | "playerAlreadyWon" | "missingSuitNotSet" | FailureReason<DiscardCheckResult>;
     };
+
+type FailureReason<TResult> = TResult extends { legal: false; reason: infer TReason } ? TReason : never;
 
 export function seededShuffle<T>(values: readonly T[], seed: string): T[] {
   const shuffled = [...values];

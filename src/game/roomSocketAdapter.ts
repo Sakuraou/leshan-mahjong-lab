@@ -1,4 +1,5 @@
 import {
+  createSecureSessionToken,
   createRoomSession,
   getClientRoomView,
   handleRoomAction,
@@ -7,12 +8,27 @@ import {
   type RoomAction,
   type RoomServiceError,
   type RoomServiceState,
+  type SessionTokenFactory,
 } from "./roomService.ts";
-import type { ClientVisibleRoomState, RoomEvent } from "./room.ts";
+import {
+  toClientVisibleRoomEvent,
+  type ClientRoomEvent,
+  type ClientVisibleRoomState,
+  type RoomEvent,
+} from "./room.ts";
 import type { PlayerId, Suit, Tile } from "./types.ts";
 
 export type RoomSocketAdapterState = {
   rooms: RoomSocketRoomState[];
+  roomSeedFactory: RoomSeedFactory;
+  sessionTokenFactory: SessionTokenFactory;
+};
+
+export type RoomSeedFactory = () => string;
+
+export type RoomSocketAdapterOptions = {
+  roomSeedFactory?: RoomSeedFactory;
+  sessionTokenFactory?: SessionTokenFactory;
 };
 
 export type RoomSocketRoomState = {
@@ -25,7 +41,7 @@ export type RoomSocketClientMessage =
       protocolVersion: 1;
       clientMessageId: string;
       type: "createRoom";
-      payload: { roomId: string; seed: string; displayName: string };
+      payload: { roomId: string; displayName: string };
     }
   | {
       protocolVersion: 1;
@@ -194,7 +210,7 @@ export type RoomSnapshotPayload = {
   sessionToken: string;
   playerId: string;
   lastEventId: number;
-  events: RoomEvent[];
+  events: ClientRoomEvent[];
 };
 
 export type RoomSocketErrorCode = "roomNotFound" | "roomAlreadyExists" | RoomServiceError;
@@ -204,8 +220,12 @@ export type RoomSocketAdapterResult = {
   messages: RoomSocketServerMessage[];
 };
 
-export function createRoomSocketAdapterState(): RoomSocketAdapterState {
-  return { rooms: [] };
+export function createRoomSocketAdapterState(options: RoomSocketAdapterOptions = {}): RoomSocketAdapterState {
+  return {
+    rooms: [],
+    roomSeedFactory: options.roomSeedFactory ?? createSecureRoomSeed,
+    sessionTokenFactory: options.sessionTokenFactory ?? createSecureSessionToken,
+  };
 }
 
 export function handleRoomSocketMessage(
@@ -247,7 +267,14 @@ function handleCreateRoom(
     };
   }
 
-  const result = createRoomSession(message.payload);
+  const result = createRoomSession(
+    {
+      roomId: message.payload.roomId,
+      seed: adapter.roomSeedFactory(),
+      displayName: message.payload.displayName,
+    },
+    { sessionTokenFactory: adapter.sessionTokenFactory },
+  );
   const nextAdapter = upsertRoom(adapter, result.service);
 
   return {
@@ -466,7 +493,7 @@ function snapshotMessage(
       sessionToken,
       playerId: view.session.playerId,
       lastEventId: service.lastEventId,
-      events,
+      events: events.map((event) => toClientVisibleRoomEvent(event, view.view.localSeatId)),
     },
   };
 }
@@ -560,8 +587,13 @@ function upsertRoom(adapter: RoomSocketAdapterState, service: RoomServiceState):
   const exists = adapter.rooms.some((room) => room.roomId === service.room.id);
 
   return {
+    ...adapter,
     rooms: exists
       ? adapter.rooms.map((room) => (room.roomId === service.room.id ? roomState : room))
       : [...adapter.rooms, roomState],
   };
+}
+
+function createSecureRoomSeed(): string {
+  return `round-${globalThis.crypto.randomUUID()}`;
 }

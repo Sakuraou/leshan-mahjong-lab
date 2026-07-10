@@ -64,7 +64,7 @@ type RoomEvent =
   | { type: "playerJoined"; playerId: string; displayName: string }
   | { type: "seatTaken"; seatId: 0 | 1 | 2 | 3; playerId: string }
   | { type: "readyChanged"; seatId: 0 | 1 | 2 | 3; playerId: string; ready: boolean }
-  | { type: "roundStarted"; seed: string; dealer: 0 | 1 | 2 | 3 }
+  | { type: "roundStarted"; dealer: 0 | 1 | 2 | 3 }
   | { type: "missingSuitChosen"; seatId: 0 | 1 | 2 | 3; suit: "bamboos" | "dots" | "characters" }
   | { type: "tileDrawn"; seatId: 0 | 1 | 2 | 3; tile?: Tile }
   | { type: "tileDiscarded"; seatId: 0 | 1 | 2 | 3; tile: Tile }
@@ -434,7 +434,6 @@ type ClientVisibleRoomState = {
   localSeatId: 0 | 1 | 2 | 3 | null;
   seats: SeatState[];
   round: null | {
-    seed: string;
     dealer: 0 | 1 | 2 | 3;
     currentPlayer: 0 | 1 | 2 | 3;
     wallCount: number;

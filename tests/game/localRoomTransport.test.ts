@@ -21,7 +21,7 @@ test("local room transport drives room lifecycle through socket adapter snapshot
   const host = createLocalRoomSession(transport, { displayName: "Player One" });
   transport = host.state;
 
-  assert.equal(getLocalRoomSessionToken(transport, "player-1"), "session-1");
+  assert.doesNotMatch(getLocalRoomSessionToken(transport, "player-1") ?? "", /^session-\d+$/);
   assert.equal(transport.room.members.length, 1);
   assert.equal(getLocalRoomClientView(transport, "player-1").localSeatId, null);
 

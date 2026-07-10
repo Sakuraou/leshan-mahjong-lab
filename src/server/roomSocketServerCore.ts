@@ -2,6 +2,7 @@ import {
   createRoomSocketAdapterState,
   handleRoomSocketMessage,
   type PlayerId,
+  type RoomSocketAdapterOptions,
   type RoomSocketAdapterState,
   type RoomSocketClientMessage,
   type RoomSocketServerMessage,
@@ -44,9 +45,9 @@ export type RoomSocketServerCoreResult = {
   errors: RoomSocketProtocolError[];
 };
 
-export function createRoomSocketServerCoreState(): RoomSocketServerCoreState {
+export function createRoomSocketServerCoreState(options: RoomSocketAdapterOptions = {}): RoomSocketServerCoreState {
   return {
-    adapter: createRoomSocketAdapterState(),
+    adapter: createRoomSocketAdapterState(options),
     connections: [],
   };
 }
@@ -214,7 +215,6 @@ function isRoomSocketClientMessage(value: unknown): value is RoomSocketClientMes
     return (
       isRecord(value.payload) &&
       typeof value.payload.roomId === "string" &&
-      typeof value.payload.seed === "string" &&
       typeof value.payload.displayName === "string"
     );
   }

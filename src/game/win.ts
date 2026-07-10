@@ -1,7 +1,7 @@
 import { canHuWithLaizi, type HuCheckReason } from "./hu.ts";
-import { calculateHuScore, hasOrdinaryMissingSuitTile, hasWuJi } from "./rules.ts";
+import { calculateHuScore, hasOrdinaryMissingSuitTile, hasWuJi, type HuScore } from "./rules.ts";
 import { isYaoJi } from "./tiles.ts";
-import type { HuScore, PlayerId, RoundState, ScorePattern, Tile, WinMethod } from "./types.ts";
+import type { PlayerId, RoundState, ScorePattern, Tile, WinMethod } from "./types.ts";
 
 export type WinCheckReason =
   | "playerAlreadyWon"
@@ -110,4 +110,3 @@ function hasQingYiSe(hand: Tile[]): boolean {
   const ordinarySuits = new Set(hand.filter((value) => !isYaoJi(value)).map((value) => value.suit));
   return ordinarySuits.size === 1;
 }
-

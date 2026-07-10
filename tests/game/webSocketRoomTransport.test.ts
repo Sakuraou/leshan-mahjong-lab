@@ -18,18 +18,17 @@ test("websocket room transport tracks session snapshots over a real dev server",
         await createWebSocketRoomTransport({
           url: server.url,
           roomId,
-          seed: "transport-real-ws-seed",
           webSocketFactory: createNodeWebSocket,
         }),
       );
     }
 
     assert.equal((await transports[0].createRoomSession({ displayName: "Player One" })).ok, true);
-    assert.equal(transports[0].getSessionToken("player-1"), "session-1");
+    assert.doesNotMatch(transports[0].getSessionToken("player-1") ?? "", /^session-\d+$/);
 
     for (const [index, transport] of transports.slice(1).entries()) {
       assert.equal((await transport.joinRoomSession({ displayName: `Player ${index + 2}` })).ok, true);
-      assert.equal(transport.getSessionToken(`player-${index + 2}`), `session-${index + 2}`);
+      assert.ok(transport.getSessionToken(`player-${index + 2}`));
     }
 
     await transports[0].waitForMessageCount(5);
@@ -127,14 +126,13 @@ test("websocket room transport resumes a stored session over a real dev server",
     const host = await createWebSocketRoomTransport({
       url: server.url,
       roomId,
-      seed: "transport-resume-ws-seed",
       webSocketFactory: createNodeWebSocket,
     });
     transports.push(host);
 
     assert.equal((await host.createRoomSession({ displayName: "Player One" })).ok, true);
     const sessionToken = host.getSessionToken("player-1");
-    assert.equal(sessionToken, "session-1");
+    assert.ok(sessionToken);
 
     const initialLastEventId = host.getState().messages.find((message) => message.type === "roomSnapshot")?.payload.lastEventId;
     assert.equal(initialLastEventId, 2);
@@ -145,7 +143,6 @@ test("websocket room transport resumes a stored session over a real dev server",
     const resumed = await createWebSocketRoomTransport({
       url: server.url,
       roomId,
-      seed: "transport-resume-ws-seed",
       webSocketFactory: createNodeWebSocket,
     });
     transports.push(resumed);
@@ -160,7 +157,7 @@ test("websocket room transport resumes a stored session over a real dev server",
       resumeSnapshot?.payload.events.map((event) => event.type),
       ["seatTaken", "readyChanged"],
     );
-    assert.equal(resumed.getSessionToken("player-1"), "session-1");
+    assert.equal(resumed.getSessionToken("player-1"), sessionToken);
     assert.equal(resumed.getClientView("player-1")?.seats[0].ready, true);
   } finally {
     transports.forEach((transport) => transport.close());
@@ -177,7 +174,6 @@ test("websocket room transport reports failed resume reasons over a real dev ser
     const missingRoom = await createWebSocketRoomTransport({
       url: server.url,
       roomId: "missing-resume-room",
-      seed: "transport-failed-resume-ws-seed",
       webSocketFactory: createNodeWebSocket,
     });
     transports.push(missingRoom);
@@ -190,7 +186,6 @@ test("websocket room transport reports failed resume reasons over a real dev ser
     const host = await createWebSocketRoomTransport({
       url: server.url,
       roomId,
-      seed: "transport-failed-resume-ws-seed",
       webSocketFactory: createNodeWebSocket,
     });
     transports.push(host);
@@ -199,7 +194,6 @@ test("websocket room transport reports failed resume reasons over a real dev ser
     const invalidSession = await createWebSocketRoomTransport({
       url: server.url,
       roomId,
-      seed: "transport-failed-resume-ws-seed",
       webSocketFactory: createNodeWebSocket,
     });
     transports.push(invalidSession);

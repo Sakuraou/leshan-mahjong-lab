@@ -7,6 +7,8 @@
     "dev": "vite --host 127.0.0.1",
     "dev:server": "node --experimental-strip-types src/server/devServer.ts",
     "smoke:server": "node --experimental-strip-types src/server/smokeClient.ts",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm test && npm run build",
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1",
     "test": "node --test --experimental-strip-types tests/game/*.test.ts"

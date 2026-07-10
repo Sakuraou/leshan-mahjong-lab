@@ -29,7 +29,7 @@ export type LocalRoomTransportResult = {
 
 export function createLocalRoomTransport(input: { roomId: string; seed: string }): LocalRoomTransportState {
   return {
-    adapter: createRoomSocketAdapterState(),
+    adapter: createRoomSocketAdapterState({ roomSeedFactory: () => input.seed }),
     room: createRoom({ id: input.roomId, seed: input.seed }),
     roomId: input.roomId,
     seed: input.seed,
@@ -47,7 +47,7 @@ export function createLocalRoomSession(
     protocolVersion: 1,
     clientMessageId: nextClientMessageId(state),
     type: "createRoom",
-    payload: { roomId: state.roomId, seed: state.seed, displayName: input.displayName },
+    payload: { roomId: state.roomId, displayName: input.displayName },
   });
 }
 
@@ -112,6 +112,7 @@ export function replaceLocalRoomTransportRoom(
   room: RoomState,
 ): LocalRoomTransportState {
   const adapter = {
+    ...state.adapter,
     rooms: state.adapter.rooms.map((entry) =>
       entry.roomId === room.id ? { ...entry, service: { ...entry.service, room } } : entry,
     ),
@@ -214,7 +215,7 @@ function nextClientMessageId(state: LocalRoomTransportState): string {
 
 function createLocalActionRejectedMessage(
   state: LocalRoomTransportState,
-  code: string,
+  code: Extract<RoomSocketServerMessage, { type: "actionRejected" }>["payload"]["code"],
   message: string,
 ): Extract<RoomSocketServerMessage, { type: "actionRejected" }> {
   return {

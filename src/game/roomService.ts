@@ -46,12 +46,18 @@ export type RoomSession = {
   lastEventId: number;
 };
 
+export type SessionTokenFactory = () => string;
+
+export type CreateRoomSessionOptions = {
+  sessionTokenFactory?: SessionTokenFactory;
+};
+
 export type RoomServiceState = {
   room: RoomState;
   sessions: RoomSession[];
   lastEventId: number;
   nextPlayerNumber: number;
-  nextSessionNumber: number;
+  sessionTokenFactory: SessionTokenFactory;
 };
 
 export type CreateRoomSessionInput = {
@@ -83,22 +89,24 @@ export type RoomAction =
 
 export type RoomServiceError =
   | "invalidSession"
-  | JoinRoomResult["reason"]
-  | TakeSeatResult["reason"]
-  | ToggleReadyResult["reason"]
-  | StartRoomRoundResult["reason"]
-  | ChooseMissingSuitResult["reason"]
-  | DrawGangTileResult["reason"]
-  | DrawRoomTileResult["reason"]
-  | DiscardRoomTileResult["reason"]
-  | ClaimAnGangResult["reason"]
-  | ClaimBaGangResult["reason"]
-  | ClaimHuResult["reason"]
-  | ClaimMingGangResult["reason"]
-  | ClaimPengResult["reason"]
-  | ClaimSelfDrawHuResult["reason"]
-  | PassClaimResult["reason"]
-  | ExpireClaimWindowResult["reason"];
+  | ResultFailureReason<JoinRoomResult>
+  | ResultFailureReason<TakeSeatResult>
+  | ResultFailureReason<ToggleReadyResult>
+  | ResultFailureReason<StartRoomRoundResult>
+  | ResultFailureReason<ChooseMissingSuitResult>
+  | ResultFailureReason<DrawGangTileResult>
+  | ResultFailureReason<DrawRoomTileResult>
+  | ResultFailureReason<DiscardRoomTileResult>
+  | ResultFailureReason<ClaimAnGangResult>
+  | ResultFailureReason<ClaimBaGangResult>
+  | ResultFailureReason<ClaimHuResult>
+  | ResultFailureReason<ClaimMingGangResult>
+  | ResultFailureReason<ClaimPengResult>
+  | ResultFailureReason<ClaimSelfDrawHuResult>
+  | ResultFailureReason<PassClaimResult>
+  | ResultFailureReason<ExpireClaimWindowResult>;
+
+type ResultFailureReason<TResult> = TResult extends { ok: false; reason: infer TReason } ? TReason : never;
 
 export type RoomServiceResponse = {
   service: RoomServiceState;
@@ -122,9 +130,13 @@ export type GetClientRoomViewResult =
   | { ok: true; session: RoomSession; view: ClientVisibleRoomState; lastEventId: number }
   | { ok: false; reason: "invalidSession" };
 
-export function createRoomSession(input: CreateRoomSessionInput): CreateRoomSessionResult {
+export function createRoomSession(
+  input: CreateRoomSessionInput,
+  options: CreateRoomSessionOptions = {},
+): CreateRoomSessionResult {
   const playerId = "player-1";
-  const sessionToken = "session-1";
+  const sessionTokenFactory = options.sessionTokenFactory ?? createSecureSessionToken;
+  const sessionToken = issueSessionToken(sessionTokenFactory, []);
   const created = createRoom({ id: input.roomId, seed: input.seed });
   const joined = joinRoom(created, { playerId, displayName: input.displayName });
 
@@ -144,7 +156,7 @@ export function createRoomSession(input: CreateRoomSessionInput): CreateRoomSess
     sessions: [session],
     lastEventId,
     nextPlayerNumber: 2,
-    nextSessionNumber: 2,
+    sessionTokenFactory,
   };
 
   return {
@@ -162,7 +174,7 @@ export function joinRoomSession(
   input: JoinRoomSessionInput,
 ): RoomServiceResult {
   const playerId = `player-${service.nextPlayerNumber}`;
-  const sessionToken = `session-${service.nextSessionNumber}`;
+  const sessionToken = issueSessionToken(service.sessionTokenFactory, service.sessions);
   const result = joinRoom(service.room, { playerId, displayName: input.displayName });
 
   if (!result.ok) {
@@ -182,7 +194,6 @@ export function joinRoomSession(
     sessions: [...service.sessions, session],
     lastEventId: nextLastEventId,
     nextPlayerNumber: service.nextPlayerNumber + 1,
-    nextSessionNumber: service.nextSessionNumber + 1,
   };
 
   return buildResponse(nextService, sessionToken, service.lastEventId);
@@ -377,4 +388,20 @@ function updateSessionLastEventId(
   lastEventId: number,
 ): RoomSession[] {
   return sessions.map((session) => (session.sessionToken === sessionToken ? { ...session, lastEventId } : session));
+}
+
+export function createSecureSessionToken(): string {
+  return `session-${globalThis.crypto.randomUUID()}`;
+}
+
+function issueSessionToken(factory: SessionTokenFactory, sessions: RoomSession[]): string {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const token = factory();
+
+    if (!sessions.some((session) => session.sessionToken === token)) {
+      return token;
+    }
+  }
+
+  throw new Error("Session token factory produced too many duplicate tokens.");
 }

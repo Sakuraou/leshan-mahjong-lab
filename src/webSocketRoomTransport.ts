@@ -10,7 +10,6 @@ import type {
 export type WebSocketRoomTransportState = {
   url: string;
   roomId: string;
-  seed: string;
   status: "connecting" | "open" | "closed";
   nextClientMessageNumber: number;
   sessionTokenByPlayerId: Record<string, string | undefined>;
@@ -65,7 +64,6 @@ export type WebSocketRoomTransportActionResult =
 export type WebSocketRoomTransportOptions = {
   url?: string;
   roomId: string;
-  seed: string;
   webSocketFactory?: (url: string) => WebSocketLike;
   actionTimeoutMs?: number;
 };
@@ -106,7 +104,6 @@ export async function createWebSocketRoomTransport(
   let state: WebSocketRoomTransportState = {
     url,
     roomId: options.roomId,
-    seed: options.seed,
     status: "connecting",
     nextClientMessageNumber: 1,
     sessionTokenByPlayerId: {},
@@ -208,7 +205,7 @@ export async function createWebSocketRoomTransport(
         protocolVersion: 1,
         clientMessageId: nextClientMessageId(state),
         type: "createRoom",
-        payload: { roomId: state.roomId, seed: state.seed, displayName: input.displayName },
+        payload: { roomId: state.roomId, displayName: input.displayName },
       }),
     joinRoomSession: (input) =>
       sendRoomMessage({

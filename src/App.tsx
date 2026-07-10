@@ -7,6 +7,7 @@ import {
   drawTile,
   startRound,
   type PlayerId,
+  type Meld,
   type PlayerState,
   type RoomEvent,
   type RoomState,
@@ -89,7 +90,6 @@ type WebSocketStepStates = Record<WebSocketStepKey, WebSocketStepState>;
 type WebSocketRecoveryRecord = {
   playerId: string;
   roomId: string;
-  seed: string;
   url: string;
   sessionToken: string;
   lastEventId: number;
@@ -831,7 +831,7 @@ function WebSocketPreviewClientCard({
     gangDraw === null &&
     localSeat === round.currentPlayer &&
     allMissingSuitsChosen &&
-    localPlayer !== null &&
+    localPlayer != null &&
     localPlayer.handCount % 3 === 1 &&
     client.sessionToken !== null;
   const canDiscardTile =
@@ -1127,7 +1127,7 @@ function getLocalClaimHuCheck(
 
   return checkDiscardHu(
     {
-      seed: snapshot.round.seed,
+      seed: "client-redacted",
       dealer: snapshot.round.dealer,
       currentPlayer: snapshot.round.currentPlayer,
       wall: [],
@@ -1135,7 +1135,7 @@ function getLocalClaimHuCheck(
         id: player.id,
         hand: player.id === localSeat ? localPlayer.hand ?? [] : [],
         discards: player.discards,
-        melds: player.melds,
+        melds: visibleMeldsToInternal(player.melds),
         hasWon: player.hasWon,
         missingSuit: player.missingSuit,
       })),
@@ -1166,7 +1166,7 @@ function getLocalSelfDrawHuCheck(
   }
 
   return checkCurrentPlayerHu({
-    seed: snapshot.round.seed,
+    seed: "client-redacted",
     dealer: snapshot.round.dealer,
     currentPlayer: snapshot.round.currentPlayer,
     wall: [],
@@ -1174,7 +1174,7 @@ function getLocalSelfDrawHuCheck(
       id: player.id,
       hand: player.id === localSeat ? localPlayer.hand ?? [] : [],
       discards: player.discards,
-      melds: player.melds,
+      melds: visibleMeldsToInternal(player.melds),
       hasWon: player.hasWon,
       missingSuit: player.missingSuit,
     })),
@@ -1284,7 +1284,7 @@ function getActiveBaGangCandidates(
   }
 
   const hand = localPlayer.hand ?? [];
-  return localPlayer.melds
+  return visibleMeldsToInternal(localPlayer.melds)
     .filter((meld) => meld.type === "peng" && countUsableGangTiles(hand, meld.tile) >= 1)
     .map((meld) => meld.tile);
 }
@@ -1310,6 +1310,10 @@ function canTryActiveGang(
 
 function uniqueTiles(tiles: Tile[]): Tile[] {
   return tiles.filter((tile, index) => tiles.findIndex((value) => tilesEqual(value, tile)) === index);
+}
+
+function visibleMeldsToInternal(melds: VisiblePlayerState["melds"]): Meld[] {
+  return melds.filter((meld): meld is Meld => meld.tile !== null);
 }
 
 function countUsableGangTiles(hand: Tile[], target: Tile): number {
@@ -1416,8 +1420,8 @@ function WebSocketExperimentPanel({
 
     try {
       const [host, guest] = await Promise.all([
-        createWebSocketRoomTransport({ url: serverUrl, roomId: experimentRoomId, seed: seed }),
-        createWebSocketRoomTransport({ url: serverUrl, roomId: experimentRoomId, seed: seed }),
+        createWebSocketRoomTransport({ url: serverUrl, roomId: experimentRoomId }),
+        createWebSocketRoomTransport({ url: serverUrl, roomId: experimentRoomId }),
       ]);
       hostTransport.current = host;
       guestTransport.current = guest;
@@ -1628,7 +1632,7 @@ function WebSocketExperimentPanel({
 
     while (helperTransports.current.length < 2) {
       const playerNumber = helperTransports.current.length + 3;
-      const helper = await createWebSocketRoomTransport({ url: serverUrl, roomId: experimentRoomId, seed: seed });
+      const helper = await createWebSocketRoomTransport({ url: serverUrl, roomId: experimentRoomId });
       helperTransports.current = [...helperTransports.current, helper];
       const result = await helper.joinRoomSession({ displayName: `WebSocket 玩家 ${playerNumber}` });
       if (!result.ok) {
@@ -1785,7 +1789,7 @@ function WebSocketExperimentPanel({
           return false;
         }
 
-        return beforeHandCount === null || view.round?.players[seatId].handCount === beforeHandCount + 1;
+        return beforeHandCount == null || view.round?.players[seatId].handCount === beforeHandCount + 1;
       }).catch(() => undefined);
       setWebSocketStep("draw", "success", `${playerId} 已由服务端摸牌并收到更新后的 redacted snapshot。`);
     } else {
@@ -1825,7 +1829,7 @@ function WebSocketExperimentPanel({
 
         return (
           view.gangDraw === null &&
-          (beforeHandCount === null || view.round?.players[seatId].handCount === beforeHandCount + 1)
+          (beforeHandCount == null || view.round?.players[seatId].handCount === beforeHandCount + 1)
         );
       }).catch(() => undefined);
       setWebSocketStep("draw", "success", `${playerId} 已完成杠后补牌，进入出牌阶段。`);
@@ -1864,7 +1868,7 @@ function WebSocketExperimentPanel({
           return false;
         }
 
-        return beforeDiscardCount === null || view.round?.players[seatId].discards.length === beforeDiscardCount + 1;
+        return beforeDiscardCount == null || view.round?.players[seatId].discards.length === beforeDiscardCount + 1;
       }).catch(() => undefined);
       setWebSocketStep("discard", "success", `${playerId} 已由服务端确认打出 ${tileText(tile)}。`);
     } else {
@@ -2053,7 +2057,7 @@ function WebSocketExperimentPanel({
           return false;
         }
 
-        return beforeMeldCount === null || view.round?.players[seatId].melds.length === beforeMeldCount + 1;
+        return beforeMeldCount == null || view.round?.players[seatId].melds.length === beforeMeldCount + 1;
       }).catch(() => undefined);
       setWebSocketStep("claim", "success", input.successText);
     } else {
@@ -2103,7 +2107,7 @@ function WebSocketExperimentPanel({
         return (
           view.claimWindow === null &&
           view.round?.currentPlayer === seatId &&
-          (beforeMeldCount === null || view.round.players[seatId].melds.length === beforeMeldCount + 1)
+          (beforeMeldCount == null || view.round.players[seatId].melds.length === beforeMeldCount + 1)
         );
       }).catch(() => undefined);
       setWebSocketStep("claim", "success", input.successText);
@@ -2196,8 +2200,8 @@ function WebSocketExperimentPanel({
       setServerUrl(hostRecord.url);
       setExperimentRoomId(hostRecord.roomId);
       const [nextHost, nextGuest] = await Promise.all([
-        createWebSocketRoomTransport({ url: hostRecord.url, roomId: hostRecord.roomId, seed: hostRecord.seed }),
-        createWebSocketRoomTransport({ url: guestRecord.url, roomId: guestRecord.roomId, seed: guestRecord.seed }),
+        createWebSocketRoomTransport({ url: hostRecord.url, roomId: hostRecord.roomId }),
+        createWebSocketRoomTransport({ url: guestRecord.url, roomId: guestRecord.roomId }),
       ]);
 
       hostTransport.current = nextHost;
@@ -2501,7 +2505,6 @@ function saveWebSocketRecoveryRecord(state: WebSocketRoomTransportState | null, 
   const record: WebSocketRecoveryRecord = {
     playerId,
     roomId: state.roomId,
-    seed: state.seed,
     url: state.url,
     sessionToken,
     lastEventId: snapshot.eventLog.length,
@@ -2534,7 +2537,6 @@ function loadWebSocketRecoveryRecord(playerId: string): WebSocketRecoveryRecord 
     if (
       parsed.playerId !== playerId ||
       typeof parsed.roomId !== "string" ||
-      typeof parsed.seed !== "string" ||
       typeof parsed.url !== "string" ||
       typeof parsed.sessionToken !== "string" ||
       typeof parsed.lastEventId !== "number"
@@ -2545,7 +2547,6 @@ function loadWebSocketRecoveryRecord(playerId: string): WebSocketRecoveryRecord 
     return {
       playerId: parsed.playerId,
       roomId: parsed.roomId,
-      seed: parsed.seed,
       url: parsed.url,
       sessionToken: parsed.sessionToken,
       lastEventId: parsed.lastEventId,

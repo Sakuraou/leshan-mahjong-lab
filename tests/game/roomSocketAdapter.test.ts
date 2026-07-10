@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  createRoomSocketAdapterState,
+  createRoomSocketAdapterState as createRoomSocketAdapterStateBase,
   handleRoomSocketMessage,
   type RoomSocketAdapterState,
   type RoomSocketClientMessage,
@@ -10,6 +10,15 @@ import {
   type Suit,
   type Tile,
 } from "../../src/game/index.ts";
+
+function createRoomSocketAdapterState(): RoomSocketAdapterState {
+  let nextSession = 1;
+
+  return createRoomSocketAdapterStateBase({
+    roomSeedFactory: () => "socket-seed",
+    sessionTokenFactory: () => `session-${nextSession++}`,
+  });
+}
 
 test("maps createRoom to room service and returns a host snapshot", () => {
   const result = dispatch(createRoomSocketAdapterState(), createRoomMessage("m-create", "socket-room-create", "Host"));
@@ -131,7 +140,20 @@ test("broadcasts each session its own redacted view after startRound", () => {
     assert.equal(message.payload.view.localSeatId, index);
 
     const players = message.payload.view.round?.players;
+    const visibleRound = message.payload.view.round;
     assert.ok(players);
+    assert.ok(visibleRound);
+    assert.equal("seed" in visibleRound, false);
+    assert.equal("wall" in visibleRound, false);
+    assert.equal(JSON.stringify(message.payload).includes("socket-seed"), false);
+    assert.deepEqual(
+      message.payload.events.find((event) => event.type === "roundStarted"),
+      { type: "roundStarted", dealer: 0 },
+    );
+    assert.deepEqual(
+      message.payload.view.eventLog.find((event) => event.type === "roundStarted"),
+      { type: "roundStarted", dealer: 0 },
+    );
 
     players.forEach((player, playerIndex) => {
       if (playerIndex === index) {
@@ -363,7 +385,7 @@ function createRoomMessage(clientMessageId: string, roomId: string, displayName:
     protocolVersion: 1,
     clientMessageId,
     type: "createRoom",
-    payload: { roomId, seed: "socket-seed", displayName },
+    payload: { roomId, displayName },
   };
 }
 
