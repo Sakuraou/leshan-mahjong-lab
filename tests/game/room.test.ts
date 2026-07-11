@@ -546,6 +546,52 @@ test("lets the current player claim self-draw hu and keeps the round moving", ()
   });
 });
 
+test("offers exposed-hand self-draw only after a real draw", () => {
+  const room = readyRoomForSelfDrawHu();
+  const exposedHand = [
+    tile("characters", 2),
+    tile("characters", 3),
+    tile("characters", 4),
+    tile("characters", 7),
+    tile("characters", 8),
+    tile("characters", 9),
+    tile("dots", 3),
+    tile("dots", 4),
+    tile("dots", 5),
+    tile("characters", 5),
+    tile("bamboos", 1),
+  ];
+  const roomAfterDraw: RoomState = {
+    ...room,
+    selfDrawEligible: true,
+    round: {
+      ...room.round!,
+      players: room.round!.players.map((player) =>
+        player.id === 0
+          ? {
+              ...player,
+              hand: exposedHand,
+              melds: [
+                {
+                  type: "peng",
+                  tile: tile("characters", 6),
+                  tiles: [tile("characters", 6), tile("characters", 6), tile("characters", 6)],
+                  fromPlayer: 1,
+                },
+              ],
+            }
+          : player,
+      ),
+    },
+  };
+
+  assert.equal(toClientVisibleRoomState(roomAfterDraw, "p1").legalActions.includes("claimSelfDrawHu"), true);
+
+  const roomAfterPeng = { ...roomAfterDraw, selfDrawEligible: false };
+  assert.equal(toClientVisibleRoomState(roomAfterPeng, "p1").legalActions.includes("claimSelfDrawHu"), false);
+  assert.deepEqual(claimSelfDrawHu(roomAfterPeng, "p1"), { ok: false, reason: "notDiscardPhase" });
+});
+
 test("marks wall-empty round end with cha jiao placeholder results", () => {
   const room = readyRoomForSelfDrawHu();
   const roomWithEmptyWall: RoomState = {
@@ -787,9 +833,6 @@ test("lets the current player claim ba gang from an existing peng meld", () => {
       tile("dots", 2),
       tile("dots", 3),
       tile("dots", 4),
-      tile("bamboos", 2),
-      tile("bamboos", 3),
-      tile("bamboos", 4),
       tile("characters", 8),
     ],
     melds: [{ type: "peng", tile: gangTile, tiles: [gangTile, gangTile, gangTile], fromPlayer: 2 }],
@@ -802,7 +845,7 @@ test("lets the current player claim ba gang from an existing peng meld", () => {
     return;
   }
 
-  assert.equal(claimed.room.round?.players[0].hand.length, 13);
+  assert.equal(claimed.room.round?.players[0].hand.length, 10);
   assert.deepEqual(claimed.room.round?.players[0].melds, [
     {
       type: "baGang",

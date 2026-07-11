@@ -1,7 +1,11 @@
-import { canHuWithLaizi, type HuCheckReason } from "./hu.ts";
+import {
+  canHuWithLaizi,
+  type HuCheckReason,
+  type StandardHuDecomposition,
+} from "./hu.ts";
 import { calculateHuScore, hasOrdinaryMissingSuitTile, hasWuJi, type HuScore } from "./rules.ts";
 import { isYaoJi } from "./tiles.ts";
-import type { PlayerId, RoundState, ScorePattern, Tile, WinMethod } from "./types.ts";
+import type { Meld, PlayerId, RoundState, ScorePattern, Tile, WinMethod } from "./types.ts";
 
 export type WinCheckReason =
   | "playerAlreadyWon"
@@ -16,6 +20,7 @@ export type WinCheckResult =
       canHu: true;
       winMethod: WinMethod;
       hand: Tile[];
+      decomposition: StandardHuDecomposition;
       patterns: ScorePattern[];
       score: HuScore;
     }
@@ -58,7 +63,11 @@ function checkPlayerHu(
     return { canHu: false, winMethod, hand, reason: "hasMissingSuitTile" };
   }
 
-  const structure = canHuWithLaizi(hand);
+  const structure = canHuWithLaizi({
+    hand,
+    fixedMeldCount: player.melds.length,
+    explain: true,
+  });
 
   if (!structure.canHu) {
     return {
@@ -69,7 +78,7 @@ function checkPlayerHu(
     };
   }
 
-  const patterns = detectBasicPatterns(hand);
+  const patterns = detectBasicPatterns(hand, player.melds);
   const score = calculateHuScore({ patterns, winMethod });
 
   if (!score.canWin) {
@@ -87,19 +96,21 @@ function checkPlayerHu(
     canHu: true,
     winMethod,
     hand,
+    decomposition: structure.decomposition,
     patterns,
     score,
   };
 }
 
-function detectBasicPatterns(hand: Tile[]): ScorePattern[] {
+function detectBasicPatterns(hand: Tile[], melds: Meld[]): ScorePattern[] {
   const patterns: ScorePattern[] = ["pingHu"];
+  const finalSettlementTiles = [...hand, ...melds.flatMap((meld) => meld.tiles)];
 
-  if (hasWuJi(hand)) {
+  if (hasWuJi(finalSettlementTiles)) {
     patterns.push("wuJi");
   }
 
-  if (hasQingYiSe(hand)) {
+  if (hasQingYiSe(finalSettlementTiles)) {
     patterns.push("qingYiSe");
   }
 

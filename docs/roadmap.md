@@ -39,6 +39,10 @@ Goal: move from visual demo to real rule logic.
 - [x] Implement basic score multiplier and cap helper
 - [x] Add laizi-aware standard hand decomposition
 - [x] Add focused tests for laizi sequence, pair, triplet, and failed hands
+- [x] Return an explainable standard-hand decomposition with each laizi's
+  original tile and resolved target
+- [x] Support self-draw and discard hu checks after peng or gang melds through
+  `fixedMeldCount`
 - [x] Build wall shuffle and dealing logic
 - [x] Implement basic draw and discard state transitions
 - [x] Implement basic win detection

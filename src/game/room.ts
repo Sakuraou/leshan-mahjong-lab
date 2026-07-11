@@ -130,6 +130,7 @@ export type RoomState = {
   seed: string;
   status: RoomStatus;
   phase: RoundPhase | null;
+  selfDrawEligible: boolean;
   members: RoomMember[];
   seats: SeatState[];
   round: RoundState | null;
@@ -360,6 +361,7 @@ export function createRoom(input: CreateRoomInput): RoomState {
     seed: input.seed,
     status: "waiting",
     phase: null,
+    selfDrawEligible: false,
     members: [],
     seats: seatIds.map((seatId) => ({
       seatId,
@@ -479,6 +481,7 @@ export function startRoomRound(room: RoomState, dealer: PlayerId = 0): StartRoom
       ...room,
       status: "dingque",
       phase: "dingque",
+      selfDrawEligible: true,
       round: startRound({ seed: room.seed, dealer }),
       claimWindow: null,
       baGangClaimWindow: null,
@@ -573,6 +576,7 @@ export function drawRoomTile(room: RoomState, playerId: string): DrawRoomTileRes
     room: finishRoundIfNeeded({
       ...room,
       phase: "discard",
+      selfDrawEligible: true,
       round: result.round,
       baGangClaimWindow: null,
       eventLog: [...room.eventLog, { type: "tileDrawn", seatId: seat.seatId, playerId }],
@@ -622,6 +626,7 @@ export function drawGangTile(room: RoomState, playerId: string): DrawGangTileRes
     room: finishRoundIfNeeded({
       ...room,
       phase: "discard",
+      selfDrawEligible: true,
       round: result.round,
       baGangClaimWindow: null,
       gangDraw: null,
@@ -679,6 +684,7 @@ export function discardRoomTile(room: RoomState, playerId: string, tile: Tile): 
     room: {
       ...room,
       phase: "claim",
+      selfDrawEligible: false,
       round: result.round,
       claimWindow: createClaimWindow(result.round, seat.seatId, playerId, tile, result.nextPlayer),
       eventLog: [
@@ -837,7 +843,7 @@ export function claimSelfDrawHu(room: RoomState, playerId: string): ClaimSelfDra
     return { ok: false, reason: "notCurrentPlayer" };
   }
 
-  if (room.phase !== "discard") {
+  if (room.phase !== "discard" || !room.selfDrawEligible) {
     return { ok: false, reason: "notDiscardPhase" };
   }
 
@@ -860,6 +866,7 @@ export function claimSelfDrawHu(room: RoomState, playerId: string): ClaimSelfDra
     room: finishRoundIfNeeded({
       ...room,
       phase: "draw",
+      selfDrawEligible: false,
       round: nextRound,
       eventLog: [
         ...room.eventLog,
@@ -929,6 +936,7 @@ export function claimAnGang(room: RoomState, playerId: string, tile: Tile): Clai
     room: {
       ...room,
       phase: "gangDraw",
+      selfDrawEligible: false,
       round: nextRound,
       eventLog: [
         ...room.eventLog,
@@ -978,6 +986,7 @@ export function claimBaGang(room: RoomState, playerId: string, tile: Tile): Clai
     room: {
       ...room,
       phase: "gangDraw",
+      selfDrawEligible: false,
       round: nextRound,
       baGangClaimWindow: createBaGangClaimWindow(nextRound, ready.seat.seatId, playerId, tile),
       eventLog: [
@@ -1207,7 +1216,7 @@ function clientLegalActions(room: RoomState, localSeatId: PlayerId | null): Clie
 
     const actions: ClientLegalAction[] = ["discardTile"];
 
-    if (checkCurrentPlayerHu(room.round).canHu) {
+    if (room.selfDrawEligible && checkCurrentPlayerHu(room.round).canHu) {
       actions.push("claimSelfDrawHu");
     }
 
@@ -1215,11 +1224,15 @@ function clientLegalActions(room: RoomState, localSeatId: PlayerId | null): Clie
       (candidate, index) => player.hand.findIndex((value) => sameTile(value, candidate)) === index,
     );
 
-    if (uniqueHandTiles.some((candidate) => chooseActiveGangTiles(player.hand, candidate, 4) !== null)) {
+    if (
+      room.selfDrawEligible &&
+      uniqueHandTiles.some((candidate) => chooseActiveGangTiles(player.hand, candidate, 4) !== null)
+    ) {
       actions.push("claimAnGang");
     }
 
     if (
+      room.selfDrawEligible &&
       player.melds.some(
         (meld) => meld.type === "peng" && chooseActiveGangTiles(player.hand, meld.tile, 1) !== null,
       )
@@ -1352,7 +1365,7 @@ function prepareActiveGang(
     return { ok: false, reason: "notCurrentPlayer" };
   }
 
-  if (room.phase !== "discard") {
+  if (room.phase !== "discard" || !room.selfDrawEligible) {
     return { ok: false, reason: "notDiscardPhase" };
   }
 
@@ -1437,6 +1450,7 @@ function closeClaimWindow(
   return {
     ...room,
     phase: nextPhase,
+    selfDrawEligible: false,
     round: room.round === null ? null : { ...room.round, currentPlayer: nextPlayer },
     claimWindow: null,
     eventLog: [...room.eventLog, { type: "claimWindowClosed", reason, nextPlayer }],
@@ -1470,6 +1484,7 @@ function finishRoundIfNeeded(room: RoomState): RoomState {
     ...room,
     status: "ended",
     phase: "ended",
+    selfDrawEligible: false,
     roundEnd,
     chaJiao: reason === "wallEmpty" ? buildChaJiaoResult(room) : null,
     claimWindow: null,
