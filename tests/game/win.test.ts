@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import type { Meld, PlayerState, RoundState, Tile } from "../../src/game/index.ts";
+import type { Meld, PlayerState, RoundState, ScorePattern, Tile } from "../../src/game/index.ts";
 import { checkCurrentPlayerHu, checkDiscardHu, tile } from "../../src/game/index.ts";
 
 test("allows self-draw ping hu because self-draw doubles to 2 points", () => {
@@ -162,6 +162,147 @@ test("allows self-draw hu after a gang meld", () => {
 
   assert.equal(result.canHu, true);
   assert.equal(result.canHu && result.decomposition.fixedMeldCount, 1);
+  assert.equal(result.canHu && result.score.genCount, 1);
+});
+
+test("detects da dui and applies its multiplier", () => {
+  const result = checkCurrentPlayerHu(makeRound([
+    ...repeatTile(tile("characters", 2), 3),
+    ...repeatTile(tile("characters", 5), 3),
+    ...repeatTile(tile("dots", 3), 3),
+    ...repeatTile(tile("dots", 7), 3),
+    ...repeatTile(tile("characters", 9), 2),
+  ]));
+
+  assert.equal(result.canHu, true);
+
+  if (!result.canHu) {
+    return;
+  }
+
+  assert.deepEqual(result.patterns, ["pingHu", "daDui", "wuJi"]);
+  assert.equal(result.score.genCount, 0);
+  assert.equal(result.score.rawPoints, 16);
+});
+
+test("detects dan diao for self-draw and discard wins", () => {
+  const melds = [
+    makeMeld("peng", tile("characters", 2), 3),
+    makeMeld("peng", tile("characters", 5), 3),
+    makeMeld("peng", tile("dots", 3), 3),
+    makeMeld("peng", tile("dots", 6), 3),
+  ];
+  const selfDraw = checkCurrentPlayerHu(makeRound(repeatTile(tile("characters", 9), 2), melds));
+  const discard = checkDiscardHu(makeRound([tile("characters", 9)], melds), 0, tile("characters", 9));
+
+  assert.equal(selfDraw.canHu, true);
+  assert.equal(discard.canHu, true);
+
+  if (!selfDraw.canHu || !discard.canHu) {
+    return;
+  }
+
+  assert.deepEqual(selfDraw.patterns, ["pingHu", "daDui", "danDiao", "wuJi"]);
+  assert.deepEqual(discard.patterns, selfDraw.patterns);
+  assert.equal(selfDraw.score.rawPoints, 32);
+  assert.equal(discard.score.rawPoints, 16);
+});
+
+test("counts resolved roots and separates target-based qing yi se from source-based wu ji", () => {
+  const cases: Array<{
+    name: string;
+    hand: Tile[];
+    melds: Meld[];
+    patterns: ScorePattern[];
+    genCount: number;
+    rawPoints: number;
+  }> = [
+    {
+      name: "one root from peng plus a concealed fourth tile",
+      hand: [
+        tile("characters", 2), tile("characters", 3), tile("characters", 4),
+        tile("characters", 5), tile("characters", 6), tile("characters", 7),
+        tile("dots", 2), tile("dots", 3), tile("dots", 4),
+        tile("characters", 9), tile("characters", 9),
+      ],
+      melds: [makeMeld("peng", tile("characters", 4), 3)],
+      patterns: ["pingHu", "wuJi"],
+      genCount: 1,
+      rawPoints: 16,
+    },
+    {
+      name: "two roots from two peng melds",
+      hand: [
+        tile("characters", 2), tile("characters", 3), tile("characters", 4),
+        tile("dots", 4), tile("dots", 5), tile("dots", 6),
+        tile("characters", 9), tile("characters", 9),
+      ],
+      melds: [
+        makeMeld("peng", tile("characters", 4), 3),
+        makeMeld("peng", tile("dots", 6), 3),
+      ],
+      patterns: ["pingHu", "wuJi"],
+      genCount: 2,
+      rawPoints: 32,
+    },
+    {
+      name: "laizi resolves as the fourth tile of a root",
+      hand: [
+        tile("bamboos", 1), tile("characters", 2), tile("characters", 3),
+        tile("characters", 5), tile("characters", 6), tile("characters", 7),
+        tile("dots", 2), tile("dots", 3), tile("dots", 4),
+        tile("characters", 9), tile("characters", 9),
+      ],
+      melds: [makeMeld("peng", tile("characters", 4), 3)],
+      patterns: ["pingHu"],
+      genCount: 1,
+      rawPoints: 4,
+    },
+    {
+      name: "off-suit exposed meld breaks qing yi se",
+      hand: [
+        tile("characters", 2), tile("characters", 3), tile("characters", 4),
+        tile("characters", 3), tile("characters", 4), tile("characters", 5),
+        tile("characters", 7), tile("characters", 8), tile("characters", 9),
+        tile("characters", 9), tile("characters", 9),
+      ],
+      melds: [makeMeld("peng", tile("dots", 8), 3)],
+      patterns: ["pingHu", "wuJi"],
+      genCount: 0,
+      rawPoints: 8,
+    },
+    {
+      name: "exposed yao ji source breaks wu ji without breaking qing yi se",
+      hand: [
+        tile("characters", 2), tile("characters", 3), tile("characters", 4),
+        tile("characters", 3), tile("characters", 4), tile("characters", 5),
+        tile("characters", 7), tile("characters", 8), tile("characters", 9),
+        tile("characters", 9), tile("characters", 9),
+      ],
+      melds: [{
+        type: "peng",
+        tile: tile("characters", 6),
+        tiles: [tile("characters", 6), tile("characters", 6), tile("bamboos", 1)],
+        fromPlayer: 1,
+      }],
+      patterns: ["pingHu", "qingYiSe"],
+      genCount: 0,
+      rawPoints: 8,
+    },
+  ];
+
+  for (const value of cases) {
+    const result = checkCurrentPlayerHu(makeRound(value.hand, value.melds));
+    assert.equal(result.canHu, true, value.name);
+
+    if (!result.canHu) {
+      continue;
+    }
+
+    assert.deepEqual(result.patterns, value.patterns, value.name);
+    assert.equal(result.score.genCount, value.genCount, value.name);
+    assert.equal(result.score.rawPoints, value.rawPoints, value.name);
+  }
 });
 
 function exposedWinningHand(): Tile[] {
@@ -187,6 +328,10 @@ function makeMeld(type: Meld["type"], value: Tile, count: 3 | 4): Meld {
     tiles: Array.from({ length: count }, () => value),
     fromPlayer: type === "peng" || type === "mingGang" ? 1 : null,
   };
+}
+
+function repeatTile(value: Tile, count: number): Tile[] {
+  return Array.from({ length: count }, () => value);
 }
 
 function makeRound(hand: Tile[], melds: Meld[] = []): RoundState {

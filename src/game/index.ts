@@ -1,4 +1,5 @@
 export * from "./hu.ts";
+export * from "./patterns.ts";
 export * from "./rules.ts";
 export * from "./room.ts";
 export * from "./roomService.ts";

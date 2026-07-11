@@ -407,7 +407,9 @@ export function App() {
     if (discardChecks.length > 0) {
       addGameLog(
         `你打出 ${tileText(tile)}。${discardChecks
-          .map(({ player, check }) => `玩家 ${player.id + 1} 可胡 ${check.canHu ? check.score.cappedPoints : 0} 分`)
+          .map(({ player, check }) =>
+            `玩家 ${player.id + 1} 可胡 ${check.canHu ? `${check.score.cappedPoints} 分${genText(check.score.genCount)}` : "0 分"}`,
+          )
           .join("；")}。`,
       );
       return;
@@ -574,7 +576,7 @@ export function App() {
                   : currentHu === null
                     ? `当前是玩家 ${round.currentPlayer + 1} 的回合，等待远端玩家操作。`
                     : currentHu.canHu
-                      ? `可以自摸胡：${currentHu.score.cappedPoints} 分，牌型 ${currentHu.patterns.map(patternText).join("、")}`
+                      ? `可以自摸胡：${currentHu.score.cappedPoints} 分，牌型 ${currentHu.patterns.map(patternText).join("、")}${genText(currentHu.score.genCount)}`
                       : `暂不能自摸：${reasonText(currentHu.reason)}`}
               </div>
 
@@ -1167,7 +1169,7 @@ function webSocketClaimHuHint(check: ReturnType<typeof checkDiscardHu> | null, c
     return "当前不能点炮胡";
   }
 
-  return `可胡，约 ${check.score.cappedPoints} 分 · ${check.patterns.map(patternText).join("、")}`;
+  return `可胡，约 ${check.score.cappedPoints} 分 · ${check.patterns.map(patternText).join("、")}${genText(check.score.genCount, " · ")}`;
 }
 
 function claimWindowHasHuPriority(snapshot: ClientVisibleRoomState | null): boolean {
@@ -3064,9 +3066,9 @@ function roomEventText(event: RoomEvent, room: RoomState): string {
     case "claimPassed":
       return `${roomPlayerName(room, event.playerId)} 过牌。`;
     case "huClaimed":
-      return `${roomPlayerName(room, event.playerId)} 点炮胡 ${tileText(event.tile)}，约 ${event.points} 分。`;
+      return `${roomPlayerName(room, event.playerId)} 点炮胡 ${tileText(event.tile)}，约 ${event.points} 分${genText(event.genCount)}。`;
     case "selfDrawHuClaimed":
-      return `${roomPlayerName(room, event.playerId)} 自摸胡，约 ${event.points} 分。`;
+      return `${roomPlayerName(room, event.playerId)} 自摸胡，约 ${event.points} 分${genText(event.genCount)}。`;
     case "pengClaimed":
       return `${roomPlayerName(room, event.playerId)} 碰 ${tileText(event.tile)}。`;
     case "mingGangClaimed":
@@ -3155,4 +3157,8 @@ function patternText(pattern: string): string {
     shuangLongQiDui: "双龙七",
   };
   return names[pattern] ?? pattern;
+}
+
+function genText(genCount: number, separator = "，"): string {
+  return genCount > 0 ? `${separator}${genCount} 根` : "";
 }

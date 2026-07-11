@@ -42,6 +42,7 @@ export type HuClaim = {
   seatId: PlayerId;
   playerId: string;
   patterns: ScorePattern[];
+  genCount: number;
   points: number;
 };
 
@@ -103,8 +104,23 @@ export type RoomEvent =
   | { type: "tileDiscarded"; seatId: PlayerId; playerId: string; tile: Tile }
   | { type: "claimWindowOpened"; discardedBySeatId: PlayerId; tile: Tile; pendingPlayerIds: PlayerId[] }
   | { type: "claimPassed"; seatId: PlayerId; playerId: string }
-  | { type: "huClaimed"; seatId: PlayerId; playerId: string; tile: Tile; patterns: ScorePattern[]; points: number }
-  | { type: "selfDrawHuClaimed"; seatId: PlayerId; playerId: string; patterns: ScorePattern[]; points: number }
+  | {
+      type: "huClaimed";
+      seatId: PlayerId;
+      playerId: string;
+      tile: Tile;
+      patterns: ScorePattern[];
+      genCount: number;
+      points: number;
+    }
+  | {
+      type: "selfDrawHuClaimed";
+      seatId: PlayerId;
+      playerId: string;
+      patterns: ScorePattern[];
+      genCount: number;
+      points: number;
+    }
   | { type: "pengClaimed"; seatId: PlayerId; playerId: string; tile: Tile; usedTiles: Tile[] }
   | { type: "mingGangClaimed"; seatId: PlayerId; playerId: string; tile: Tile; usedTiles: Tile[] }
   | { type: "anGangClaimed"; seatId: PlayerId; playerId: string; tile: Tile; usedTiles: Tile[] }
@@ -779,6 +795,7 @@ export function claimHu(room: RoomState, playerId: string): ClaimHuResult {
     seatId: seat.seatId,
     playerId,
     patterns: huCheck.patterns,
+    genCount: huCheck.score.genCount,
     points: huCheck.score.cappedPoints,
   };
   const nextRound: RoundState = {
@@ -801,6 +818,7 @@ export function claimHu(room: RoomState, playerId: string): ClaimHuResult {
         playerId,
         tile: room.claimWindow.tile,
         patterns: huClaim.patterns,
+        genCount: huClaim.genCount,
         points: huClaim.points,
       },
     ],
@@ -875,6 +893,7 @@ export function claimSelfDrawHu(room: RoomState, playerId: string): ClaimSelfDra
           seatId: seat.seatId,
           playerId,
           patterns: huCheck.patterns,
+          genCount: huCheck.score.genCount,
           points: huCheck.score.cappedPoints,
         },
       ],

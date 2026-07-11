@@ -427,6 +427,7 @@ test("lets a player claim discard hu from the claim window", () => {
     playerId: "p2",
     tile: discard,
     patterns: ["pingHu", "wuJi", "qingYiSe"],
+    genCount: 0,
     points: 16,
   });
 });
@@ -542,6 +543,7 @@ test("lets the current player claim self-draw hu and keeps the round moving", ()
     seatId: 0,
     playerId: "p1",
     patterns: ["pingHu"],
+    genCount: 0,
     points: 2,
   });
 });

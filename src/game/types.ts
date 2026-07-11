@@ -31,7 +31,9 @@ export type PlayerId = 0 | 1 | 2 | 3;
 
 export type Meld = {
   type: "peng" | "mingGang" | "anGang" | "baGang";
+  // Logical target value after resolving any laizi used by the meld.
   tile: Tile;
+  // Original physical tiles, retained for wu ji and chicken settlement.
   tiles: Tile[];
   fromPlayer: PlayerId | null;
 };

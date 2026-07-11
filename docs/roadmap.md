@@ -43,6 +43,10 @@ Goal: move from visual demo to real rule logic.
   original tile and resolved target
 - [x] Support self-draw and discard hu checks after peng or gang melds through
   `fixedMeldCount`
+- [x] Detect da dui, dan diao, qing yi se, wu ji, and resolved gen count from
+  the explainable decomposition plus exposed melds
+- Select the highest-scoring decomposition when one laizi hand has multiple
+  valid resolutions
 - [x] Build wall shuffle and dealing logic
 - [x] Implement basic draw and discard state transitions
 - [x] Implement basic win detection
