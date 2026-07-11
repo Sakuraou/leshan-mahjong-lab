@@ -92,6 +92,10 @@ server authoritative.
   wall order, opponent hands, and concealed gang details from client snapshots
 - [x] Replace predictable session counters with secure random session tokens and
   injectable factories for deterministic tests
+- [x] Replace hand-count phase inference with an explicit authoritative room
+  phase machine for dingque, draw, discard, claim, gang draw, and round end
+- [x] Publish the safe current phase and per-session `legalActions` in each
+  redacted client snapshot
 - Wrap `roomSocketAdapter` with a production-ready WebSocket server entry
 - Connect table UI to WebSocket room snapshots
 - Add reconnect with a local session token

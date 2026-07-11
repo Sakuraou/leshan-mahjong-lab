@@ -159,6 +159,9 @@ test("draws through the authoritative service and returns a redacted view", () =
   assert.equal(drawn.view.localSeatId, 1);
   assert.equal(drawn.view.round?.players[1].hand?.length, 14);
   assert.equal(drawn.view.round?.players[0].hand, null);
+  assert.equal(drawn.service.room.phase, "discard");
+  assert.equal(drawn.view.phase, "discard");
+  assert.equal(drawn.view.legalActions.includes("discardTile"), true);
   assert.deepEqual(drawn.events, [{ type: "tileDrawn", seatId: 1, playerId: "player-2" }]);
 });
 
@@ -177,6 +180,9 @@ test("discards through the authoritative service and returns a redacted view", (
   assert.equal(discarded.view.round?.players[0].hand?.length, 13);
   assert.equal(discarded.view.round?.players[1].hand, null);
   assert.equal(discarded.view.round?.players[0].discards.length, 1);
+  assert.equal(discarded.service.room.phase, "claim");
+  assert.equal(discarded.view.phase, "claim");
+  assert.deepEqual(discarded.view.legalActions, []);
   assert.deepEqual(discarded.events, [
     { type: "tileDiscarded", seatId: 0, playerId: "player-1", tile: prepared.discard },
     { type: "claimWindowOpened", discardedBySeatId: 0, tile: prepared.discard, pendingPlayerIds: [1, 2, 3] },
@@ -206,6 +212,7 @@ test("rejects service draw when dingque is missing, out of turn, or outside draw
     ...prepared.service,
     room: {
       ...prepared.service.room,
+      phase: "discard" as const,
       round: {
         ...prepared.service.room.round!,
         currentPlayer: 0 as const,
@@ -255,6 +262,7 @@ test("rejects service discard before dingque, out of turn, outside discard phase
     ...prepared.service,
     room: {
       ...prepared.service.room,
+      phase: "draw" as const,
       round: {
         ...prepared.service.room.round!,
         currentPlayer: 1 as const,
@@ -412,6 +420,7 @@ function prepareServiceForPlayerTwoDraw(roomId: string): { service: RoomServiceS
       ...service,
       room: {
         ...service.room,
+        phase: "draw",
         round: {
           ...service.room.round!,
           currentPlayer: 1,

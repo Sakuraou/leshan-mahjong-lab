@@ -31,6 +31,7 @@ test("creates a waiting room with four empty seats", () => {
   assert.equal(room.id, "room-001");
   assert.equal(room.seed, "room-seed");
   assert.equal(room.status, "waiting");
+  assert.equal(room.phase, null);
   assert.equal(room.round, null);
   assert.deepEqual(
     room.seats.map((seat) => ({
@@ -172,6 +173,7 @@ test("starts a round after four seated players are ready", () => {
   }
 
   assert.equal(result.room.status, "dingque");
+  assert.equal(result.room.phase, "dingque");
   assert.equal(result.room.round?.seed, "start-seed");
   assert.equal(result.room.round?.players.length, 4);
   assert.equal(result.room.round?.players[0].hand.length, 14);
@@ -223,6 +225,17 @@ test("lets a seated player choose their missing suit after the round starts", ()
   });
 });
 
+test("moves from dingque to the dealer discard phase after the final choice", () => {
+  const { room } = readyRoomForDealerDiscard();
+  const dealerView = toClientVisibleRoomState(room, "p1");
+  const nextPlayerView = toClientVisibleRoomState(room, "p2");
+
+  assert.equal(room.status, "playing");
+  assert.equal(room.phase, "discard");
+  assert.deepEqual(dealerView.legalActions.includes("discardTile"), true);
+  assert.deepEqual(nextPlayerView.legalActions, []);
+});
+
 test("draws a tile for the current seated player after dingque is complete", () => {
   const room = readyRoomForPlayerTwoDraw();
   const beforeHandCount = room.round?.players[1].hand.length;
@@ -236,6 +249,8 @@ test("draws a tile for the current seated player after dingque is complete", () 
   }
 
   assert.equal(result.room.round?.players[1].hand.length, (beforeHandCount ?? 0) + 1);
+  assert.equal(room.phase, "draw");
+  assert.equal(result.room.phase, "discard");
   assert.equal(result.room.round?.wall.length, (beforeWallCount ?? 0) - 1);
   assert.deepEqual(result.room.eventLog.at(-1), { type: "tileDrawn", seatId: 1, playerId: "p2" });
 
@@ -269,7 +284,7 @@ test("rejects draw before start, before dingque, out of turn, and outside draw p
     reason: "notCurrentPlayer",
   });
 
-  assert.deepEqual(drawRoomTile({ ...ready, round: { ...ready.round!, currentPlayer: 0 } }, "p1"), {
+  assert.deepEqual(drawRoomTile({ ...ready, phase: "discard", round: { ...ready.round!, currentPlayer: 0 } }, "p1"), {
     ok: false,
     reason: "notDrawPhase",
   });
@@ -302,6 +317,7 @@ test("discards a tile for the current seated player after dingque is complete", 
     pendingPlayerIds: [1, 2, 3],
   });
   assert.equal(result.room.claimWindow?.nextPlayer, 1);
+  assert.equal(result.room.phase, "claim");
 
   const visibleToP1 = toClientVisibleRoomState(result.room, "p1");
   const visibleToP2 = toClientVisibleRoomState(result.room, "p2");
@@ -337,7 +353,7 @@ test("rejects discard before start, before dingque, out of turn, and outside dis
     reason: "notCurrentPlayer",
   });
 
-  assert.deepEqual(discardRoomTile({ ...room, round: { ...room.round!, currentPlayer: 1 } }, "p2", discard), {
+  assert.deepEqual(discardRoomTile({ ...room, phase: "draw", round: { ...room.round!, currentPlayer: 1 } }, "p2", discard), {
     ok: false,
     reason: "notDiscardPhase",
   });
@@ -377,6 +393,8 @@ test("closes the claim window after all eligible players pass", () => {
   }
 
   assert.equal(playerFourPassed.room.claimWindow, null);
+  assert.equal(playerFourPassed.room.phase, "draw");
+  assert.deepEqual(toClientVisibleRoomState(playerFourPassed.room, "p2").legalActions, ["drawTile"]);
   assert.deepEqual(playerFourPassed.room.eventLog.at(-1), {
     type: "claimWindowClosed",
     reason: "allPassed",
@@ -447,6 +465,7 @@ test("continues blood battle by skipping a player who claimed discard hu", () =>
   assert.equal(playerFourPassed.room.round?.players[1].hasWon, true);
   assert.equal(playerFourPassed.room.claimWindow, null);
   assert.equal(playerFourPassed.room.round?.currentPlayer, 2);
+  assert.equal(playerFourPassed.room.phase, "draw");
 });
 
 test("keeps hu priority over peng while a hu-capable player is unresolved", () => {
@@ -517,6 +536,7 @@ test("lets the current player claim self-draw hu and keeps the round moving", ()
   assert.equal(claimed.room.round?.players[0].hasWon, true);
   assert.equal(claimed.room.round?.currentPlayer, 1);
   assert.equal(claimed.room.roundEnd, null);
+  assert.equal(claimed.room.phase, "draw");
   assert.deepEqual(claimed.room.eventLog.at(-1), {
     type: "selfDrawHuClaimed",
     seatId: 0,
@@ -544,10 +564,14 @@ test("marks wall-empty round end with cha jiao placeholder results", () => {
   }
 
   assert.equal(claimed.room.roundEnd?.reason, "wallEmpty");
+  assert.equal(claimed.room.status, "ended");
+  assert.equal(claimed.room.phase, "ended");
   assert.equal(claimed.room.chaJiao?.reason, "wallEmpty");
   assert.deepEqual(claimed.room.chaJiao?.players.map((player) => player.seatId), [1, 2, 3]);
   assert.equal(claimed.room.chaJiao?.players.every((player) => typeof player.isListening === "boolean"), true);
+  assert.deepEqual(toClientVisibleRoomState(claimed.room, "p2").legalActions, []);
 });
+
 test("lets a player claim peng from the claim window", () => {
   const { room, discard } = readyRoomForPengOnly();
   const discarded = discardRoomTile(room, "p1", discard);
@@ -567,6 +591,7 @@ test("lets a player claim peng from the claim window", () => {
 
   assert.equal(claimed.room.claimWindow, null);
   assert.equal(claimed.room.round?.currentPlayer, 1);
+  assert.equal(claimed.room.phase, "discard");
   assert.equal(claimed.room.round?.players[0].discards.length, 0);
   assert.equal(claimed.room.round?.players[1].hand.length, 11);
   assert.deepEqual(claimed.room.round?.players[1].melds, [
@@ -610,6 +635,7 @@ test("lets a player claim ming gang from the claim window", () => {
 
   assert.equal(claimed.room.claimWindow, null);
   assert.equal(claimed.room.round?.currentPlayer, 1);
+  assert.equal(claimed.room.phase, "gangDraw");
   assert.equal(claimed.room.round?.players[0].discards.length, 0);
   assert.equal(claimed.room.round?.players[1].hand.length, 10);
   assert.deepEqual(claimed.room.round?.players[1].melds, [
@@ -664,6 +690,7 @@ test("lets the current player claim an gang after drawing", () => {
   }
 
   assert.equal(claimed.room.round?.players[0].hand.length, 10);
+  assert.equal(claimed.room.phase, "gangDraw");
   assert.deepEqual(claimed.room.round?.players[0].melds, [
     {
       type: "anGang",
@@ -735,6 +762,7 @@ test("lets the current gang player draw a replacement tile", () => {
   }
 
   assert.equal(drawn.room.gangDraw, null);
+  assert.equal(drawn.room.phase, "discard");
   assert.equal(drawn.room.round?.players[0].hand.length, beforeHandCount + 1);
   assert.equal(drawn.room.round?.wall.length, beforeWallCount - 1);
   assert.deepEqual(drawn.room.eventLog.at(-1), {
@@ -791,6 +819,7 @@ test("lets the current player claim ba gang from an existing peng meld", () => {
     passedPlayerIds: [],
     huClaims: [],
   });
+  assert.equal(claimed.room.phase, "gangDraw");
   assert.deepEqual(claimed.room.eventLog.at(-1), {
     type: "baGangClaimed",
     seatId: 0,
@@ -878,6 +907,7 @@ function readyRoomForPlayerTwoDraw(): RoomState {
 
   return {
     ...room,
+    phase: "draw",
     round: {
       ...room.round!,
       currentPlayer: 1,
@@ -910,6 +940,8 @@ function readyRoomForClaimHu(): { room: RoomState; discard: Tile } {
     discard,
     room: {
       ...started,
+      status: "playing",
+      phase: "discard",
       round: {
         ...started.round!,
         currentPlayer: 0,
@@ -1105,6 +1137,8 @@ function readyRoomForSelfDrawHu(): RoomState {
 
   return {
     ...started,
+    status: "playing",
+    phase: "discard",
     round: {
       ...started.round!,
       currentPlayer: 0,
@@ -1144,6 +1178,8 @@ function readyRoomForActiveGang(input: {
 
   return {
     ...started,
+    status: "playing",
+    phase: "discard",
     round: {
       ...started.round!,
       currentPlayer: 0,

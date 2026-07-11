@@ -138,6 +138,8 @@ test("broadcasts each session its own redacted view after startRound", () => {
   snapshots.forEach((message, index) => {
     assert.equal(message.recipientSessionToken, filled.sessions[index]);
     assert.equal(message.payload.view.localSeatId, index);
+    assert.equal(message.payload.view.phase, "dingque");
+    assert.deepEqual(message.payload.view.legalActions, ["chooseMissingSuit"]);
 
     const players = message.payload.view.round?.players;
     const visibleRound = message.payload.view.round;
@@ -221,6 +223,8 @@ test("maps drawTile and broadcasts redacted snapshots to every session", () => {
     assert.equal(playerTwo.handCount, 14);
     assert.equal(playerTwo.hand !== null, index === 1);
     assert.equal(message.payload.view.round?.wallCount, prepared.beforeWallCount - 1);
+    assert.equal(message.payload.view.phase, "discard");
+    assert.equal(message.payload.view.legalActions.includes("discardTile"), index === 1);
   });
   assert.deepEqual(snapshots[1].payload.events, [{ type: "tileDrawn", seatId: 1, playerId: "player-2" }]);
 });
@@ -248,6 +252,8 @@ test("maps discardTile and broadcasts redacted snapshots to every session", () =
     assert.equal(dealer.hand !== null, index === 0);
     assert.deepEqual(dealer.discards, [prepared.discard]);
     assert.equal(message.payload.view.round?.currentPlayer, 1);
+    assert.equal(message.payload.view.phase, "claim");
+    assert.equal(message.payload.view.legalActions.includes("passClaim"), index !== 0);
   });
   assert.deepEqual(snapshots[0].payload.events, [
     { type: "tileDiscarded", seatId: 0, playerId: "player-1", tile: prepared.discard },
@@ -322,6 +328,7 @@ function prepareAdapterForPlayerTwoDraw(roomId: string): {
             ...service,
             room: {
               ...service.room,
+              phase: "draw",
               round: {
                 ...service.room.round!,
                 currentPlayer: 1,

@@ -820,64 +820,38 @@ function WebSocketPreviewClientCard({
   const roundEnd = snapshot?.roundEnd ?? null;
   const chaJiao = snapshot?.chaJiao ?? null;
   const localSeat = snapshot?.localSeatId;
+  const phase = snapshot?.phase ?? null;
+  const legalActions = snapshot?.legalActions ?? [];
   const players = round?.players ?? [];
   const localPlayer = localSeat === null || localSeat === undefined ? null : round?.players[localSeat];
-  const allMissingSuitsChosen = round !== null && round.players.every((player) => player.missingSuit !== null);
-  const canChooseMissingSuit = round !== null && localPlayer?.missingSuit === null && client.sessionToken !== null;
-  const canDrawTile =
-    round !== null &&
-    roundEnd === null &&
-    claimWindow === null &&
-    gangDraw === null &&
-    localSeat === round.currentPlayer &&
-    allMissingSuitsChosen &&
-    localPlayer != null &&
-    localPlayer.handCount % 3 === 1 &&
-    client.sessionToken !== null;
+  const canChooseMissingSuit = legalActions.includes("chooseMissingSuit") && client.sessionToken !== null;
+  const canDrawTile = legalActions.includes("drawTile") && client.sessionToken !== null;
   const canDiscardTile =
-    round !== null &&
-    roundEnd === null &&
-    claimWindow === null &&
-    gangDraw === null &&
-    localSeat === round.currentPlayer &&
-    allMissingSuitsChosen &&
+    legalActions.includes("discardTile") &&
     localPlayer?.hand !== null &&
     localPlayer?.hand !== undefined &&
-    localPlayer.handCount % 3 === 2 &&
     client.sessionToken !== null;
-  const canPassClaim =
-    claimWindow !== null &&
-    localSeat !== null &&
-    localSeat !== undefined &&
-    claimWindow.pendingPlayerIds.includes(localSeat) &&
-    !claimWindow.passedPlayerIds.includes(localSeat) &&
-    !claimWindow.huClaims.some((claim) => claim.seatId === localSeat) &&
-    client.sessionToken !== null;
+  const canPassClaim = legalActions.includes("passClaim") && client.sessionToken !== null;
   const localClaimHuCheck = getLocalClaimHuCheck(snapshot, localSeat);
   const localSelfDrawHuCheck = getLocalSelfDrawHuCheck(snapshot, localSeat);
-  const canClaimHu = canPassClaim && (localClaimHuCheck?.canHu ?? false);
+  const canClaimHu = legalActions.includes("claimHu") && client.sessionToken !== null;
   const huPriorityActive = claimWindowHasHuPriority(snapshot);
-  const canClaimSelfDrawHu =
-    roundEnd === null &&
-    claimWindow === null &&
-    gangDraw === null &&
-    localSeat === round?.currentPlayer &&
-    localPlayer?.hand !== null &&
-    localPlayer?.hand !== undefined &&
-    localPlayer.handCount % 3 === 2 &&
-    (localSelfDrawHuCheck?.canHu ?? false) &&
-    client.sessionToken !== null;
-  const canClaimPeng = canPassClaim && !huPriorityActive && canLocalClaimPeng(snapshot, localSeat);
-  const canClaimMingGang = canPassClaim && !huPriorityActive && canLocalClaimMingGang(snapshot, localSeat);
-  const claimOrGangWindowOpen = claimWindow !== null || gangDraw !== null || roundEnd !== null;
-  const activeAnGangCandidates = getActiveAnGangCandidates(round, localSeat, localPlayer, allMissingSuitsChosen, claimOrGangWindowOpen);
-  const activeBaGangCandidates = getActiveBaGangCandidates(round, localSeat, localPlayer, allMissingSuitsChosen, claimOrGangWindowOpen);
-  const canDrawGangTile =
-    round !== null &&
-    gangDraw !== null &&
-    localSeat === round.currentPlayer &&
-    localSeat === gangDraw.seatId &&
-    client.sessionToken !== null;
+  const canClaimSelfDrawHu = legalActions.includes("claimSelfDrawHu") && client.sessionToken !== null;
+  const canClaimPeng = legalActions.includes("claimPeng") && client.sessionToken !== null;
+  const canClaimMingGang = legalActions.includes("claimMingGang") && client.sessionToken !== null;
+  const activeAnGangCandidates = getActiveAnGangCandidates(
+    round,
+    localSeat,
+    localPlayer,
+    legalActions.includes("claimAnGang"),
+  );
+  const activeBaGangCandidates = getActiveBaGangCandidates(
+    round,
+    localSeat,
+    localPlayer,
+    legalActions.includes("claimBaGang"),
+  );
+  const canDrawGangTile = legalActions.includes("drawGangTile") && client.sessionToken !== null;
   const canExpireClaimWindow = claimWindow !== null && client.sessionToken !== null;
   const visibleHand = localPlayer?.hand ?? [];
   const remainingPlayerCount = players.filter((player) => !player.hasWon).length;
@@ -888,12 +862,14 @@ function WebSocketPreviewClientCard({
       <p>session：{client.sessionToken ?? "暂无"}</p>
       <p>本地座位：{localSeat === null || localSeat === undefined ? "-" : localSeat + 1}</p>
       <p>房间状态：{snapshot?.status ?? "待快照"}</p>
+      <p>牌局阶段：{phase ?? "未开始"}</p>
+      <p>可用动作：{legalActions.length === 0 ? "暂无" : legalActions.join("、")}</p>
       <p>血战状态：{round === null ? "未开局" : `未胡 ${remainingPlayerCount} 人，${localPlayer?.hasWon ? "本家已胡" : "本家未胡"}`}</p>
       <p>牌局结束：{roundEnd === null ? "未结束" : roundEnd.reason === "onePlayerLeft" ? "只剩一位未胡玩家" : "牌墙已摸完"}</p>
       <p>查叫状态：{chaJiao === null ? "未生成" : `已生成，占位记录 ${chaJiao.players.length} 位未胡玩家`}</p>
       <p>定缺状态：{round === null ? "开局后可选" : suitText(localPlayer?.missingSuit ?? null)}</p>
-      <p>摸牌状态：{webSocketDrawHint(round, localSeat, localPlayer, allMissingSuitsChosen, claimWindow !== null, gangDraw)}</p>
-      <p>出牌状态：{webSocketDiscardHint(round, localSeat, localPlayer, allMissingSuitsChosen, claimOrGangWindowOpen)}</p>
+      <p>摸牌状态：{webSocketDrawHint(round, phase, localSeat, localPlayer)}</p>
+      <p>出牌状态：{webSocketDiscardHint(round, phase, localSeat, localPlayer)}</p>
       <p>杠后状态：{gangDraw === null ? "暂无杠后补牌" : `玩家 ${gangDraw.seatId + 1} 等待补牌`}</p>
       <p>响应状态：{webSocketClaimHint(snapshot, localSeat)}</p>
       <p>胡优先：{claimWindow === null ? "暂无响应窗口" : huPriorityActive ? "胡牌响应优先，碰/明杠暂时不可用" : "暂无胡牌优先锁定"}</p>
@@ -1001,11 +977,9 @@ function WebSocketPreviewClientCard({
 
 function webSocketDrawHint(
   round: ClientVisibleRoomState["round"],
+  phase: ClientVisibleRoomState["phase"],
   localSeat: PlayerId | null | undefined,
   localPlayer: VisiblePlayerState | null | undefined,
-  allMissingSuitsChosen: boolean,
-  claimWindowOpen: boolean,
-  gangDraw: ClientVisibleRoomState["gangDraw"],
 ): string {
   if (round === null) {
     return "开局后等待服务端判断";
@@ -1015,23 +989,23 @@ function webSocketDrawHint(
     return "尚未入座";
   }
 
-  if (!allMissingSuitsChosen) {
+  if (phase === "dingque") {
     return "等待所有玩家定缺";
   }
 
-  if (claimWindowOpen) {
+  if (phase === "claim") {
     return "等待碰杠胡响应结束";
   }
 
-  if (gangDraw !== null) {
-    return localSeat === gangDraw.seatId ? "请先进行杠后补牌" : `等待玩家 ${gangDraw.seatId + 1} 杠后补牌`;
+  if (phase === "gangDraw") {
+    return "当前处于杠后补牌阶段";
   }
 
   if (localSeat !== round.currentPlayer) {
     return `等待玩家 ${round.currentPlayer + 1}`;
   }
 
-  if (localPlayer.handCount % 3 !== 1) {
+  if (phase !== "draw") {
     return "当前不是摸牌阶段";
   }
 
@@ -1040,10 +1014,9 @@ function webSocketDrawHint(
 
 function webSocketDiscardHint(
   round: ClientVisibleRoomState["round"],
+  phase: ClientVisibleRoomState["phase"],
   localSeat: PlayerId | null | undefined,
   localPlayer: VisiblePlayerState | null | undefined,
-  allMissingSuitsChosen: boolean,
-  claimWindowOpen: boolean,
 ): string {
   if (round === null) {
     return "开局后等待服务端判断";
@@ -1053,11 +1026,11 @@ function webSocketDiscardHint(
     return "尚未入座";
   }
 
-  if (!allMissingSuitsChosen) {
+  if (phase === "dingque") {
     return "等待所有玩家定缺";
   }
 
-  if (claimWindowOpen) {
+  if (phase === "claim" || phase === "gangDraw" || phase === "qiangGang") {
     return "等待碰杠胡响应结束";
   }
 
@@ -1065,7 +1038,7 @@ function webSocketDiscardHint(
     return `等待玩家 ${round.currentPlayer + 1}`;
   }
 
-  if (localPlayer.handCount % 3 !== 2) {
+  if (phase !== "discard") {
     return "当前不是出牌阶段";
   }
 
@@ -1197,17 +1170,6 @@ function webSocketClaimHuHint(check: ReturnType<typeof checkDiscardHu> | null, c
   return `可胡，约 ${check.score.cappedPoints} 分 · ${check.patterns.map(patternText).join("、")}`;
 }
 
-function canLocalClaimPeng(snapshot: ClientVisibleRoomState | null, localSeat: PlayerId | null | undefined): boolean {
-  return canLocalClaimMeld(snapshot, localSeat, 2);
-}
-
-function canLocalClaimMingGang(
-  snapshot: ClientVisibleRoomState | null,
-  localSeat: PlayerId | null | undefined,
-): boolean {
-  return canLocalClaimMeld(snapshot, localSeat, 3);
-}
-
 function claimWindowHasHuPriority(snapshot: ClientVisibleRoomState | null): boolean {
   const claimWindow = snapshot?.claimWindow ?? null;
 
@@ -1228,43 +1190,13 @@ function claimWindowHasHuPriority(snapshot: ClientVisibleRoomState | null): bool
   });
 }
 
-function canLocalClaimMeld(
-  snapshot: ClientVisibleRoomState | null,
-  localSeat: PlayerId | null | undefined,
-  tilesNeededFromHand: 2 | 3,
-): boolean {
-  if (
-    snapshot?.round === null ||
-    snapshot?.round === undefined ||
-    snapshot.claimWindow === null ||
-    localSeat === null ||
-    localSeat === undefined ||
-    !snapshot.claimWindow.pendingPlayerIds.includes(localSeat)
-  ) {
-    return false;
-  }
-
-  const localHand = snapshot.round.players[localSeat].hand;
-
-  if (localHand === null) {
-    return false;
-  }
-
-  const usableCount = localHand.filter(
-    (tile) => tilesEqual(tile, snapshot.claimWindow!.tile) || isYaoJiTile(tile),
-  ).length;
-
-  return usableCount >= tilesNeededFromHand;
-}
-
 function getActiveAnGangCandidates(
   round: ClientVisibleRoomState["round"],
   localSeat: PlayerId | null | undefined,
   localPlayer: VisiblePlayerState | null | undefined,
-  allMissingSuitsChosen: boolean,
-  claimWindowOpen: boolean,
+  allowed: boolean,
 ): Tile[] {
-  if (!canTryActiveGang(round, localSeat, localPlayer, allMissingSuitsChosen, claimWindowOpen)) {
+  if (!canTryActiveGang(round, localSeat, localPlayer, allowed)) {
     return [];
   }
 
@@ -1276,10 +1208,9 @@ function getActiveBaGangCandidates(
   round: ClientVisibleRoomState["round"],
   localSeat: PlayerId | null | undefined,
   localPlayer: VisiblePlayerState | null | undefined,
-  allMissingSuitsChosen: boolean,
-  claimWindowOpen: boolean,
+  allowed: boolean,
 ): Tile[] {
-  if (!canTryActiveGang(round, localSeat, localPlayer, allMissingSuitsChosen, claimWindowOpen)) {
+  if (!canTryActiveGang(round, localSeat, localPlayer, allowed)) {
     return [];
   }
 
@@ -1293,8 +1224,7 @@ function canTryActiveGang(
   round: ClientVisibleRoomState["round"],
   localSeat: PlayerId | null | undefined,
   localPlayer: VisiblePlayerState | null | undefined,
-  allMissingSuitsChosen: boolean,
-  claimWindowOpen: boolean,
+  allowed: boolean,
 ): localPlayer is VisiblePlayerState & { hand: Tile[] } {
   return (
     round !== null &&
@@ -1302,9 +1232,7 @@ function canTryActiveGang(
     localPlayer !== null &&
     localPlayer !== undefined &&
     localPlayer.hand !== null &&
-    allMissingSuitsChosen &&
-    !claimWindowOpen &&
-    localPlayer.handCount % 3 === 2
+    allowed
   );
 }
 
@@ -3064,7 +2992,8 @@ function getTurnPhase(player: PlayerState): TurnPhase {
     return "chooseMissingSuit";
   }
 
-  return player.hand.length % 3 === 1 ? "draw" : "discard";
+  const drawHandSize = 13 - player.melds.length * 3;
+  return player.hand.length === drawHandSize ? "draw" : "discard";
 }
 
 function turnHintText(isLocalTurn: boolean, phase: TurnPhase, tableMode: TableMode): string {

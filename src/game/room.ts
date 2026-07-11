@@ -11,7 +11,22 @@ import type { Meld, PlayerId, Rank, RoundState, ScorePattern, Suit, Tile } from 
 
 const seatIds: PlayerId[] = [0, 1, 2, 3];
 
-export type RoomStatus = "waiting" | "dingque";
+export type RoomStatus = "waiting" | "dingque" | "playing" | "ended";
+
+export type RoundPhase = "dingque" | "draw" | "discard" | "claim" | "gangDraw" | "qiangGang" | "ended";
+
+export type ClientLegalAction =
+  | "chooseMissingSuit"
+  | "drawTile"
+  | "drawGangTile"
+  | "discardTile"
+  | "passClaim"
+  | "claimHu"
+  | "claimSelfDrawHu"
+  | "claimPeng"
+  | "claimMingGang"
+  | "claimAnGang"
+  | "claimBaGang";
 
 export type ClaimWindow = {
   discardedBySeatId: PlayerId;
@@ -114,6 +129,7 @@ export type RoomState = {
   id: string;
   seed: string;
   status: RoomStatus;
+  phase: RoundPhase | null;
   members: RoomMember[];
   seats: SeatState[];
   round: RoundState | null;
@@ -138,6 +154,8 @@ export type VisiblePlayerState = {
 export type ClientVisibleRoomState = {
   id: string;
   status: RoomStatus;
+  phase: RoundPhase | null;
+  legalActions: ClientLegalAction[];
   localSeatId: PlayerId | null;
   seats: SeatState[];
   round:
@@ -341,6 +359,7 @@ export function createRoom(input: CreateRoomInput): RoomState {
     id: input.id,
     seed: input.seed,
     status: "waiting",
+    phase: null,
     members: [],
     seats: seatIds.map((seatId) => ({
       seatId,
@@ -459,6 +478,7 @@ export function startRoomRound(room: RoomState, dealer: PlayerId = 0): StartRoom
     room: {
       ...room,
       status: "dingque",
+      phase: "dingque",
       round: startRound({ seed: room.seed, dealer }),
       claimWindow: null,
       baGangClaimWindow: null,
@@ -493,11 +513,14 @@ export function chooseMissingSuit(room: RoomState, playerId: string, suit: Suit)
       value.id === seat.seatId ? { ...value, missingSuit: suit } : value,
     ),
   };
+  const allMissingSuitsChosen = nextRound.players.every((value) => value.missingSuit !== null);
 
   return {
     ok: true,
     room: {
       ...room,
+      status: allMissingSuitsChosen ? "playing" : "dingque",
+      phase: allMissingSuitsChosen ? "discard" : "dingque",
       round: nextRound,
       eventLog: [...room.eventLog, { type: "missingSuitChosen", seatId: seat.seatId, playerId, suit }],
     },
@@ -535,9 +558,7 @@ export function drawRoomTile(room: RoomState, playerId: string): DrawRoomTileRes
     return { ok: false, reason: "notCurrentPlayer" };
   }
 
-  const player = room.round.players[seat.seatId];
-
-  if (player.hand.length % 3 !== 1) {
+  if (room.phase !== "draw") {
     return { ok: false, reason: "notDrawPhase" };
   }
 
@@ -551,6 +572,7 @@ export function drawRoomTile(room: RoomState, playerId: string): DrawRoomTileRes
     ok: true,
     room: finishRoundIfNeeded({
       ...room,
+      phase: "discard",
       round: result.round,
       baGangClaimWindow: null,
       eventLog: [...room.eventLog, { type: "tileDrawn", seatId: seat.seatId, playerId }],
@@ -581,7 +603,7 @@ export function drawGangTile(room: RoomState, playerId: string): DrawGangTileRes
     return { ok: false, reason: "claimWindowOpen" };
   }
 
-  if (room.gangDraw === null) {
+  if (room.gangDraw === null || room.phase !== "gangDraw") {
     return { ok: false, reason: "noGangDraw" };
   }
 
@@ -599,6 +621,7 @@ export function drawGangTile(room: RoomState, playerId: string): DrawGangTileRes
     ok: true,
     room: finishRoundIfNeeded({
       ...room,
+      phase: "discard",
       round: result.round,
       baGangClaimWindow: null,
       gangDraw: null,
@@ -641,9 +664,7 @@ export function discardRoomTile(room: RoomState, playerId: string, tile: Tile): 
     return { ok: false, reason: "notCurrentPlayer" };
   }
 
-  const player = room.round.players[seat.seatId];
-
-  if (player.hand.length % 3 !== 2) {
+  if (room.phase !== "discard") {
     return { ok: false, reason: "notDiscardPhase" };
   }
 
@@ -657,6 +678,7 @@ export function discardRoomTile(room: RoomState, playerId: string, tile: Tile): 
     ok: true,
     room: {
       ...room,
+      phase: "claim",
       round: result.round,
       claimWindow: createClaimWindow(result.round, seat.seatId, playerId, tile, result.nextPlayer),
       eventLog: [
@@ -684,7 +706,7 @@ export function passClaim(room: RoomState, playerId: string): PassClaimResult {
     return { ok: false, reason: "playerNotSeated" };
   }
 
-  if (room.claimWindow === null) {
+  if (room.claimWindow === null || room.phase !== "claim") {
     return { ok: false, reason: "noClaimWindow" };
   }
 
@@ -729,7 +751,7 @@ export function claimHu(room: RoomState, playerId: string): ClaimHuResult {
     return { ok: false, reason: "roundFinished" };
   }
 
-  if (room.claimWindow === null) {
+  if (room.claimWindow === null || room.phase !== "claim") {
     return { ok: false, reason: "noClaimWindow" };
   }
 
@@ -815,9 +837,7 @@ export function claimSelfDrawHu(room: RoomState, playerId: string): ClaimSelfDra
     return { ok: false, reason: "notCurrentPlayer" };
   }
 
-  const player = room.round.players[seat.seatId];
-
-  if (player.hand.length % 3 !== 2) {
+  if (room.phase !== "discard") {
     return { ok: false, reason: "notDiscardPhase" };
   }
 
@@ -839,6 +859,7 @@ export function claimSelfDrawHu(room: RoomState, playerId: string): ClaimSelfDra
     ok: true,
     room: finishRoundIfNeeded({
       ...room,
+      phase: "draw",
       round: nextRound,
       eventLog: [
         ...room.eventLog,
@@ -907,6 +928,7 @@ export function claimAnGang(room: RoomState, playerId: string, tile: Tile): Clai
     ok: true,
     room: {
       ...room,
+      phase: "gangDraw",
       round: nextRound,
       eventLog: [
         ...room.eventLog,
@@ -955,6 +977,7 @@ export function claimBaGang(room: RoomState, playerId: string, tile: Tile): Clai
     ok: true,
     room: {
       ...room,
+      phase: "gangDraw",
       round: nextRound,
       baGangClaimWindow: createBaGangClaimWindow(nextRound, ready.seat.seatId, playerId, tile),
       eventLog: [
@@ -1001,7 +1024,7 @@ function claimMeldFromDiscard(
     return { ok: false, reason: "roundFinished" };
   }
 
-  if (room.claimWindow === null) {
+  if (room.claimWindow === null || room.phase !== "claim") {
     return { ok: false, reason: "noClaimWindow" };
   }
 
@@ -1077,7 +1100,7 @@ function claimMeldFromDiscard(
 }
 
 export function expireClaimWindow(room: RoomState): ExpireClaimWindowResult {
-  if (room.claimWindow === null) {
+  if (room.claimWindow === null || room.phase !== "claim") {
     return { ok: false, reason: "noClaimWindow" };
   }
 
@@ -1093,6 +1116,8 @@ export function toClientVisibleRoomState(room: RoomState, playerId: string): Cli
   return {
     id: room.id,
     status: room.status,
+    phase: room.phase,
+    legalActions: clientLegalActions(room, localSeatId),
     localSeatId,
     seats: room.seats,
     round:
@@ -1150,6 +1175,89 @@ export function toClientVisibleRoomEvent(
     seatId: event.seatId,
     playerId: event.playerId,
   };
+}
+
+function clientLegalActions(room: RoomState, localSeatId: PlayerId | null): ClientLegalAction[] {
+  if (localSeatId === null || room.round === null || room.phase === null || room.phase === "ended") {
+    return [];
+  }
+
+  const player = room.round.players[localSeatId];
+
+  if (player.hasWon) {
+    return [];
+  }
+
+  if (room.phase === "dingque") {
+    return player.missingSuit === null ? ["chooseMissingSuit"] : [];
+  }
+
+  if (room.phase === "draw") {
+    return room.round.currentPlayer === localSeatId ? ["drawTile"] : [];
+  }
+
+  if (room.phase === "gangDraw") {
+    return room.gangDraw?.seatId === localSeatId ? ["drawGangTile"] : [];
+  }
+
+  if (room.phase === "discard") {
+    if (room.round.currentPlayer !== localSeatId) {
+      return [];
+    }
+
+    const actions: ClientLegalAction[] = ["discardTile"];
+
+    if (checkCurrentPlayerHu(room.round).canHu) {
+      actions.push("claimSelfDrawHu");
+    }
+
+    const uniqueHandTiles = player.hand.filter(
+      (candidate, index) => player.hand.findIndex((value) => sameTile(value, candidate)) === index,
+    );
+
+    if (uniqueHandTiles.some((candidate) => chooseActiveGangTiles(player.hand, candidate, 4) !== null)) {
+      actions.push("claimAnGang");
+    }
+
+    if (
+      player.melds.some(
+        (meld) => meld.type === "peng" && chooseActiveGangTiles(player.hand, meld.tile, 1) !== null,
+      )
+    ) {
+      actions.push("claimBaGang");
+    }
+
+    return actions;
+  }
+
+  if (room.phase !== "claim" || room.claimWindow === null) {
+    return [];
+  }
+
+  if (
+    !room.claimWindow.pendingPlayerIds.includes(localSeatId) ||
+    hasClaimResponse(room.claimWindow, localSeatId)
+  ) {
+    return [];
+  }
+
+  const actions: ClientLegalAction[] = ["passClaim"];
+
+  if (checkDiscardHu(room.round, localSeatId, room.claimWindow.tile).canHu) {
+    actions.push("claimHu");
+  }
+
+  if (room.claimWindow.huClaims.length === 0 && !hasUnresolvedHuOpportunity(room.round, room.claimWindow)) {
+    if (chooseClaimMeldTiles(player.hand, room.claimWindow.tile, 2) !== null) {
+      actions.push("claimPeng");
+    }
+
+    if (chooseClaimMeldTiles(player.hand, room.claimWindow.tile, 3) !== null) {
+      actions.push("claimMingGang");
+    }
+  }
+
+  return actions;
 }
 
 function createClaimWindow(
@@ -1244,11 +1352,11 @@ function prepareActiveGang(
     return { ok: false, reason: "notCurrentPlayer" };
   }
 
-  const player = room.round.players[seat.seatId];
-
-  if (player.hand.length % 3 !== 2) {
+  if (room.phase !== "discard") {
     return { ok: false, reason: "notDiscardPhase" };
   }
+
+  const player = room.round.players[seat.seatId];
 
   return { ok: true, round: room.round, seat, player };
 }
@@ -1323,9 +1431,12 @@ function closeClaimWindow(
   const nextPlayer =
     nextPlayerOverride ??
     (room.round === null ? claimWindow.nextPlayer : findNextActivePlayer(room.round, claimWindow.discardedBySeatId));
+  const nextPhase: RoundPhase =
+    nextPlayerOverride === undefined ? "draw" : room.gangDraw === null ? "discard" : "gangDraw";
 
   return {
     ...room,
+    phase: nextPhase,
     round: room.round === null ? null : { ...room.round, currentPlayer: nextPlayer },
     claimWindow: null,
     eventLog: [...room.eventLog, { type: "claimWindowClosed", reason, nextPlayer }],
@@ -1357,6 +1468,8 @@ function finishRoundIfNeeded(room: RoomState): RoomState {
 
   return {
     ...room,
+    status: "ended",
+    phase: "ended",
     roundEnd,
     chaJiao: reason === "wallEmpty" ? buildChaJiaoResult(room) : null,
     claimWindow: null,

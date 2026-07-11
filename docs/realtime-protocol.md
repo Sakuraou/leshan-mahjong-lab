@@ -347,7 +347,6 @@ decides a full state replacement is simpler than replaying events.
 type RoomSnapshotPayload = {
   view: ClientVisibleRoomState;
   lastEventId: number;
-  legalActions: LegalAction[];
 };
 ```
 
@@ -360,7 +359,6 @@ or a new full snapshot if patching is not worth the complexity.
 type RoomEventPayload = {
   event: RoomEvent;
   view: ClientVisibleRoomState;
-  legalActions: LegalAction[];
 };
 ```
 
@@ -430,7 +428,17 @@ output:
 ```ts
 type ClientVisibleRoomState = {
   id: string;
-  status: "waiting" | "dingque" | "playing" | "settlement";
+  status: "waiting" | "dingque" | "playing" | "ended";
+  phase:
+    | "dingque"
+    | "draw"
+    | "discard"
+    | "claim"
+    | "gangDraw"
+    | "qiangGang"
+    | "ended"
+    | null;
+  legalActions: ClientLegalAction[];
   localSeatId: 0 | 1 | 2 | 3 | null;
   seats: SeatState[];
   round: null | {
@@ -438,7 +446,6 @@ type ClientVisibleRoomState = {
     currentPlayer: 0 | 1 | 2 | 3;
     wallCount: number;
     players: VisiblePlayerState[];
-    phase: "dingque" | "draw" | "discard" | "claim" | "settlement";
   };
   eventLog: RoomEvent[];
 };
@@ -459,6 +466,9 @@ Visibility rule:
 - Every other seat receives `hand: null` and `handCount`.
 - Public discards, public readiness, current turn, wall count, and missing suit
   after selection are visible.
+- `phase` is server-authoritative, while `legalActions` is derived separately
+  for each session so the client never needs to infer turn legality from hand
+  counts.
 - The server never sends the full wall to any browser.
 
 This matches the frontend client-perspective switcher: changing perspective
@@ -470,18 +480,23 @@ The server should send legal actions so the client can render buttons without
 guessing timing windows:
 
 ```ts
-type LegalAction =
-  | { type: "takeSeat"; seats: Array<0 | 1 | 2 | 3> }
-  | { type: "toggleReady" }
-  | { type: "startRound" }
-  | { type: "chooseMissingSuit"; suits: Array<"bamboos" | "dots" | "characters"> }
-  | { type: "drawTile" }
-  | { type: "discardTile"; tiles: Tile[] }
-  | { type: "declareHu"; source: "selfDraw" | "discard"; points: number };
+type ClientLegalAction =
+  | "chooseMissingSuit"
+  | "drawTile"
+  | "drawGangTile"
+  | "discardTile"
+  | "passClaim"
+  | "claimHu"
+  | "claimSelfDrawHu"
+  | "claimPeng"
+  | "claimMingGang"
+  | "claimAnGang"
+  | "claimBaGang";
 ```
 
-The client can still calculate helper hints, but rendering enabled actions from
-the server avoids desync.
+The client can still calculate display-only hints and action candidates from
+its own visible hand, but button availability must come from the server to
+avoid desync. Lobby actions remain outside this round-phase list.
 
 ## Reconnect And Recovery
 
