@@ -167,6 +167,22 @@ export type RoomSocketClientMessage =
       clientMessageId: string;
       roomId: string;
       sessionToken: string;
+      type: "passQiangGang";
+      payload: Record<string, never>;
+    }
+  | {
+      protocolVersion: 1;
+      clientMessageId: string;
+      roomId: string;
+      sessionToken: string;
+      type: "claimQiangGangHu";
+      payload: Record<string, never>;
+    }
+  | {
+      protocolVersion: 1;
+      clientMessageId: string;
+      roomId: string;
+      sessionToken: string;
       type: "expireClaimWindow";
       payload: Record<string, never>;
     }
@@ -360,6 +376,8 @@ function handleRoomServiceAction(
         | "claimMingGang"
         | "claimAnGang"
         | "claimBaGang"
+        | "passQiangGang"
+        | "claimQiangGangHu"
         | "expireClaimWindow";
     }
   >,
@@ -404,6 +422,8 @@ function clientMessageToRoomAction(
         | "claimMingGang"
         | "claimAnGang"
         | "claimBaGang"
+        | "passQiangGang"
+        | "claimQiangGangHu"
         | "expireClaimWindow";
     }
   >,
@@ -458,6 +478,14 @@ function clientMessageToRoomAction(
 
   if (message.type === "claimBaGang") {
     return { type: "claimBaGang", tile: message.payload.tile };
+  }
+
+  if (message.type === "passQiangGang") {
+    return { type: "passQiangGang" };
+  }
+
+  if (message.type === "claimQiangGangHu") {
+    return { type: "claimQiangGangHu" };
   }
 
   if (message.type === "expireClaimWindow") {
@@ -562,6 +590,7 @@ function errorMessage(code: RoomSocketErrorCode): string {
     claimWindowOpen: "A claim window is currently open.",
     gangDrawPending: "A gang draw is pending.",
     noClaimWindow: "There is no active claim window.",
+    noQiangGangWindow: "There is no active rob-kong claim window.",
     noGangDraw: "There is no active gang draw.",
     claimNotAllowed: "This player cannot respond to the claim window.",
     claimAlreadyResponded: "This player has already responded to the claim window.",

@@ -8,12 +8,14 @@ import {
   claimHu,
   claimMingGang,
   claimPeng,
+  claimQiangGangHu,
   claimSelfDrawHu,
   chooseMissingSuit,
   drawGangTile,
   discardRoomTile,
   drawRoomTile,
   passClaim,
+  passQiangGang,
   joinRoom,
   startRoomRound,
   takeSeat,
@@ -21,6 +23,7 @@ import {
   toggleReady,
   toClientVisibleRoomState,
   type RoomState,
+  type PlayerId,
   type Suit,
   type Tile,
 } from "../../src/game/index.ts";
@@ -821,7 +824,7 @@ test("lets the current gang player draw a replacement tile", () => {
   });
 });
 
-test("lets the current player claim ba gang from an existing peng meld", () => {
+test("declares ba gang, keeps peng pending, and commits after every player passes", () => {
   const gangTile = tile("characters", 9);
   const room = readyRoomForActiveGang({
     hand: [
@@ -847,31 +850,154 @@ test("lets the current player claim ba gang from an existing peng meld", () => {
     return;
   }
 
-  assert.equal(claimed.room.round?.players[0].hand.length, 10);
+  assert.equal(claimed.room.round?.players[0].hand.length, 11);
   assert.deepEqual(claimed.room.round?.players[0].melds, [
     {
-      type: "baGang",
+      type: "peng",
       tile: gangTile,
-      tiles: [gangTile, gangTile, gangTile, gangTile],
+      tiles: [gangTile, gangTile, gangTile],
       fromPlayer: 2,
     },
   ]);
   assert.deepEqual(claimed.room.baGangClaimWindow, {
     upgradedBySeatId: 0,
     upgradedByPlayerId: "p1",
+    targetTile: gangTile,
     tile: gangTile,
+    pengMeldIndex: 0,
     pendingPlayerIds: [1, 2, 3],
     passedPlayerIds: [],
     huClaims: [],
   });
-  assert.equal(claimed.room.phase, "gangDraw");
+  assert.equal(claimed.room.phase, "qiangGang");
   assert.deepEqual(claimed.room.eventLog.at(-1), {
-    type: "baGangClaimed",
+    type: "baGangDeclared",
     seatId: 0,
     playerId: "p1",
     tile: gangTile,
-    usedTiles: [gangTile],
+    addedTile: gangTile,
   });
+
+  const p2Passed = passQiangGang(claimed.room, "p2");
+  assert.equal(p2Passed.ok, true);
+  if (!p2Passed.ok) return;
+  const p3Passed = passQiangGang(p2Passed.room, "p3");
+  assert.equal(p3Passed.ok, true);
+  if (!p3Passed.ok) return;
+  const p4Passed = passQiangGang(p3Passed.room, "p4");
+  assert.equal(p4Passed.ok, true);
+  if (!p4Passed.ok) return;
+
+  assert.equal(p4Passed.room.phase, "gangDraw");
+  assert.equal(p4Passed.room.baGangClaimWindow, null);
+  assert.equal(p4Passed.room.round?.players[0].hand.length, 10);
+  assert.equal(p4Passed.room.round?.players[0].melds[0].type, "baGang");
+  assert.deepEqual(p4Passed.room.gangDraw, {
+    seatId: 0,
+    playerId: "p1",
+    gangType: "baGang",
+    tile: gangTile,
+  });
+
+  const beforeWallCount = p4Passed.room.round?.wall.length ?? 0;
+  const drawn = drawGangTile(p4Passed.room, "p1");
+  assert.equal(drawn.ok, true);
+  if (!drawn.ok) return;
+  assert.equal(drawn.room.phase, "discard");
+  assert.equal(drawn.room.round?.wall.length, beforeWallCount - 1);
+  assert.equal(drawn.room.round?.players[0].hand.length, 11);
+});
+
+test("keeps the original peng when one player claims qiang gang hu", () => {
+  const { room, gangTile } = readyRoomForQiangGangHu([1]);
+  const declared = claimBaGang(room, "p1", gangTile);
+  assert.equal(declared.ok, true);
+  if (!declared.ok) return;
+
+  const responderView = toClientVisibleRoomState(declared.room, "p2");
+  assert.deepEqual(responderView.legalActions, ["passQiangGang", "claimQiangGangHu"]);
+  assert.equal("pengMeldIndex" in responderView.baGangClaimWindow!, false);
+
+  const hu = claimQiangGangHu(declared.room, "p2");
+  assert.equal(hu.ok, true);
+  if (!hu.ok) return;
+  const p3Passed = passQiangGang(hu.room, "p3");
+  assert.equal(p3Passed.ok, true);
+  if (!p3Passed.ok) return;
+  const resolved = passQiangGang(p3Passed.room, "p4");
+  assert.equal(resolved.ok, true);
+  if (!resolved.ok) return;
+
+  assert.equal(resolved.room.baGangClaimWindow, null);
+  assert.equal(resolved.room.gangDraw, null);
+  assert.equal(resolved.room.phase, "draw");
+  assert.equal(resolved.room.round?.players[1].hasWon, true);
+  assert.equal(resolved.room.round?.players[0].melds[0].type, "peng");
+  assert.equal(resolved.room.round?.players[0].hand.length, room.round!.players[0].hand.length - 1);
+  assert.equal(resolved.room.round?.currentPlayer, 2);
+  assert.deepEqual(
+    resolved.room.eventLog.filter((event) => event.type === "qiangGangHuClaimed").map((event) => ({
+      seatId: event.seatId,
+      responsibleSeatId: event.responsibleSeatId,
+      points: event.points,
+    })),
+    [{ seatId: 1, responsibleSeatId: 0, points: 16 }],
+  );
+});
+
+test("records multiple qiang gang hu claims before blood battle continues", () => {
+  const { room, gangTile } = readyRoomForQiangGangHu([1, 2]);
+  const declared = claimBaGang(room, "p1", gangTile);
+  assert.equal(declared.ok, true);
+  if (!declared.ok) return;
+  const p2Hu = claimQiangGangHu(declared.room, "p2");
+  assert.equal(p2Hu.ok, true);
+  if (!p2Hu.ok) return;
+  const p3Hu = claimQiangGangHu(p2Hu.room, "p3");
+  assert.equal(p3Hu.ok, true);
+  if (!p3Hu.ok) return;
+  const resolved = passQiangGang(p3Hu.room, "p4");
+  assert.equal(resolved.ok, true);
+  if (!resolved.ok) return;
+
+  assert.deepEqual(resolved.room.round?.players.map((player) => player.hasWon), [false, true, true, false]);
+  assert.equal(resolved.room.round?.players[0].melds[0].type, "peng");
+  assert.equal(resolved.room.phase, "draw");
+  assert.equal(resolved.room.round?.currentPlayer, 3);
+  assert.equal(resolved.room.eventLog.filter((event) => event.type === "qiangGangHuClaimed").length, 2);
+});
+
+test("ends blood battle when qiang gang hu leaves only one active player", () => {
+  const { room, gangTile } = readyRoomForQiangGangHu([1, 2, 3]);
+  const declared = claimBaGang(room, "p1", gangTile);
+  assert.equal(declared.ok, true);
+  if (!declared.ok) return;
+  const p2Hu = claimQiangGangHu(declared.room, "p2");
+  assert.equal(p2Hu.ok, true);
+  if (!p2Hu.ok) return;
+  const p3Hu = claimQiangGangHu(p2Hu.room, "p3");
+  assert.equal(p3Hu.ok, true);
+  if (!p3Hu.ok) return;
+  const resolved = claimQiangGangHu(p3Hu.room, "p4");
+  assert.equal(resolved.ok, true);
+  if (!resolved.ok) return;
+
+  assert.equal(resolved.room.status, "ended");
+  assert.equal(resolved.room.phase, "ended");
+  assert.deepEqual(resolved.room.roundEnd, { reason: "onePlayerLeft", remainingPlayerIds: [0] });
+  assert.equal(resolved.room.baGangClaimWindow, null);
+  assert.equal(resolved.room.round?.players[0].melds[0].type, "peng");
+});
+
+test("rejects illegal and already-won qiang gang responses", () => {
+  const { room, gangTile } = readyRoomForQiangGangHu([], [3]);
+  const declared = claimBaGang(room, "p1", gangTile);
+  assert.equal(declared.ok, true);
+  if (!declared.ok) return;
+
+  assert.deepEqual(claimQiangGangHu(declared.room, "p1"), { ok: false, reason: "claimNotAllowed" });
+  assert.deepEqual(passQiangGang(declared.room, "p4"), { ok: false, reason: "claimNotAllowed" });
+  assert.deepEqual(claimQiangGangHu(declared.room, "p3"), { ok: false, reason: "cannotHu" });
 });
 
 test("rejects choosing missing suit before start, without a seat, or twice", () => {
@@ -1233,6 +1359,79 @@ function readyRoomForActiveGang(input: {
           ? { ...player, hand: input.hand, melds: input.melds, missingSuit: "bamboos" }
           : { ...player, missingSuit: "dots" },
       ),
+    },
+  };
+}
+
+function readyRoomForQiangGangHu(
+  huSeats: PlayerId[],
+  alreadyWonSeats: PlayerId[] = [],
+): { room: RoomState; gangTile: Tile } {
+  const gangTile = tile("characters", 9);
+  const room = readyRoomForActiveGang({
+    hand: [
+      gangTile,
+      tile("characters", 2),
+      tile("characters", 3),
+      tile("characters", 4),
+      tile("characters", 5),
+      tile("characters", 6),
+      tile("characters", 7),
+      tile("dots", 2),
+      tile("dots", 3),
+      tile("dots", 4),
+      tile("characters", 8),
+    ],
+    melds: [{ type: "peng", tile: gangTile, tiles: [gangTile, gangTile, gangTile], fromPlayer: 2 }],
+  });
+  const waitingHand = [
+    tile("characters", 2),
+    tile("characters", 3),
+    tile("characters", 4),
+    tile("characters", 3),
+    tile("characters", 4),
+    tile("characters", 5),
+    tile("characters", 5),
+    tile("characters", 6),
+    tile("characters", 7),
+    tile("characters", 7),
+    tile("characters", 8),
+    tile("characters", 9),
+    tile("characters", 9),
+  ];
+  const blockedHand = [
+    tile("characters", 2),
+    tile("characters", 4),
+    tile("characters", 6),
+    tile("characters", 8),
+    tile("dots", 2),
+    tile("dots", 4),
+    tile("dots", 6),
+    tile("dots", 8),
+    tile("bamboos", 2),
+    tile("bamboos", 3),
+    tile("bamboos", 4),
+    tile("bamboos", 5),
+    tile("bamboos", 7),
+  ];
+
+  return {
+    gangTile,
+    room: {
+      ...room,
+      round: {
+        ...room.round!,
+        players: room.round!.players.map((player) =>
+          player.id === 0
+            ? player
+            : {
+                ...player,
+                hand: huSeats.includes(player.id) ? waitingHand : blockedHand,
+                missingSuit: "bamboos",
+                hasWon: alreadyWonSeats.includes(player.id),
+              },
+        ),
+      },
     },
   };
 }

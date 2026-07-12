@@ -182,6 +182,37 @@ test("accepts discardTile protocol messages and routes adapter rejections", () =
   assert.equal(actionRejected(result.outgoing[0].message).payload.code, "roundNotStarted");
 });
 
+test("accepts qiang gang protocol messages and routes adapter rejections", () => {
+  for (const type of ["passQiangGang", "claimQiangGangHu"] as const) {
+    let server = createConnectedServer(["conn-host"]);
+    server = handleRoomSocketRawMessage(
+      server,
+      "conn-host",
+      JSON.stringify(createRoomMessage(`m-create-${type}`, `server-room-${type}`, "Host")),
+    ).state;
+
+    const result = handleRoomSocketRawMessage(
+      server,
+      "conn-host",
+      JSON.stringify({
+        protocolVersion: 1,
+        clientMessageId: `m-${type}`,
+        roomId: `server-room-${type}`,
+        sessionToken: "session-1",
+        type,
+        payload: {},
+      } satisfies RoomSocketClientMessage),
+    );
+
+    assert.equal(result.errors.length, 0);
+    assert.deepEqual(
+      result.outgoing.map((message) => [message.connectionId, message.message.type]),
+      [["conn-host", "actionRejected"]],
+    );
+    assert.equal(actionRejected(result.outgoing[0].message).payload.code, "roundNotStarted");
+  }
+});
+
 test("rebinds a resumed session to the newest connection", () => {
   let server = createConnectedServer(["conn-host", "conn-resumed"]);
   server = handleRoomSocketRawMessage(

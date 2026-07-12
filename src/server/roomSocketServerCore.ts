@@ -257,6 +257,8 @@ function isRoomSocketClientMessage(value: unknown): value is RoomSocketClientMes
     value.type === "claimSelfDrawHu" ||
     value.type === "claimPeng" ||
     value.type === "claimMingGang" ||
+    value.type === "passQiangGang" ||
+    value.type === "claimQiangGangHu" ||
     value.type === "drawGangTile" ||
     value.type === "expireClaimWindow"
   ) {

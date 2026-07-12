@@ -491,12 +491,38 @@ type ClientLegalAction =
   | "claimPeng"
   | "claimMingGang"
   | "claimAnGang"
-  | "claimBaGang";
+  | "claimBaGang"
+  | "passQiangGang"
+  | "claimQiangGangHu";
 ```
 
 The client can still calculate display-only hints and action candidates from
 its own visible hand, but button availability must come from the server to
 avoid desync. Lobby actions remain outside this round-phase list.
+
+### Ba Gang And Qiang Gang Hu
+
+`claimBaGang` is a declaration, not an immediate meld upgrade. The server
+enters `qiangGang`, keeps the original `peng`, and stores both the peng's
+logical `targetTile` and the actual added tile. The latter may be a yao ji and
+is the tile passed to hu parsing.
+
+Eligible, not-yet-won opponents receive `passQiangGang` and, when the ordinary
+discard-hu check succeeds, `claimQiangGangHu` in their own `legalActions`.
+Multiple hu responses may be recorded for the same added tile. Each hu event
+includes the ba-gang declarer as the responsible player.
+
+When every eligible player has responded:
+
+- With no hu claim, the server removes the added tile, upgrades `peng` to
+  `baGang`, enters `gangDraw`, and enables `drawGangTile` for the declarer.
+- With one or more hu claims, the server removes the added tile, keeps the
+  original `peng`, skips winners, and continues blood battle from the next
+  active player or enters `ended`.
+
+The client-visible ba-gang window omits the internal meld index. Clients render
+the state and buttons from `phase`, `legalActions`, and the redacted window;
+they do not commit or roll back a meld locally.
 
 ## Reconnect And Recovery
 

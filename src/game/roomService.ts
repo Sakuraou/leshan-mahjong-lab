@@ -4,6 +4,7 @@ import {
   claimHu,
   claimMingGang,
   claimPeng,
+  claimQiangGangHu,
   claimSelfDrawHu,
   chooseMissingSuit,
   createRoom,
@@ -13,6 +14,7 @@ import {
   expireClaimWindow,
   joinRoom,
   passClaim,
+  passQiangGang,
   startRoomRound,
   takeSeat,
   toggleReady,
@@ -22,6 +24,7 @@ import {
   type ClaimBaGangResult,
   type ClaimMingGangResult,
   type ClaimPengResult,
+  type ClaimQiangGangHuResult,
   type ClaimSelfDrawHuResult,
   type ChooseMissingSuitResult,
   type ClientVisibleRoomState,
@@ -31,6 +34,7 @@ import {
   type ExpireClaimWindowResult,
   type JoinRoomResult,
   type PassClaimResult,
+  type PassQiangGangResult,
   type RoomEvent,
   type RoomState,
   type StartRoomRoundResult,
@@ -85,6 +89,8 @@ export type RoomAction =
   | { type: "claimMingGang" }
   | { type: "claimAnGang"; tile: Tile }
   | { type: "claimBaGang"; tile: Tile }
+  | { type: "passQiangGang" }
+  | { type: "claimQiangGangHu" }
   | { type: "expireClaimWindow" };
 
 export type RoomServiceError =
@@ -102,8 +108,10 @@ export type RoomServiceError =
   | ResultFailureReason<ClaimHuResult>
   | ResultFailureReason<ClaimMingGangResult>
   | ResultFailureReason<ClaimPengResult>
+  | ResultFailureReason<ClaimQiangGangHuResult>
   | ResultFailureReason<ClaimSelfDrawHuResult>
   | ResultFailureReason<PassClaimResult>
+  | ResultFailureReason<PassQiangGangResult>
   | ResultFailureReason<ExpireClaimWindowResult>;
 
 type ResultFailureReason<TResult> = TResult extends { ok: false; reason: infer TReason } ? TReason : never;
@@ -291,8 +299,10 @@ function applyRoomAction(
   | ClaimHuResult
   | ClaimMingGangResult
   | ClaimPengResult
+  | ClaimQiangGangHuResult
   | ClaimSelfDrawHuResult
   | PassClaimResult
+  | PassQiangGangResult
   | ExpireClaimWindowResult {
   if (action.type === "takeSeat") {
     return takeSeat(room, playerId, action.seatId);
@@ -344,6 +354,14 @@ function applyRoomAction(
 
   if (action.type === "claimBaGang") {
     return claimBaGang(room, playerId, action.tile);
+  }
+
+  if (action.type === "passQiangGang") {
+    return passQiangGang(room, playerId);
+  }
+
+  if (action.type === "claimQiangGangHu") {
+    return claimQiangGangHu(room, playerId);
   }
 
   if (action.type === "expireClaimWindow") {

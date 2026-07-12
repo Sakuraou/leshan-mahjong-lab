@@ -106,6 +106,9 @@ server authoritative.
   phase machine for dingque, draw, discard, claim, gang draw, and round end
 - [x] Publish the safe current phase and per-session `legalActions` in each
   redacted client snapshot
+- [x] Implement provisional ba-gang upgrades, the authoritative `qiangGang`
+  response phase, multi-winner rob-kong hu, rollback to the original peng, and
+  gang replacement draw after all players pass
 - Wrap `roomSocketAdapter` with a production-ready WebSocket server entry
 - Connect table UI to WebSocket room snapshots
 - Add reconnect with a local session token
