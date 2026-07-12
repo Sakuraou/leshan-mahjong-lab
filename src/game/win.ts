@@ -1,5 +1,6 @@
 import {
-  canHuWithLaizi,
+  findHuDecompositions,
+  type HuDecompositionCandidate,
   type HuCheckReason,
   type StandardHuDecomposition,
 } from "./hu.ts";
@@ -63,10 +64,9 @@ function checkPlayerHu(
     return { canHu: false, winMethod, hand, reason: "hasMissingSuitTile" };
   }
 
-  const structure = canHuWithLaizi({
+  const structure = findHuDecompositions({
     hand,
     fixedMeldCount: player.melds.length,
-    explain: true,
   });
 
   if (!structure.canHu) {
@@ -78,14 +78,12 @@ function checkPlayerHu(
     };
   }
 
-  const detected = detectHuPatterns({
-    decomposition: structure.decomposition,
-    melds: player.melds,
-    originalHand: hand,
-    winMethod,
-  });
-  const patterns = detected.patterns;
-  const score = calculateHuScore({ patterns, genCount: detected.genCount, winMethod });
+  const scoredCandidates = structure.candidates.map((candidate) =>
+    scoreHuCandidate(candidate, player.melds, hand, winMethod),
+  );
+  scoredCandidates.sort(compareScoredHuCandidates);
+  const best = scoredCandidates[0];
+  const { patterns, score } = best;
 
   if (!score.canWin) {
     return {
@@ -102,8 +100,55 @@ function checkPlayerHu(
     canHu: true,
     winMethod,
     hand,
-    decomposition: structure.decomposition,
+    decomposition: best.candidate.decomposition,
     patterns,
     score,
   };
+}
+
+type ScoredHuCandidate = {
+  candidate: HuDecompositionCandidate;
+  patterns: ScorePattern[];
+  score: HuScore;
+  totalMultiplier: number;
+};
+
+function scoreHuCandidate(
+  candidate: HuDecompositionCandidate,
+  melds: RoundState["players"][number]["melds"],
+  hand: Tile[],
+  winMethod: WinMethod,
+): ScoredHuCandidate {
+  const detected = detectHuPatterns({
+    decomposition: candidate.decomposition,
+    melds,
+    originalHand: hand,
+    winMethod,
+  });
+  const score = calculateHuScore({
+    patterns: detected.patterns,
+    genCount: detected.genCount,
+    winMethod,
+  });
+
+  return {
+    candidate,
+    patterns: detected.patterns,
+    score,
+    totalMultiplier: score.multiplierBeforeWinMethod * score.winMethodMultiplier,
+  };
+}
+
+function compareScoredHuCandidates(left: ScoredHuCandidate, right: ScoredHuCandidate): number {
+  return (
+    right.score.cappedPoints - left.score.cappedPoints ||
+    right.score.rawPoints - left.score.rawPoints ||
+    right.totalMultiplier - left.totalMultiplier ||
+    right.score.genCount - left.score.genCount ||
+    (left.candidate.signature < right.candidate.signature
+      ? -1
+      : left.candidate.signature > right.candidate.signature
+        ? 1
+        : 0)
+  );
 }

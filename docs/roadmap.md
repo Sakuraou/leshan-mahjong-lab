@@ -45,8 +45,10 @@ Goal: move from visual demo to real rule logic.
   `fixedMeldCount`
 - [x] Detect da dui, dan diao, qing yi se, wu ji, and resolved gen count from
   the explainable decomposition plus exposed melds
-- Select the highest-scoring decomposition when one laizi hand has multiple
+- [x] Select the highest-scoring decomposition when one laizi hand has multiple
   valid resolutions
+- [x] Bound multi-decomposition search to 128 unique candidates and 20,000
+  expanded states per hu check
 - [x] Build wall shuffle and dealing logic
 - [x] Implement basic draw and discard state transitions
 - [x] Implement basic win detection

@@ -2,7 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import type { Meld, PlayerState, RoundState, ScorePattern, Tile } from "../../src/game/index.ts";
-import { checkCurrentPlayerHu, checkDiscardHu, tile } from "../../src/game/index.ts";
+import {
+  calculateHuScore,
+  checkCurrentPlayerHu,
+  checkDiscardHu,
+  detectHuPatterns,
+  findHuDecompositions,
+  huDecompositionSignature,
+  tile,
+} from "../../src/game/index.ts";
 
 test("allows self-draw ping hu because self-draw doubles to 2 points", () => {
   const round = makeRound([
@@ -303,6 +311,137 @@ test("counts resolved roots and separates target-based qing yi se from source-ba
     assert.equal(result.score.genCount, value.genCount, value.name);
     assert.equal(result.score.rawPoints, value.rawPoints, value.name);
   }
+});
+
+test("selects da dui over lower-scoring sequence decompositions", () => {
+  const hand = [
+    ...repeatTile(tile("characters", 1), 3),
+    ...repeatTile(tile("characters", 2), 3),
+    ...repeatTile(tile("characters", 3), 3),
+    ...repeatTile(tile("characters", 4), 3),
+    ...repeatTile(tile("characters", 5), 2),
+  ];
+  const search = findHuDecompositions({ hand });
+  const result = checkCurrentPlayerHu(makeRound(hand));
+
+  assert.equal(search.canHu, true);
+  assert.equal(search.canHu && search.candidates.length > 1, true);
+  assert.equal(result.canHu, true);
+
+  if (!result.canHu) {
+    return;
+  }
+
+  assert.deepEqual(result.patterns, ["pingHu", "daDui", "wuJi", "qingYiSe"]);
+  assert.equal(result.score.rawPoints, 64);
+  assert.equal(result.decomposition.melds.every((meld) => meld.type === "triplet"), true);
+});
+
+test("checks every decomposition before applying the discard minimum", () => {
+  const winningHand = [
+    tile("bamboos", 1), tile("characters", 2), tile("characters", 3),
+    tile("characters", 5), tile("characters", 6), tile("characters", 7),
+    tile("dots", 2), tile("dots", 3), tile("dots", 4),
+    tile("characters", 9), tile("characters", 9),
+  ];
+  const melds = [makeMeld("peng", tile("characters", 4), 3)];
+  const search = findHuDecompositions({ hand: winningHand, fixedMeldCount: 1 });
+
+  assert.equal(search.canHu, true);
+
+  if (!search.canHu) {
+    return;
+  }
+
+  const firstCandidate = search.candidates[0];
+  const firstPatterns = detectHuPatterns({
+    decomposition: firstCandidate.decomposition,
+    melds,
+    originalHand: winningHand,
+    winMethod: "discard",
+  });
+  const firstScore = calculateHuScore({
+    patterns: firstPatterns.patterns,
+    genCount: firstPatterns.genCount,
+    winMethod: "discard",
+  });
+  assert.equal(firstScore.canWin, false);
+
+  const result = checkDiscardHu(
+    makeRound(winningHand.slice(0, -1), melds),
+    0,
+    tile("characters", 9),
+  );
+  assert.equal(result.canHu, true);
+
+  if (!result.canHu) {
+    return;
+  }
+
+  assert.equal(result.score.genCount, 1);
+  assert.equal(result.score.rawPoints, 2);
+  assert.equal(huDecompositionSignature(result.decomposition).includes("s:c2"), true);
+});
+
+test("chooses a qing yi se laizi target over off-suit pair targets", () => {
+  const hand = [
+    tile("characters", 2),
+    tile("characters", 3),
+    tile("characters", 4),
+    tile("bamboos", 1),
+    tile("dots", 1),
+  ];
+  const melds = [
+    makeMeld("peng", tile("characters", 2), 3),
+    makeMeld("peng", tile("characters", 5), 3),
+    makeMeld("peng", tile("characters", 8), 3),
+  ];
+  const search = findHuDecompositions({ hand, fixedMeldCount: 3 });
+
+  assert.equal(search.canHu, true);
+
+  if (!search.canHu) {
+    return;
+  }
+
+  const candidatePatterns = search.candidates.map((candidate) =>
+    detectHuPatterns({
+      decomposition: candidate.decomposition,
+      melds,
+      originalHand: hand,
+      winMethod: "selfDraw",
+    }).patterns,
+  );
+  assert.equal(candidatePatterns.some((patterns) => patterns.includes("qingYiSe")), true);
+  assert.equal(candidatePatterns.some((patterns) => !patterns.includes("qingYiSe")), true);
+
+  const result = checkCurrentPlayerHu(makeRound(hand, melds));
+  assert.equal(result.canHu, true);
+  assert.equal(result.canHu && result.patterns.includes("qingYiSe"), true);
+});
+
+test("uses the stable signature as the final score tie-breaker", () => {
+  const hand = [
+    tile("bamboos", 1), tile("characters", 2), tile("characters", 3),
+    tile("characters", 5), tile("characters", 6), tile("characters", 7),
+    tile("dots", 2), tile("dots", 3), tile("dots", 4),
+    tile("characters", 9), tile("characters", 9),
+  ];
+  const melds = [makeMeld("peng", tile("dots", 8), 3)];
+  const first = checkCurrentPlayerHu(makeRound(hand, melds));
+  const second = checkCurrentPlayerHu(makeRound(hand, melds));
+
+  assert.equal(first.canHu, true);
+  assert.equal(second.canHu, true);
+
+  if (!first.canHu || !second.canHu) {
+    return;
+  }
+
+  const firstSignature = huDecompositionSignature(first.decomposition);
+  assert.equal(first.score.rawPoints, 2);
+  assert.equal(firstSignature, "v1|f:1|p:c9|m:s:c1,s:c5,s:d2");
+  assert.equal(huDecompositionSignature(second.decomposition), firstSignature);
 });
 
 function exposedWinningHand(): Tile[] {

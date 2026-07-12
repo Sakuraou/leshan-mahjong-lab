@@ -52,10 +52,39 @@ export type HuExplainResult =
       reason: HuCheckReason;
     };
 
+export type FindHuDecompositionsInput = HuCheckInput & {
+  limit?: number;
+};
+
+export type HuDecompositionCandidate = {
+  signature: string;
+  decomposition: StandardHuDecomposition;
+};
+
+export type FindHuDecompositionsResult =
+  | {
+      canHu: true;
+      laiziCount: number;
+      candidates: HuDecompositionCandidate[];
+      truncated: boolean;
+      exploredNodes: number;
+    }
+  | {
+      canHu: false;
+      laiziCount: number;
+      candidates: [];
+      truncated: boolean;
+      exploredNodes: number;
+      reason: HuCheckReason;
+    };
+
 const tilesPerMeld = 3;
 const tilesPerPair = 2;
 const standardMeldCount = 4;
 const suitSize = 9;
+
+export const MAX_HU_DECOMPOSITIONS = 128;
+export const MAX_HU_SEARCH_NODES = 20_000;
 
 type PairPlan = {
   type: "pair";
@@ -75,6 +104,17 @@ type DecompositionPlan = {
 };
 
 type MeldMemo = Map<string, MeldPlan[] | null>;
+
+type MultiMeldMemo = Map<string, MeldPlan[][]>;
+
+type MultiSearchContext = {
+  candidateLimit: number;
+  nodeLimit: number;
+  exploredNodes: number;
+  truncated: boolean;
+  pureLaiziTargetIndexes: number[];
+  memo: MultiMeldMemo;
+};
 
 export function canHuWithLaizi(input: HuExplainInput): HuExplainResult;
 export function canHuWithLaizi(input: HuCheckInput | Tile[]): HuCheckResult;
@@ -118,6 +158,96 @@ export function canHuWithLaizi(
     laiziCount,
     decomposition: materializeDecomposition(plan, hand.filter(isYaoJi), fixedMeldCount),
   };
+}
+
+export function findHuDecompositions(input: FindHuDecompositionsInput): FindHuDecompositionsResult {
+  const hand = input.hand;
+  const fixedMeldCount = input.fixedMeldCount ?? 0;
+  const laiziCount = hand.filter(isYaoJi).length;
+
+  if (!Number.isInteger(fixedMeldCount) || fixedMeldCount < 0 || fixedMeldCount > standardMeldCount) {
+    return emptyDecompositionSearch(laiziCount, "invalidMeldCount");
+  }
+
+  const meldsNeeded = standardMeldCount - fixedMeldCount;
+  const expectedTileCount = meldsNeeded * tilesPerMeld + tilesPerPair;
+
+  if (hand.length !== expectedTileCount) {
+    return emptyDecompositionSearch(laiziCount, "invalidTileCount");
+  }
+
+  const countResult = countOrdinaryTiles(hand);
+
+  if (!countResult.valid) {
+    return emptyDecompositionSearch(laiziCount, "tooManyCopies");
+  }
+
+  const firstPlan = choosePairAndFormMelds(countResult.counts, countResult.laiziCount, meldsNeeded);
+
+  if (firstPlan === null) {
+    return emptyDecompositionSearch(laiziCount, "cannotDecompose");
+  }
+
+  const requestedLimit = input.limit === undefined
+    ? MAX_HU_DECOMPOSITIONS
+    : Number.isFinite(input.limit)
+      ? Math.floor(input.limit)
+      : 1;
+  const resultLimit = Math.min(Math.max(requestedLimit, 1), MAX_HU_DECOMPOSITIONS);
+  const context: MultiSearchContext = {
+    candidateLimit: resultLimit + 1,
+    nodeLimit: MAX_HU_SEARCH_NODES,
+    exploredNodes: 0,
+    truncated: false,
+    pureLaiziTargetIndexes: pureLaiziTargetIndexes(countResult.counts),
+    memo: new Map(),
+  };
+  const plans = findPairAndMeldPlans(
+    countResult.counts,
+    countResult.laiziCount,
+    meldsNeeded,
+    context,
+  );
+  const laiziSources = hand.filter(isYaoJi);
+  const candidatesBySignature = new Map<string, HuDecompositionCandidate>();
+
+  for (const plan of [firstPlan, ...plans]) {
+    const decomposition = materializeDecomposition(plan, laiziSources, fixedMeldCount);
+    const signature = huDecompositionSignature(decomposition);
+
+    if (!candidatesBySignature.has(signature)) {
+      candidatesBySignature.set(signature, { signature, decomposition });
+    }
+  }
+
+  const allCandidates = [...candidatesBySignature.values()].sort((left, right) =>
+    compareAscii(left.signature, right.signature),
+  );
+  const truncated = context.truncated || allCandidates.length > resultLimit;
+
+  return {
+    canHu: true,
+    laiziCount,
+    candidates: allCandidates.slice(0, resultLimit),
+    truncated,
+    exploredNodes: context.exploredNodes,
+  };
+}
+
+export function huDecompositionSignature(decomposition: StandardHuDecomposition): string {
+  const pairTarget = decomposition.pair.tiles[0]?.target;
+  const pairSignature = pairTarget === undefined ? "none" : tileSignature(pairTarget);
+  const meldSignatures = decomposition.melds
+    .map((meld) => {
+      const targets = meld.tiles.map((value) => value.target);
+      const target = meld.type === "sequence"
+        ? [...targets].sort((left, right) => left.rank - right.rank)[0]
+        : targets[0];
+      return `${meld.type === "sequence" ? "s" : "t"}:${tileSignature(target)}`;
+    })
+    .sort();
+
+  return `v1|f:${decomposition.fixedMeldCount}|p:${pairSignature}|m:${meldSignatures.join(",")}`;
 }
 
 type CountOrdinaryTilesResult =
@@ -197,6 +327,294 @@ function choosePairAndFormMelds(
   }
 
   return null;
+}
+
+function findPairAndMeldPlans(
+  counts: number[],
+  laiziCount: number,
+  meldsNeeded: number,
+  context: MultiSearchContext,
+): DecompositionPlan[] {
+  const plans = new Map<string, DecompositionPlan>();
+  const canonicalTargetIndex = counts.findIndex((count) => count > 0);
+  const fallbackTargetIndex = canonicalTargetIndex === -1 ? 0 : canonicalTargetIndex;
+
+  const addPlans = (pair: PairPlan, nextCounts: number[], remainingLaizi: number): boolean => {
+    const meldPlans = collectMeldPlans(
+      nextCounts,
+      remainingLaizi,
+      meldsNeeded,
+      fallbackTargetIndex,
+      context,
+    );
+
+    for (const melds of meldPlans) {
+      const plan = { pair, melds };
+      const signature = decompositionPlanSignature(plan);
+
+      if (!plans.has(signature)) {
+        plans.set(signature, plan);
+
+        if (plans.size >= context.candidateLimit) {
+          context.truncated = true;
+          return false;
+        }
+      }
+    }
+
+    return true;
+  };
+
+  for (let index = 0; index < counts.length; index += 1) {
+    if (counts[index] >= 2) {
+      const nextCounts = [...counts];
+      nextCounts[index] -= 2;
+
+      if (!addPlans(
+        { type: "pair", targetIndexes: [index, index], laiziMask: [false, false] },
+        nextCounts,
+        laiziCount,
+      )) {
+        break;
+      }
+    }
+
+    if (counts[index] >= 1 && laiziCount >= 1) {
+      const nextCounts = [...counts];
+      nextCounts[index] -= 1;
+
+      if (!addPlans(
+        { type: "pair", targetIndexes: [index, index], laiziMask: [false, true] },
+        nextCounts,
+        laiziCount - 1,
+      )) {
+        break;
+      }
+    }
+  }
+
+  if (plans.size < context.candidateLimit && laiziCount >= 2) {
+    for (const targetIndex of context.pureLaiziTargetIndexes) {
+      if (!addPlans(
+        {
+          type: "pair",
+          targetIndexes: [targetIndex, targetIndex],
+          laiziMask: [true, true],
+        },
+        [...counts],
+        laiziCount - 2,
+      )) {
+        break;
+      }
+    }
+  }
+
+  return [...plans.values()];
+}
+
+function collectMeldPlans(
+  counts: number[],
+  laiziCount: number,
+  meldsRemaining: number,
+  fallbackTargetIndex: number,
+  context: MultiSearchContext,
+): MeldPlan[][] {
+  const ordinaryTileCount = counts.reduce((sum, count) => sum + count, 0);
+
+  if (ordinaryTileCount + laiziCount !== meldsRemaining * tilesPerMeld) {
+    return [];
+  }
+
+  if (meldsRemaining === 0) {
+    return ordinaryTileCount === 0 && laiziCount === 0 ? [[]] : [];
+  }
+
+  if (ordinaryTileCount === 0) {
+    return pureLaiziMeldPlans(
+      meldsRemaining,
+      context.pureLaiziTargetIndexes.includes(fallbackTargetIndex)
+        ? context.pureLaiziTargetIndexes
+        : [fallbackTargetIndex, ...context.pureLaiziTargetIndexes],
+      context,
+    );
+  }
+
+  const memoKey = `${counts.join(",")}|${laiziCount}|${meldsRemaining}`;
+  const cached = context.memo.get(memoKey);
+
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  if (context.exploredNodes >= context.nodeLimit) {
+    context.truncated = true;
+    return [];
+  }
+
+  context.exploredNodes += 1;
+  const firstIndex = counts.findIndex((count) => count > 0);
+  const results = new Map<string, MeldPlan[]>();
+
+  const addResult = (meld: MeldPlan, remaining: MeldPlan[]): boolean => {
+    const candidate = [meld, ...remaining];
+    const signature = meldPlanListSignature(candidate);
+
+    if (!results.has(signature)) {
+      results.set(signature, candidate);
+
+      if (results.size >= context.candidateLimit) {
+        context.truncated = true;
+        return false;
+      }
+    }
+
+    return true;
+  };
+
+  const maximumNaturalUsed = Math.min(counts[firstIndex], tilesPerMeld);
+
+  tripletLoop:
+  for (let naturalUsed = maximumNaturalUsed; naturalUsed >= 1; naturalUsed -= 1) {
+    const laiziNeeded = tilesPerMeld - naturalUsed;
+
+    if (laiziNeeded > laiziCount) {
+      continue;
+    }
+
+    const nextCounts = [...counts];
+    nextCounts[firstIndex] -= naturalUsed;
+    const remainingPlans = collectMeldPlans(
+      nextCounts,
+      laiziCount - laiziNeeded,
+      meldsRemaining - 1,
+      fallbackTargetIndex,
+      context,
+    );
+    const triplet: MeldPlan = {
+      type: "triplet",
+      targetIndexes: [firstIndex, firstIndex, firstIndex],
+      laiziMask: [false, naturalUsed < 2, naturalUsed < 3],
+    };
+
+    for (const remaining of remainingPlans) {
+      if (!addResult(triplet, remaining)) {
+        break tripletLoop;
+      }
+    }
+  }
+
+  if (results.size < context.candidateLimit) {
+    const rankIndex = firstIndex % suitSize;
+    const suitStartIndex = firstIndex - rankIndex;
+
+    sequenceLoop:
+    for (let offset = 0; offset <= 2; offset += 1) {
+      const startRankIndex = rankIndex - offset;
+
+      if (startRankIndex < 0 || startRankIndex > 6) {
+        continue;
+      }
+
+      const targetIndexes: [number, number, number] = [
+        suitStartIndex + startRankIndex,
+        suitStartIndex + startRankIndex + 1,
+        suitStartIndex + startRankIndex + 2,
+      ];
+
+      for (const laiziMask of sequenceLaiziMasks(counts, targetIndexes, firstIndex)) {
+        const laiziNeeded = laiziMask.filter(Boolean).length;
+
+        if (laiziNeeded > laiziCount) {
+          continue;
+        }
+
+        const nextCounts = [...counts];
+
+        targetIndexes.forEach((targetIndex, position) => {
+          if (!laiziMask[position]) {
+            nextCounts[targetIndex] -= 1;
+          }
+        });
+
+        const remainingPlans = collectMeldPlans(
+          nextCounts,
+          laiziCount - laiziNeeded,
+          meldsRemaining - 1,
+          fallbackTargetIndex,
+          context,
+        );
+        const sequence: MeldPlan = { type: "sequence", targetIndexes, laiziMask };
+
+        for (const remaining of remainingPlans) {
+          if (!addResult(sequence, remaining)) {
+            break sequenceLoop;
+          }
+        }
+      }
+    }
+  }
+
+  const collected = [...results.values()];
+  context.memo.set(memoKey, collected);
+  return collected;
+}
+
+function decompositionPlanSignature(plan: DecompositionPlan): string {
+  return `p:${plan.pair.targetIndexes[0]}|m:${meldPlanListSignature(plan.melds)}`;
+}
+
+function meldPlanListSignature(melds: MeldPlan[]): string {
+  return melds
+    .map((meld) => `${meld.type === "sequence" ? "s" : "t"}:${meld.targetIndexes.join("-")}`)
+    .sort()
+    .join(",");
+}
+
+function pureLaiziTargetIndexes(counts: number[]): number[] {
+  const targets = new Set<number>([0, suitSize, suitSize * 2]);
+
+  counts.forEach((count, index) => {
+    if (count > 0) {
+      targets.add(index);
+    }
+  });
+
+  return [...targets].sort((left, right) => left - right);
+}
+
+function pureLaiziMeldPlans(
+  meldsRemaining: number,
+  targetIndexes: number[],
+  context: MultiSearchContext,
+): MeldPlan[][] {
+  const results: MeldPlan[][] = [];
+
+  const visit = (startIndex: number, selected: number[]): void => {
+    if (results.length >= context.candidateLimit) {
+      context.truncated = true;
+      return;
+    }
+
+    if (selected.length === meldsRemaining) {
+      results.push(selected.map((targetIndex) => ({
+        type: "triplet" as const,
+        targetIndexes: [targetIndex, targetIndex, targetIndex],
+        laiziMask: [true, true, true],
+      })));
+      return;
+    }
+
+    for (let index = startIndex; index < targetIndexes.length; index += 1) {
+      visit(index, [...selected, targetIndexes[index]]);
+
+      if (results.length >= context.candidateLimit) {
+        return;
+      }
+    }
+  };
+
+  visit(0, []);
+  return results;
 }
 
 function formMelds(
@@ -414,6 +832,33 @@ function materializeDecomposition(
     pair: { type: "pair", tiles: resolveGroup(plan.pair) },
     melds: plan.melds.map((meld) => ({ type: meld.type, tiles: resolveGroup(meld) })),
   };
+}
+
+function emptyDecompositionSearch(
+  laiziCount: number,
+  reason: HuCheckReason,
+): FindHuDecompositionsResult {
+  return {
+    canHu: false,
+    laiziCount,
+    candidates: [],
+    truncated: false,
+    exploredNodes: 0,
+    reason,
+  };
+}
+
+function tileSignature(value: Tile): string {
+  const suitCode: Record<Suit, string> = {
+    characters: "c",
+    dots: "d",
+    bamboos: "b",
+  };
+  return `${suitCode[value.suit]}${value.rank}`;
+}
+
+function compareAscii(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 function tileIndex(value: Tile): number {

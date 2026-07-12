@@ -1,7 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { canHuWithLaizi, tile } from "../../src/game/index.ts";
+import {
+  canHuWithLaizi,
+  findHuDecompositions,
+  MAX_HU_DECOMPOSITIONS,
+  MAX_HU_SEARCH_NODES,
+  tile,
+} from "../../src/game/index.ts";
 
 test("recognizes a standard hand without laizi", () => {
   const result = canHuWithLaizi([
@@ -249,3 +255,64 @@ test("rejects non-integer or out-of-range fixed meld counts", () => {
     });
   }
 });
+
+test("enumerates deduplicated decompositions in stable order", () => {
+  const hand = [
+    ...repeatTile(tile("characters", 1), 3),
+    ...repeatTile(tile("characters", 2), 3),
+    ...repeatTile(tile("characters", 3), 3),
+    ...repeatTile(tile("characters", 4), 3),
+    ...repeatTile(tile("characters", 5), 2),
+  ];
+  const first = findHuDecompositions({ hand });
+  const second = findHuDecompositions({ hand });
+  const limited = findHuDecompositions({ hand, limit: 2 });
+
+  assert.equal(first.canHu, true);
+  assert.equal(second.canHu, true);
+  assert.equal(limited.canHu, true);
+
+  if (!first.canHu || !second.canHu || !limited.canHu) {
+    return;
+  }
+
+  const signatures = first.candidates.map((candidate) => candidate.signature);
+  assert.equal(signatures.length, new Set(signatures).size);
+  assert.deepEqual(second.candidates.map((candidate) => candidate.signature), signatures);
+  assert.equal(first.candidates.some((candidate) => candidate.decomposition.melds.every((meld) => meld.type === "triplet")), true);
+  assert.equal(first.candidates.some((candidate) => candidate.decomposition.melds.some((meld) => meld.type === "sequence")), true);
+  assert.equal(limited.candidates.length, 2);
+  assert.equal(limited.truncated, true);
+});
+
+test("bounds decomposition search for all eight laizi", () => {
+  const hand = [
+    ...repeatTile(tile("bamboos", 1), 4),
+    ...repeatTile(tile("dots", 1), 4),
+    tile("characters", 2),
+    tile("characters", 3),
+    tile("characters", 4),
+    tile("characters", 5),
+    tile("characters", 6),
+    tile("characters", 7),
+  ];
+  const result = findHuDecompositions({ hand });
+
+  assert.equal(result.canHu, true);
+
+  if (!result.canHu) {
+    return;
+  }
+
+  assert.equal(result.candidates.length, MAX_HU_DECOMPOSITIONS);
+  assert.equal(result.truncated, true);
+  assert.equal(result.exploredNodes <= MAX_HU_SEARCH_NODES, true);
+  assert.equal(
+    new Set(result.candidates.map((candidate) => candidate.signature)).size,
+    result.candidates.length,
+  );
+});
+
+function repeatTile(value: ReturnType<typeof tile>, count: number): ReturnType<typeof tile>[] {
+  return Array.from({ length: count }, () => value);
+}
