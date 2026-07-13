@@ -149,6 +149,8 @@ export type ChickenSettlementReason = "sanJi" | "siJi" | "qiangGangSanJiLiabilit
 
 export type GangSettlementReason = GangType;
 
+export type ChaJiaoSettlementReason = "chaJiao";
+
 export type ChickenSuit = Extract<Suit, "bamboos" | "dots">;
 
 export type RoundEndReason = "onePlayerLeft" | "wallEmpty";
@@ -243,10 +245,34 @@ export type GangSettlementEntry = {
   };
 };
 
+export type ChaJiaoSettlementEntry = {
+  id: number;
+  batchId: number;
+  chaJiaoId: string;
+  winnerSeatId: PlayerId;
+  winnerPlayerId: string;
+  loserSeatId: PlayerId;
+  loserPlayerId: string;
+  reason: ChaJiaoSettlementReason;
+  winningTile: Tile;
+  patterns: ScorePattern[];
+  genCount: number;
+  sourceWindowId: null;
+  sourceSettlementId: string;
+  basePoints: 1;
+  rawPoints: number;
+  finalPoints: number;
+  relatedEvent: {
+    type: "roundEnded";
+    reason: "wallEmpty";
+  };
+};
+
 export type SettlementLedgerEntry =
   | HuSettlementEntry
   | ChickenSettlementEntry
-  | GangSettlementEntry;
+  | GangSettlementEntry
+  | ChaJiaoSettlementEntry;
 
 export type HuSettlementTransfer = Omit<HuSettlementEntry, "id" | "batchId" | "basePoints">;
 
@@ -285,6 +311,11 @@ export type GangSettlementTransfer = Omit<
   points: 1 | 2 | 4;
 };
 
+export type ChaJiaoSettlementTransfer = Omit<
+  ChaJiaoSettlementEntry,
+  "id" | "batchId" | "basePoints" | "sourceSettlementId"
+>;
+
 export type HuSettlementBatchResult = {
   scores: PlayerScoreBalance[];
   ledger: SettlementLedgerEntry[];
@@ -302,6 +333,13 @@ export type GangSettlementBatchResult = {
   scores: PlayerScoreBalance[];
   ledger: SettlementLedgerEntry[];
   entries: GangSettlementEntry[];
+  resolvedSettlementIds: string[];
+};
+
+export type ChaJiaoSettlementBatchResult = {
+  scores: PlayerScoreBalance[];
+  ledger: SettlementLedgerEntry[];
+  entries: ChaJiaoSettlementEntry[];
   resolvedSettlementIds: string[];
 };
 
@@ -518,6 +556,60 @@ export function applyGangSettlementBatch(
     rawPoints: transfer.points,
     finalPoints: transfer.points,
     relatedEvent: transfer.relatedEvent,
+  }));
+  const deltas = new Map<PlayerId, number>();
+
+  for (const entry of entries) {
+    deltas.set(entry.winnerSeatId, (deltas.get(entry.winnerSeatId) ?? 0) + entry.finalPoints);
+    deltas.set(entry.loserSeatId, (deltas.get(entry.loserSeatId) ?? 0) - entry.finalPoints);
+  }
+
+  return {
+    scores: scores.map((score) => ({
+      ...score,
+      points: score.points + (deltas.get(score.seatId) ?? 0),
+    })),
+    ledger: [...ledger, ...entries],
+    entries,
+    resolvedSettlementIds: nextResolvedSettlementIds,
+  };
+}
+
+export function applyChaJiaoSettlementBatch(
+  scores: PlayerScoreBalance[],
+  ledger: SettlementLedgerEntry[],
+  resolvedSettlementIds: string[],
+  sourceSettlementId: string,
+  transfers: ChaJiaoSettlementTransfer[],
+): ChaJiaoSettlementBatchResult {
+  if (resolvedSettlementIds.includes(sourceSettlementId)) {
+    return { scores, ledger, entries: [], resolvedSettlementIds };
+  }
+
+  const nextResolvedSettlementIds = [...resolvedSettlementIds, sourceSettlementId];
+
+  if (transfers.length === 0) {
+    return {
+      scores,
+      ledger,
+      entries: [],
+      resolvedSettlementIds: nextResolvedSettlementIds,
+    };
+  }
+
+  const batchId = (ledger.at(-1)?.batchId ?? 0) + 1;
+  const orderedTransfers = [...transfers].sort(
+    (left, right) =>
+      left.winnerSeatId - right.winnerSeatId ||
+      left.loserSeatId - right.loserSeatId ||
+      left.chaJiaoId.localeCompare(right.chaJiaoId),
+  );
+  const entries = orderedTransfers.map((transfer, index): ChaJiaoSettlementEntry => ({
+    ...transfer,
+    id: ledger.length + index + 1,
+    batchId,
+    sourceSettlementId,
+    basePoints: 1,
   }));
   const deltas = new Map<PlayerId, number>();
 

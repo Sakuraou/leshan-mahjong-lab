@@ -19,6 +19,7 @@ import {
   passQiangGang,
   joinRoom,
   settleRoundChickenPayments,
+  settleRoundChaJiaoPayments,
   settleRoundGangPayments,
   startRoomRound,
   takeSeat,
@@ -27,9 +28,11 @@ import {
   toggleReady,
   toClientVisibleRoomState,
   type RoomState,
+  type ChaJiaoSettlementEntry,
   type ChickenSettlementEntry,
   type ClaimedWinningTile,
   type GangSettlementEntry,
+  type Meld,
   type PlayerId,
   type QiangGangSanJiLiabilityEntry,
   type Suit,
@@ -721,7 +724,7 @@ test("offers exposed-hand self-draw only after a real draw", () => {
   assert.deepEqual(claimSelfDrawHu(roomAfterPeng, "p1"), { ok: false, reason: "notDiscardPhase" });
 });
 
-test("marks wall-empty round end with cha jiao placeholder results", () => {
+test("marks wall-empty round end with authoritative cha jiao results", () => {
   const room = readyRoomForSelfDrawHu();
   const roomWithEmptyWall: RoomState = {
     ...room,
@@ -745,6 +748,152 @@ test("marks wall-empty round end with cha jiao placeholder results", () => {
   assert.deepEqual(claimed.room.chaJiao?.players.map((player) => player.seatId), [1, 2, 3]);
   assert.equal(claimed.room.chaJiao?.players.every((player) => typeof player.isListening === "boolean"), true);
   assert.deepEqual(toClientVisibleRoomState(claimed.room, "p2").legalActions, []);
+});
+
+test("settles one listener against one non-listener at wall empty", () => {
+  const ended = endedRoomForChaJiao([
+    { hand: notListeningHand() },
+    { hand: listeningSixteenHand() },
+    { hand: [], hasWon: true },
+    { hand: [], hasWon: true },
+  ]);
+  const entries = chaJiaoEntries(ended);
+
+  assert.deepEqual(ended.scores.map((score) => score.points), [-16, 16, 0, 0]);
+  assert.deepEqual(
+    entries.map((entry) => [entry.winnerSeatId, entry.loserSeatId, entry.rawPoints, entry.finalPoints]),
+    [[1, 0, 16, 16]],
+  );
+  assert.deepEqual(ended.chaJiao?.players.map((player) => [player.seatId, player.isListening]), [
+    [0, false],
+    [1, true],
+  ]);
+});
+
+test("settles every non-listener against every listener", () => {
+  const ended = endedRoomForChaJiao([
+    { hand: notListeningHand() },
+    { hand: notListeningHand() },
+    { hand: listeningSixteenHand() },
+    { hand: listeningSixteenHand() },
+  ]);
+  const entries = chaJiaoEntries(ended);
+
+  assert.deepEqual(ended.scores.map((score) => score.points), [-32, -32, 32, 32]);
+  assert.deepEqual(
+    entries.map((entry) => [entry.winnerSeatId, entry.loserSeatId, entry.finalPoints]),
+    [[2, 0, 16], [2, 1, 16], [3, 0, 16], [3, 1, 16]],
+  );
+  assert.equal(new Set(entries.map((entry) => entry.batchId)).size, 1);
+});
+
+test("writes no cha jiao transfers when everyone or no one is listening", () => {
+  for (const handFactory of [listeningSixteenHand, notListeningHand]) {
+    const ended = endedRoomForChaJiao(
+      [0, 1, 2, 3].map(() => ({ hand: handFactory() })),
+    );
+
+    assert.deepEqual(ended.scores.map((score) => score.points), [0, 0, 0, 0]);
+    assert.deepEqual(chaJiaoEntries(ended), []);
+    assert.equal(
+      ended.resolvedSettlementIds.filter((value) => value.endsWith(":chaJiao")).length,
+      1,
+    );
+  }
+});
+
+test("excludes winners from cha jiao while preserving their earlier hu ledger", () => {
+  const won = claimSelfDrawHu(readyRoomForSelfDrawHu(), "p1");
+  assert.equal(won.ok, true);
+  if (!won.ok) return;
+  const originalLedger = won.room.settlementLedger;
+  const originalWinnerScore = won.room.scores[0].points;
+  const ended = endedRoomForChaJiao([
+    {},
+    { hand: notListeningHand() },
+    { hand: listeningSixteenHand() },
+    { hand: notListeningHand() },
+  ], won.room);
+
+  assert.equal(ended.scores[0].points, originalWinnerScore);
+  assert.deepEqual(ended.settlementLedger.slice(0, originalLedger.length), originalLedger);
+  assert.equal(chaJiaoEntries(ended).some((entry) => entry.winnerSeatId === 0 || entry.loserSeatId === 0), false);
+  assert.deepEqual(ended.chaJiao?.players.map((player) => player.seatId), [1, 2, 3]);
+});
+
+test("caps cha jiao at 64 and keeps the uncapped discard score", () => {
+  const ended = endedRoomForChaJiao([
+    { hand: notListeningHand() },
+    { hand: [tile("characters", 9)], melds: cappedChaJiaoMelds() },
+    { hand: [], hasWon: true },
+    { hand: [], hasWon: true },
+  ]);
+  const entry = chaJiaoEntries(ended)[0];
+
+  assert.ok(entry.rawPoints > 64);
+  assert.equal(entry.finalPoints, 64);
+  assert.deepEqual(ended.scores.map((score) => score.points), [-64, 64, 0, 0]);
+  assert.equal(ended.chaJiao?.players.find((player) => player.seatId === 1)?.maxHuPoints, 64);
+});
+
+test("uses the highest laizi-assisted discard score for cha jiao", () => {
+  const ended = endedRoomForChaJiao([
+    { hand: notListeningHand() },
+    {
+      hand: [
+        tile("characters", 2),
+        tile("characters", 3),
+        tile("characters", 4),
+        tile("bamboos", 1),
+      ],
+      melds: [
+        makeTestMeld("peng", tile("characters", 2), 3),
+        makeTestMeld("peng", tile("characters", 5), 3),
+        makeTestMeld("peng", tile("characters", 8), 3),
+      ],
+    },
+    { hand: [], hasWon: true },
+    { hand: [], hasWon: true },
+  ]);
+  const listener = ended.chaJiao?.players.find((player) => player.seatId === 1);
+
+  assert.equal(listener?.maxHuPoints, 16);
+  assert.equal(chaJiaoEntries(ended)[0].finalPoints, 16);
+});
+
+test("keeps cha jiao settlement idempotent and private until wall empty", () => {
+  const playing = readyRoomForChaJiao([
+    { hand: notListeningHand() },
+    { hand: listeningSixteenHand() },
+    { hand: [], hasWon: true },
+    { hand: [], hasWon: true },
+  ]);
+  const playingView = toClientVisibleRoomState(playing, "p1");
+  const serializedPlaying = JSON.stringify(playingView);
+
+  assert.equal(playingView.chaJiao, null);
+  assert.equal(playingView.settlementLedger.some((entry) => entry.reason === "chaJiao"), false);
+  assert.equal(serializedPlaying.includes("maxHuPoints"), false);
+  assert.equal(serializedPlaying.includes("chaJiaoSettlementFacts"), false);
+
+  const ended = settleRoundChaJiaoPayments({
+    ...playing,
+    status: "ended",
+    phase: "ended",
+    roundEnd: { reason: "wallEmpty", remainingPlayerIds: [0, 1] },
+  });
+  const repeated = settleRoundChaJiaoPayments(ended);
+  const ticked = tickRoomStateDeadlines(repeated, 999_999);
+  const endedView = toClientVisibleRoomState(ended, "p1");
+  const serializedEnded = JSON.stringify(endedView);
+
+  assert.equal(repeated, ended);
+  assert.equal(ticked.changed, false);
+  assert.equal(ticked.room, ended);
+  assert.equal(serializedEnded.includes("chaJiaoId"), false);
+  assert.equal(serializedEnded.includes("winningTile"), false);
+  assert.equal(serializedEnded.includes("decomposition"), false);
+  assert.equal(endedView.settlementLedger.filter((entry) => entry.reason === "chaJiao").length, 1);
 });
 
 test("settles san ji, si ji, stacked suits, and mixed two-plus-two at round end", () => {
@@ -1795,6 +1944,8 @@ test("ends blood battle when qiang gang hu leaves only one active player", () =>
   assert.deepEqual(resolved.room.roundEnd, { reason: "onePlayerLeft", remainingPlayerIds: [0] });
   assert.equal(resolved.room.baGangClaimWindow, null);
   assert.equal(resolved.room.round?.players[0].melds[0].type, "peng");
+  assert.equal(resolved.room.chaJiao, null);
+  assert.equal(resolved.room.settlementLedger.some((entry) => entry.reason === "chaJiao"), false);
   assert.equal(resolved.room.settlementLedger.length, 3);
   assert.deepEqual(resolved.room.scores.map((score) => score.points), [-48, 16, 16, 16]);
 });
@@ -1860,6 +2011,115 @@ test("rejects room mutations after the round has started", () => {
   });
 });
 
+type ChaJiaoPlayerFixture = {
+  hand?: Tile[];
+  melds?: Meld[];
+  hasWon?: boolean;
+};
+
+function readyRoomForChaJiao(
+  fixtures: ChaJiaoPlayerFixture[],
+  baseRoom: RoomState = startReadyRoom(),
+): RoomState {
+  const firstActivePlayer = baseRoom.round?.players.find(
+    (player) => !(fixtures[player.id]?.hasWon ?? player.hasWon),
+  )?.id ?? 0;
+
+  return {
+    ...baseRoom,
+    status: "playing",
+    phase: "draw",
+    selfDrawEligible: false,
+    roundEnd: null,
+    claimWindow: null,
+    baGangClaimWindow: null,
+    gangDraw: null,
+    chaJiao: null,
+    chaJiaoSettlementFacts: [],
+    round: {
+      ...baseRoom.round!,
+      currentPlayer: firstActivePlayer,
+      wall: [],
+      players: baseRoom.round!.players.map((player) => {
+        const fixture = fixtures[player.id] ?? {};
+
+        return {
+          ...player,
+          hand: fixture.hand ?? player.hand,
+          melds: fixture.melds ?? player.melds,
+          hasWon: fixture.hasWon ?? player.hasWon,
+          missingSuit: "bamboos",
+        };
+      }),
+    },
+  };
+}
+
+function endedRoomForChaJiao(
+  fixtures: ChaJiaoPlayerFixture[],
+  baseRoom?: RoomState,
+): RoomState {
+  const playing = readyRoomForChaJiao(fixtures, baseRoom);
+  const remainingPlayerIds = playing.round!.players
+    .filter((player) => !player.hasWon)
+    .map((player) => player.id);
+
+  return settleRoundChaJiaoPayments({
+    ...playing,
+    status: "ended",
+    phase: "ended",
+    roundEnd: { reason: "wallEmpty", remainingPlayerIds },
+  });
+}
+
+function chaJiaoEntries(room: RoomState): ChaJiaoSettlementEntry[] {
+  return room.settlementLedger.filter(
+    (entry): entry is ChaJiaoSettlementEntry => entry.reason === "chaJiao",
+  );
+}
+
+function notListeningHand(): Tile[] {
+  return [
+    ...Array.from({ length: 4 }, () => tile("characters", 2)),
+    ...Array.from({ length: 4 }, () => tile("characters", 3)),
+    ...Array.from({ length: 4 }, () => tile("dots", 4)),
+    tile("characters", 9),
+  ];
+}
+
+function listeningSixteenHand(): Tile[] {
+  return [
+    tile("characters", 2),
+    tile("characters", 3),
+    tile("characters", 4),
+    tile("characters", 3),
+    tile("characters", 4),
+    tile("characters", 5),
+    tile("characters", 5),
+    tile("characters", 6),
+    tile("characters", 7),
+    tile("characters", 7),
+    tile("characters", 8),
+    tile("characters", 9),
+    tile("characters", 9),
+  ];
+}
+
+function makeTestMeld(type: Meld["type"], targetTile: Tile, count: 3 | 4): Meld {
+  return {
+    type,
+    tile: targetTile,
+    tiles: Array.from({ length: count }, () => targetTile),
+    fromPlayer: type === "peng" || type === "mingGang" ? 0 : null,
+  };
+}
+
+function cappedChaJiaoMelds(): Meld[] {
+  return [2, 3, 4, 5].map((rank) =>
+    makeTestMeld("anGang", tile("characters", rank as 2 | 3 | 4 | 5), 4),
+  );
+}
+
 type ChickenPlayerFixture = {
   hand?: Tile[];
   melds?: NonNullable<RoomState["round"]>["players"][number]["melds"];
@@ -1902,7 +2162,21 @@ function finishChickenRound(fixtures: ChickenPlayerFixture[]): RoomState {
     throw new Error(result.reason);
   }
 
-  return result.room;
+  return settleRoundChickenPayments({
+    ...result.room,
+    status: "ended",
+    phase: "ended",
+    selfDrawEligible: false,
+    roundEnd: {
+      reason: "wallEmpty",
+      remainingPlayerIds: result.room.round!.players
+        .filter((player) => !player.hasWon)
+        .map((player) => player.id),
+    },
+    claimWindow: null,
+    baGangClaimWindow: null,
+    gangDraw: null,
+  });
 }
 
 function finishGangSettlement(room: RoomState): RoomState {

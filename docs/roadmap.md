@@ -129,6 +129,10 @@ server authoritative.
   payer freezing, physical laizi-source scoring, qiang-gang rollback, terminal
   zero-sum ledger transfers, idempotent settlement, and concealed an-gang
   redaction
+- [x] Add server-authoritative wall-empty cha-jiao facts: evaluate each active
+  player's highest discard-hu result, settle every non-listener/listener pair
+  with a 64-point cap, exclude prior winners, and hide waits/decompositions
+  until the terminal snapshot
 - Wrap `roomSocketAdapter` with a production-ready WebSocket server entry
 - Connect table UI to WebSocket room snapshots
 - [x] Add reconnect with a local session token

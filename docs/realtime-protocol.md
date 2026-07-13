@@ -472,6 +472,7 @@ type ClientVisibleRoomState = {
   scores: PlayerScoreBalance[];
   settlementLedger: ClientVisibleSettlementLedgerEntry[];
   gangSettlements: ClientVisibleGangSettlementFact[];
+  chaJiao: ClientVisibleChaJiaoResult | null;
   responseWindow: null | {
     windowId: string;
     kind: "discardClaim" | "qiangGang";
@@ -520,7 +521,8 @@ pre-claim chicken counts.
 type ClientVisibleSettlementLedgerEntry =
   | HuSettlementEntry
   | ChickenSettlementEntry
-  | ClientVisibleGangSettlementEntry;
+  | ClientVisibleGangSettlementEntry
+  | ClientVisibleChaJiaoSettlementEntry;
 
 type OrdinaryChickenSettlementEntry = {
   id: number;
@@ -597,6 +599,36 @@ type ClientVisibleGangSettlementEntry = {
   rawPoints: 1 | 2 | 4;
   finalPoints: 1 | 2 | 4;
 };
+
+type ClientVisibleChaJiaoSettlementEntry = {
+  id: number;
+  batchId: number;
+  sourceSettlementId: string;
+  sourceWindowId: null;
+  winnerSeatId: 0 | 1 | 2 | 3;
+  winnerPlayerId: string;
+  loserSeatId: 0 | 1 | 2 | 3;
+  loserPlayerId: string;
+  reason: "chaJiao";
+  patterns: ScorePattern[];
+  genCount: number;
+  basePoints: 1;
+  rawPoints: number;
+  finalPoints: number;
+  relatedEvent: { type: "roundEnded"; reason: "wallEmpty" };
+};
+
+type ClientVisibleChaJiaoResult = {
+  reason: "wallEmpty";
+  players: Array<{
+    seatId: 0 | 1 | 2 | 3;
+    playerId: string | null;
+    isListening: boolean;
+    patterns: ScorePattern[];
+    genCount: number;
+    maxHuPoints: number | null;
+  }>;
+};
 ```
 
 Discard and qiang-gang multi-winner payments are written once when their
@@ -605,7 +637,8 @@ response order does not change the resulting ledger. Self-draw produces one
 batch containing one payment from each other player who had not already won.
 
 The ledger currently includes `selfDrawHu`, `discardHu`, `qiangGangHu`,
-`sanJi`, `siJi`, `qiangGangSanJiLiability`, `mingGang`, `anGang`, and `baGang`.
+`sanJi`, `siJi`, `qiangGangSanJiLiability`, `mingGang`, `anGang`, `baGang`,
+and `chaJiao`.
 Chicken entries are generated in one deterministic batch only after the round
 reaches `ended`; already-won players still participate, and the 64-point hu cap
 does not apply. When a robbed
@@ -627,8 +660,16 @@ make repeated deadline ticks and terminal settlement idempotent.
 The client receives `gangSettlements` as a safe in-progress summary. An-gang
 target tiles are `null`, and client snapshots never include internal `gangId`
 values or any gang's physical source-tile array. Completed an-gang ledger rows
-also keep the target hidden. Cha-jiao transfers and a final match total remain
-outside this ledger phase.
+also keep the target hidden.
+
+Cha jiao runs only for `wallEmpty`. Every active non-listener pays every active
+listener the listener's highest current-engine discard-hu `cappedPoints`, with
+one 64-point cap per payer/listener pair. Already-won players are excluded;
+chicken and gang batches remain independent and uncapped. During play,
+`chaJiao` is `null` and no snapshot exposes candidate tiles, waiting tiles,
+decompositions, raw hands, or internal fact IDs. After `ended`, clients receive
+only listening status, patterns, gen count, capped maximum, and completed
+ledger rows. A final match total remains outside this ledger phase.
 
 This matches the frontend client-perspective switcher: changing perspective
 should only change which hand is visible, not the authoritative game state.

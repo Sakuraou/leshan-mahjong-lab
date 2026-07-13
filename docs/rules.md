@@ -77,8 +77,8 @@ After dingque:
 - The 64-point cap does not include chicken payments, gang payments, or other
   side payments.
 - The authoritative score ledger covers self-draw, discard hu, qiang gang hu,
-  round-end three/four-chicken payments, and established gang payments.
-  Cha-jiao payments remain a future settlement category.
+  round-end three/four-chicken payments, established gang payments, and
+  wall-empty cha-jiao payments.
 
 ## Fan And Multipliers
 
@@ -241,13 +241,35 @@ Clients receive only the completed ledger summary after the round reaches
 
 ## Cha Jiao
 
-Cha jiao exists.
+Cha jiao is settled only when the wall is empty. A round that ends because only
+one active player remains does not run cha jiao.
 
-At draw settlement:
+- Only players who have not already won participate. Previously won hu scores,
+  chicken payments, and established gang payments remain valid and are not
+  recalculated.
+- Every non-listening active player pays every listening active player. For
+  example, two non-listeners and two listeners produce four transfers.
+- Each listener is evaluated independently using the highest-scoring discard-
+  win result available from the current rule engine.
+- Each payer pays that listener's `cappedPoints`, so one payer-to-listener
+  transfer is capped at 64 points.
+- The 64-point cap applies only to the cha-jiao hu-body score. Chicken and gang
+  payments settle independently at their exact uncapped amounts.
+- If every active player is listening, or no active player is listening, no
+  cha-jiao transfer is created.
+- The payer and listener sets, best patterns, gen count, raw score, and capped
+  amount are frozen in a terminal settlement fact. Repeated terminal calls or
+  deadline ticks cannot write the same payment twice.
 
-- Players who are not listening pay players who are listening.
-- Payment is based on the listening player's maximum possible discard-win hand.
-- This is calculated as discard-win value, not self-draw value.
+The current MVP listening search uses the implemented ordinary `4 sets + 1
+pair` hu engine, including exposed melds, laizi resolution, best decomposition,
+patterns, gen, and the discard-hu minimum-score rule. Seven pairs and its
+derived patterns are not yet part of cha-jiao evaluation.
+
+Drawing the physical last wall tile does not immediately settle the round. The
+drawer first receives the normal self-draw/discard opportunity; `wallEmpty`
+settlement begins when play next requires a draw or gang replacement draw and
+no tile remains.
 
 ## Rule Engine Implications
 

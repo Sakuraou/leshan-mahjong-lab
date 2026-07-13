@@ -432,6 +432,21 @@ shows only the player, laizi usage, payer seats, and points; its target tile is
 `null`. Internal gang IDs and every physical source-tile array remain inside the
 server process.
 
+## Authoritative Cha-Jiao Settlement
+
+When a round ends specifically because the wall is empty, the room reducer
+evaluates every player who has not already won. For each listener it freezes the
+highest discard-hu score produced by the current rule engine, then creates one
+zero-sum transfer from every non-listener to that listener. Each pair is capped
+at 64; chicken and gang entries remain separate and uncapped.
+
+The WebSocket layer only routes the resulting redacted snapshot. Before
+`ended`, `chaJiao` is `null` and snapshots contain no waiting tiles, candidate
+winning tiles, decomposition, internal fact ID, or opponent hand. After
+`wallEmpty`, clients may see listening status, patterns, gen count, capped
+maximum, payment rows, and updated public balances. Stable round settlement IDs
+make repeated terminal calls and deadline ticks idempotent.
+
 ## Screenshot Plan
 
 Portfolio screenshots to capture next:
@@ -509,12 +524,14 @@ response-deadline snapshots while the mock table remains available as the
 default portfolio-safe path. It displays established gang summaries and the
 terminal gang ledger without exposing concealed an-gang tiles. Chicken entries
 appear only after `ended`; no in-progress snapshot publishes another player's
-concealed chicken count.
+concealed chicken count. Wall-empty snapshots also show safe cha-jiao listening
+results and transfers without publishing candidate waits or decomposition data.
 
 ## Next Milestone
 
-The next settlement milestone is authoritative cha-jiao payment, followed by
-persistent room recovery and deployment configuration for the WebSocket
-process. Offline
+The next rule milestone is seven-pairs hu and score support so the same
+authoritative cha-jiao search can include xiao qi dui, long qi dui, and shuang
+long qi dui. Persistent room recovery and deployment configuration for the
+WebSocket process follow. Offline
 kicking, bot takeover, room dissolution, and database persistence are not part
 of the current implementation.

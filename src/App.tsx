@@ -776,7 +776,7 @@ function WebSocketTablePreview({
       <div className="preview-settlement-ledger" aria-label="最近输赢积分">
         <strong>最近输赢</strong>
         {recentSettlements.length === 0 ? (
-          <span>暂无胡牌、鸡钱或杠分记录</span>
+          <span>暂无胡牌、鸡钱、杠分或查叫记录</span>
         ) : (
           recentSettlements.map((entry) => (
             <span key={entry.id}>
@@ -794,17 +794,20 @@ function WebSocketTablePreview({
           牌局结束：{snapshot?.roundEnd?.reason === "onePlayerLeft" ? "只剩一位未胡玩家" : "牌墙已摸完"}
           {chaJiao !== null && (
             <div className="preview-cha-jiao">
-              <strong>流局查叫占位：</strong>
+              <strong>流局查叫结算：</strong>
               {chaJiao.players.length === 0 ? (
                 <span>暂无未胡玩家需要查叫。</span>
               ) : (
                 chaJiao.players.map((player) => (
                   <span key={player.seatId}>
-                    玩家 {player.seatId + 1}：{player.isListening ? `已听牌，最大可胡约 ${player.maxHuPoints ?? "-"} 分` : "未听牌"}
+                    玩家 {player.seatId + 1}：
+                    {player.isListening
+                      ? `已听牌，最大点炮 ${player.maxHuPoints ?? "-"} 分（${player.patterns.map(patternText).join("、") || "普通牌型"}${genText(player.genCount)}）`
+                      : "未听牌"}
                   </span>
                 ))
               )}
-              <span>鸡钱和已成立杠分已由服务端统一结算；查叫赔付仍待接入。</span>
+              <span>未听玩家分别向每位已听玩家付款；鸡钱和杠分保持独立结算。</span>
             </div>
           )}
         </div>
@@ -996,7 +999,7 @@ function WebSocketPreviewClientCard({
       <p>可用动作：{legalActions.length === 0 ? "暂无" : legalActions.join("、")}</p>
       <p>血战状态：{round === null ? "未开局" : `未胡 ${remainingPlayerCount} 人，${localPlayer?.hasWon ? "本家已胡" : "本家未胡"}`}</p>
       <p>牌局结束：{roundEnd === null ? "未结束" : roundEnd.reason === "onePlayerLeft" ? "只剩一位未胡玩家" : "牌墙已摸完"}</p>
-      <p>查叫状态：{chaJiao === null ? "未生成" : `已生成，占位记录 ${chaJiao.players.length} 位未胡玩家`}</p>
+      <p>查叫状态：{chaJiao === null ? "未生成" : `已结算 ${chaJiao.players.length} 位未胡玩家`}</p>
       <p>定缺状态：{round === null ? "开局后可选" : suitText(localPlayer?.missingSuit ?? null)}</p>
       <p>摸牌状态：{webSocketDrawHint(round, phase, localSeat, localPlayer)}</p>
       <p>出牌状态：{webSocketDiscardHint(round, phase, localSeat, localPlayer)}</p>
@@ -3386,6 +3389,7 @@ function settlementReasonText(reason: ClientVisibleRoomState["settlementLedger"]
     mingGang: "明杠",
     anGang: "暗杠",
     baGang: "巴杠",
+    chaJiao: "查叫",
   } as const;
 
   return labels[reason];

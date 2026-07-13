@@ -5,15 +5,19 @@ import {
   type DiscardTileResult,
   type DrawTileResult,
 } from "./round.ts";
-import { isYaoJi, sameTile, tile } from "./tiles.ts";
-import { checkCurrentPlayerHu, checkDiscardHu } from "./win.ts";
+import { huDecompositionSignature, type StandardHuDecomposition } from "./hu.ts";
+import { isYaoJi, sameTile, tile, tileKey } from "./tiles.ts";
+import { checkCurrentPlayerHu, checkDiscardHu, type WinCheckResult } from "./win.ts";
 import {
+  applyChaJiaoSettlementBatch,
   applyChickenSettlementBatch,
   applyGangSettlementBatch,
   applyHuSettlementBatch,
   calculateChickenSettlement,
   calculateGangPoints,
   createInitialScoreBalances,
+  type ChaJiaoSettlementEntry,
+  type ChaJiaoSettlementTransfer,
   type ChickenSettlementTransfer,
   type ChickenSuit,
   type GangSettlementEntry,
@@ -144,12 +148,34 @@ export type ChaJiaoPlayerResult = {
   seatId: PlayerId;
   playerId: string | null;
   isListening: boolean;
+  bestWinningTile: Tile | null;
+  patterns: ScorePattern[];
+  genCount: number;
+  rawHuPoints: number | null;
   maxHuPoints: number | null;
 };
 
 export type ChaJiaoResult = {
   reason: "wallEmpty";
   players: ChaJiaoPlayerResult[];
+};
+
+export type ChaJiaoSettlementPayer = {
+  readonly seatId: PlayerId;
+  readonly playerId: string;
+};
+
+export type ChaJiaoSettlementFact = {
+  readonly factId: string;
+  readonly winnerSeatId: PlayerId;
+  readonly winnerPlayerId: string;
+  readonly payers: readonly ChaJiaoSettlementPayer[];
+  readonly winningTile: Tile;
+  readonly decomposition: StandardHuDecomposition;
+  readonly patterns: readonly ScorePattern[];
+  readonly genCount: number;
+  readonly rawPoints: number;
+  readonly points: number;
 };
 
 export type RoomMember = {
@@ -265,6 +291,7 @@ export type RoomState = {
   scores: PlayerScoreBalance[];
   settlementLedger: SettlementLedgerEntry[];
   gangSettlementFacts: GangSettlementFact[];
+  chaJiaoSettlementFacts: ChaJiaoSettlementFact[];
   resolvedSettlementIds: string[];
   resolvedWindowIds: string[];
   eventLog: RoomEvent[];
@@ -277,9 +304,25 @@ export type ClientVisibleGangSettlementEntry = Omit<
   targetTile: Tile | null;
 };
 
+export type ClientVisibleChaJiaoSettlementEntry = Omit<
+  ChaJiaoSettlementEntry,
+  "chaJiaoId" | "winningTile"
+>;
+
+export type ClientVisibleChaJiaoPlayerResult = Omit<
+  ChaJiaoPlayerResult,
+  "bestWinningTile" | "rawHuPoints"
+>;
+
+export type ClientVisibleChaJiaoResult = {
+  reason: "wallEmpty";
+  players: ClientVisibleChaJiaoPlayerResult[];
+};
+
 export type ClientVisibleSettlementLedgerEntry =
-  | Exclude<SettlementLedgerEntry, GangSettlementEntry>
-  | ClientVisibleGangSettlementEntry;
+  | Exclude<SettlementLedgerEntry, GangSettlementEntry | ChaJiaoSettlementEntry>
+  | ClientVisibleGangSettlementEntry
+  | ClientVisibleChaJiaoSettlementEntry;
 
 export type VisiblePlayerState = {
   id: PlayerId;
@@ -311,7 +354,7 @@ export type ClientVisibleRoomState = {
   baGangClaimWindow: ClientVisibleBaGangClaimWindow | null;
   gangDraw: ClientVisibleGangDrawState | null;
   roundEnd: RoundEndState | null;
-  chaJiao: ChaJiaoResult | null;
+  chaJiao: ClientVisibleChaJiaoResult | null;
   scores: PlayerScoreBalance[];
   settlementLedger: ClientVisibleSettlementLedgerEntry[];
   gangSettlements: ClientVisibleGangSettlementFact[];
@@ -555,6 +598,7 @@ export function createRoom(input: CreateRoomInput): RoomState {
     scores: createInitialScoreBalances(),
     settlementLedger: [],
     gangSettlementFacts: [],
+    chaJiaoSettlementFacts: [],
     resolvedSettlementIds: [],
     resolvedWindowIds: [],
     eventLog: [{ type: "roomCreated", roomId: input.id }],
@@ -722,6 +766,7 @@ export function startRoomRound(room: RoomState, dealer: PlayerId = 0): StartRoom
       roundEnd: null,
       chaJiao: null,
       gangSettlementFacts: [],
+      chaJiaoSettlementFacts: [],
       eventLog: [...room.eventLog, { type: "roundStarted", dealer }],
     },
   };
@@ -802,6 +847,10 @@ export function drawRoomTile(room: RoomState, playerId: string): DrawRoomTileRes
   const result = drawRoundTile(room.round);
 
   if (!result.ok) {
+    if (result.reason === "wallEmpty") {
+      return { ok: true, room: finishRoundIfNeeded(room) };
+    }
+
     return { ok: false, reason: result.reason };
   }
 
@@ -852,6 +901,10 @@ export function drawGangTile(room: RoomState, playerId: string): DrawGangTileRes
   const result = drawRoundTile(room.round);
 
   if (!result.ok) {
+    if (result.reason === "wallEmpty") {
+      return { ok: true, room: finishRoundIfNeeded(room) };
+    }
+
     return { ok: false, reason: result.reason };
   }
 
@@ -1751,7 +1804,7 @@ export function toClientVisibleRoomState(
                 : room.gangDraw.tile,
           },
     roundEnd: room.roundEnd,
-    chaJiao: room.chaJiao,
+    chaJiao: room.status === "ended" ? toClientVisibleChaJiaoResult(room.chaJiao) : null,
     scores: room.scores,
     settlementLedger: room.settlementLedger.map(toClientVisibleSettlementEntry),
     gangSettlements: room.gangSettlementFacts.map(toClientVisibleGangSettlementFact),
@@ -1777,6 +1830,26 @@ function toClientVisibleGangSettlementFact(
 function toClientVisibleSettlementEntry(
   entry: SettlementLedgerEntry,
 ): ClientVisibleSettlementLedgerEntry {
+  if ("chaJiaoId" in entry) {
+    return {
+      id: entry.id,
+      batchId: entry.batchId,
+      winnerSeatId: entry.winnerSeatId,
+      winnerPlayerId: entry.winnerPlayerId,
+      loserSeatId: entry.loserSeatId,
+      loserPlayerId: entry.loserPlayerId,
+      reason: entry.reason,
+      patterns: entry.patterns,
+      genCount: entry.genCount,
+      sourceWindowId: entry.sourceWindowId,
+      sourceSettlementId: entry.sourceSettlementId,
+      basePoints: entry.basePoints,
+      rawPoints: entry.rawPoints,
+      finalPoints: entry.finalPoints,
+      relatedEvent: entry.relatedEvent,
+    };
+  }
+
   if (!("gangId" in entry)) {
     return entry;
   }
@@ -1797,6 +1870,26 @@ function toClientVisibleSettlementEntry(
     rawPoints: entry.rawPoints,
     finalPoints: entry.finalPoints,
     relatedEvent: entry.relatedEvent,
+  };
+}
+
+function toClientVisibleChaJiaoResult(
+  result: ChaJiaoResult | null,
+): ClientVisibleChaJiaoResult | null {
+  if (result === null) {
+    return null;
+  }
+
+  return {
+    reason: result.reason,
+    players: result.players.map((player) => ({
+      seatId: player.seatId,
+      playerId: player.playerId,
+      isListening: player.isListening,
+      patterns: player.patterns,
+      genCount: player.genCount,
+      maxHuPoints: player.maxHuPoints,
+    })),
   };
 }
 
@@ -2378,14 +2471,12 @@ function finishRoundIfNeeded(room: RoomState): RoomState {
   }
 
   const remainingPlayerIds = room.round.players.filter((player) => !player.hasWon).map((player) => player.id);
+  const wallExhausted =
+    room.round.wall.length === 0 && (room.phase === "draw" || room.phase === "gangDraw");
   const reason =
-    remainingPlayerIds.length <= 1 ? "onePlayerLeft" : room.round.wall.length === 0 ? "wallEmpty" : null;
+    remainingPlayerIds.length <= 1 ? "onePlayerLeft" : wallExhausted ? "wallEmpty" : null;
 
   if (room.roundEnd !== null) {
-    if (room.roundEnd.reason === "wallEmpty" && room.chaJiao === null) {
-      return settleRoundPayments({ ...room, chaJiao: buildChaJiaoResult(room) });
-    }
-
     return settleRoundPayments(room);
   }
 
@@ -2401,7 +2492,8 @@ function finishRoundIfNeeded(room: RoomState): RoomState {
     phase: "ended",
     selfDrawEligible: false,
     roundEnd,
-    chaJiao: reason === "wallEmpty" ? buildChaJiaoResult(room) : null,
+    chaJiao: null,
+    chaJiaoSettlementFacts: [],
     claimWindow: null,
     baGangClaimWindow: null,
     gangDraw: null,
@@ -2410,7 +2502,9 @@ function finishRoundIfNeeded(room: RoomState): RoomState {
 }
 
 function settleRoundPayments(room: RoomState): RoomState {
-  return settleRoundGangPayments(settleRoundChickenPayments(room));
+  return settleRoundChaJiaoPayments(
+    settleRoundGangPayments(settleRoundChickenPayments(room)),
+  );
 }
 
 export function settleRoundChickenPayments(room: RoomState): RoomState {
@@ -2557,6 +2651,66 @@ export function settleRoundGangPayments(room: RoomState): RoomState {
   };
 }
 
+export function settleRoundChaJiaoPayments(room: RoomState): RoomState {
+  if (
+    room.round === null ||
+    room.roundEnd?.reason !== "wallEmpty" ||
+    room.status !== "ended"
+  ) {
+    return room;
+  }
+
+  const analysis = room.chaJiao === null
+    ? buildChaJiaoSettlement(room)
+    : { result: room.chaJiao, facts: room.chaJiaoSettlementFacts };
+  const analyzedRoom: RoomState = room.chaJiao === null
+    ? {
+        ...room,
+        chaJiao: analysis.result,
+        chaJiaoSettlementFacts: analysis.facts,
+      }
+    : room;
+  const sourceSettlementId = `${room.id}:round:${room.roundNumber}:chaJiao`;
+  const transfers = analysis.facts.flatMap((fact): ChaJiaoSettlementTransfer[] =>
+    fact.payers.map((payer) => ({
+      chaJiaoId: `${fact.factId}:payer:${payer.seatId}`,
+      winnerSeatId: fact.winnerSeatId,
+      winnerPlayerId: fact.winnerPlayerId,
+      loserSeatId: payer.seatId,
+      loserPlayerId: payer.playerId,
+      reason: "chaJiao",
+      winningTile: fact.winningTile,
+      patterns: [...fact.patterns],
+      genCount: fact.genCount,
+      sourceWindowId: null,
+      rawPoints: fact.rawPoints,
+      finalPoints: fact.points,
+      relatedEvent: { type: "roundEnded", reason: "wallEmpty" },
+    })),
+  );
+  const result = applyChaJiaoSettlementBatch(
+    analyzedRoom.scores,
+    analyzedRoom.settlementLedger,
+    analyzedRoom.resolvedSettlementIds,
+    sourceSettlementId,
+    transfers,
+  );
+
+  if (
+    analyzedRoom === room &&
+    result.resolvedSettlementIds === room.resolvedSettlementIds
+  ) {
+    return room;
+  }
+
+  return {
+    ...analyzedRoom,
+    scores: result.scores,
+    settlementLedger: result.ledger,
+    resolvedSettlementIds: result.resolvedSettlementIds,
+  };
+}
+
 function qiangGangSanJiLiability(
   player: RoundState["players"][number],
 ): {
@@ -2601,32 +2755,101 @@ function chickenSuitFromPayment(tileValue: Tile): ChickenSuit | null {
   return tileValue.suit === "bamboos" || tileValue.suit === "dots" ? tileValue.suit : null;
 }
 
-function buildChaJiaoResult(room: RoomState): ChaJiaoResult {
+type WinningWinCheckResult = Extract<WinCheckResult, { canHu: true }>;
+
+type ChaJiaoBestWin = {
+  winningTile: Tile;
+  result: WinningWinCheckResult;
+};
+
+function buildChaJiaoSettlement(room: RoomState): {
+  result: ChaJiaoResult;
+  facts: ChaJiaoSettlementFact[];
+} {
   if (room.round === null) {
-    return { reason: "wallEmpty", players: [] };
+    return { result: { reason: "wallEmpty", players: [] }, facts: [] };
   }
 
   const candidates = allTileCandidates();
+  const analyses = room.round.players
+    .filter((player) => !player.hasWon)
+    .map((player) => ({
+      player,
+      playerId: room.seats[player.id]?.playerId ?? null,
+      best: findBestChaJiaoWin(room.round!, player.id, candidates),
+    }));
+  const payers = analyses.flatMap((analysis): ChaJiaoSettlementPayer[] =>
+    analysis.best === null && analysis.playerId !== null
+      ? [{ seatId: analysis.player.id, playerId: analysis.playerId }]
+      : [],
+  );
 
   return {
-    reason: "wallEmpty",
-    players: room.round.players
-      .filter((player) => !player.hasWon)
-      .map((player) => {
-        const possibleScores = candidates.flatMap((candidate) => {
-          const result = checkDiscardHu(room.round!, player.id, candidate);
+    result: {
+      reason: "wallEmpty",
+      players: analyses.map((analysis) => ({
+        seatId: analysis.player.id,
+        playerId: analysis.playerId,
+        isListening: analysis.best !== null,
+        bestWinningTile: analysis.best?.winningTile ?? null,
+        patterns: analysis.best?.result.patterns ?? [],
+        genCount: analysis.best?.result.score.genCount ?? 0,
+        rawHuPoints: analysis.best?.result.score.rawPoints ?? null,
+        maxHuPoints: analysis.best?.result.score.cappedPoints ?? null,
+      })),
+    },
+    facts: analyses.flatMap((analysis): ChaJiaoSettlementFact[] => {
+      if (analysis.best === null || analysis.playerId === null) {
+        return [];
+      }
 
-          return result.canHu ? [result.score.cappedPoints] : [];
-        });
-
-        return {
-          seatId: player.id,
-          playerId: room.seats[player.id]?.playerId ?? null,
-          isListening: possibleScores.length > 0,
-          maxHuPoints: possibleScores.length > 0 ? Math.max(...possibleScores) : null,
-        };
-      }),
+      return [{
+        factId: `${room.id}:round:${room.roundNumber}:chaJiao:fact:seat:${analysis.player.id}`,
+        winnerSeatId: analysis.player.id,
+        winnerPlayerId: analysis.playerId,
+        payers,
+        winningTile: analysis.best.winningTile,
+        decomposition: analysis.best.result.decomposition,
+        patterns: [...analysis.best.result.patterns],
+        genCount: analysis.best.result.score.genCount,
+        rawPoints: analysis.best.result.score.rawPoints,
+        points: analysis.best.result.score.cappedPoints,
+      }];
+    }),
   };
+}
+
+function findBestChaJiaoWin(
+  round: RoundState,
+  playerId: PlayerId,
+  candidates: Tile[],
+): ChaJiaoBestWin | null {
+  const wins = candidates.flatMap((winningTile): ChaJiaoBestWin[] => {
+    const result = checkDiscardHu(round, playerId, winningTile);
+
+    return result.canHu ? [{ winningTile, result }] : [];
+  });
+  wins.sort(compareChaJiaoBestWins);
+
+  return wins[0] ?? null;
+}
+
+function compareChaJiaoBestWins(left: ChaJiaoBestWin, right: ChaJiaoBestWin): number {
+  const leftScore = left.result.score;
+  const rightScore = right.result.score;
+  const leftMultiplier = leftScore.multiplierBeforeWinMethod * leftScore.winMethodMultiplier;
+  const rightMultiplier = rightScore.multiplierBeforeWinMethod * rightScore.winMethodMultiplier;
+
+  return (
+    rightScore.cappedPoints - leftScore.cappedPoints ||
+    rightScore.rawPoints - leftScore.rawPoints ||
+    rightMultiplier - leftMultiplier ||
+    rightScore.genCount - leftScore.genCount ||
+    tileKey(left.winningTile).localeCompare(tileKey(right.winningTile)) ||
+    huDecompositionSignature(left.result.decomposition).localeCompare(
+      huDecompositionSignature(right.result.decomposition),
+    )
+  );
 }
 
 function allTileCandidates(): Tile[] {
