@@ -117,6 +117,8 @@ server authoritative.
   client countdown snapshots
 - [x] Add server-authoritative online/offline presence, latest-connection-only
   session binding, reconnect broadcasts, and idempotent presence events
+- [x] Add native WebSocket ping/pong health checks, injectable-clock stale
+  connection expiry, latest-connection race protection, and safe status UI
 - Wrap `roomSocketAdapter` with a production-ready WebSocket server entry
 - Connect table UI to WebSocket room snapshots
 - [x] Add reconnect with a local session token

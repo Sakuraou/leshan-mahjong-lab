@@ -199,7 +199,6 @@ export type RoomSocketServerMessage =
       protocolVersion: 1;
       serverEventId: number;
       roomId: string;
-      recipientSessionToken: string;
       type: "roomSnapshot";
       payload: RoomSnapshotPayload;
     }
@@ -209,7 +208,7 @@ export type RoomSocketServerMessage =
       roomId: string;
       recipientSessionToken: string;
       type: "actionAccepted";
-      payload: { clientMessageId: string };
+      payload: { clientMessageId: string; playerId: string };
     }
   | {
       protocolVersion: 1;
@@ -222,7 +221,6 @@ export type RoomSocketServerMessage =
 
 export type RoomSnapshotPayload = {
   view: ClientVisibleRoomState;
-  sessionToken: string;
   playerId: string;
   lastEventId: number;
   serverNow: number;
@@ -357,7 +355,13 @@ function handleCreateRoom(
   return {
     adapter: nextAdapter,
     messages: [
-      acceptedMessage(message, result.service.room.id, result.session.sessionToken, result.lastEventId),
+      acceptedMessage(
+        message,
+        result.service.room.id,
+        result.session.sessionToken,
+        result.session.playerId,
+        result.lastEventId,
+      ),
       snapshotMessage(result.service, result.session.sessionToken, result.events),
     ],
   };
@@ -382,7 +386,13 @@ function handleJoinRoom(
   return {
     adapter: nextAdapter,
     messages: [
-      acceptedMessage(message, result.service.room.id, result.session.sessionToken, result.lastEventId),
+      acceptedMessage(
+        message,
+        result.service.room.id,
+        result.session.sessionToken,
+        result.session.playerId,
+        result.lastEventId,
+      ),
       ...snapshotMessagesForSessions(result.service, result.events),
     ],
   };
@@ -415,7 +425,13 @@ function handleResumeSession(
   return {
     adapter: nextAdapter,
     messages: [
-      acceptedMessage(message, result.service.room.id, message.sessionToken, result.lastEventId),
+      acceptedMessage(
+        message,
+        result.service.room.id,
+        message.sessionToken,
+        result.session.playerId,
+        result.lastEventId,
+      ),
       snapshotMessage(result.service, message.sessionToken, result.missedEvents),
       ...presenceBroadcasts,
     ],
@@ -463,7 +479,13 @@ function handleRoomServiceAction(
   return {
     adapter: nextAdapter,
     messages: [
-      acceptedMessage(message, result.service.room.id, message.sessionToken, result.lastEventId),
+      acceptedMessage(
+        message,
+        result.service.room.id,
+        message.sessionToken,
+        result.session.playerId,
+        result.lastEventId,
+      ),
       ...snapshotMessagesForSessions(result.service, result.events),
     ],
   };
@@ -580,11 +602,9 @@ function snapshotMessage(
     protocolVersion: 1,
     serverEventId: service.lastEventId,
     roomId: service.room.id,
-    recipientSessionToken: sessionToken,
     type: "roomSnapshot",
     payload: {
       view: view.view,
-      sessionToken,
       playerId: view.session.playerId,
       lastEventId: service.lastEventId,
       serverNow,
@@ -597,6 +617,7 @@ function acceptedMessage(
   message: RoomSocketClientMessage,
   roomId: string,
   sessionToken: string,
+  playerId: string,
   serverEventId: number,
 ): RoomSocketServerMessage {
   return {
@@ -605,7 +626,7 @@ function acceptedMessage(
     roomId,
     recipientSessionToken: sessionToken,
     type: "actionAccepted",
-    payload: { clientMessageId: message.clientMessageId },
+    payload: { clientMessageId: message.clientMessageId, playerId },
   };
 }
 

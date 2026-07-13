@@ -1,23 +1,26 @@
 # WebSocket Server Core
 
-`src/server/roomSocketServerCore.ts` is the first testable server-side shell
-around the room socket adapter. It does not open a network port yet. Its purpose
-is to define how a real WebSocket process will register connections, parse
-messages, call the authoritative adapter, and route responses.
+`src/server/roomSocketServerCore.ts` is the testable server-side shell around
+the room socket adapter. `src/server/devServer.ts` wraps it with a real local
+Node `ws` port while keeping connection health and room transitions in pure,
+deterministic core functions.
 
 ## Current Scope
 
 The server core owns:
 
 - Connection registration by `connectionId`.
+- Server-internal `lastSeenAt` health timestamps.
 - Optional connection binding to `roomId` and `sessionToken`.
 - Raw JSON message parsing.
 - Basic protocol shape validation.
 - Calling `handleRoomSocketMessage` from `roomSocketAdapter`.
 - Storing the returned adapter state.
-- Routing `RoomSocketServerMessage` objects by `recipientSessionToken`.
+- Routing accepted actions by session and redacted snapshots by internal player
+  binding.
 - Recording messages that cannot be delivered because no connection owns that
   session.
+- Expiring stale connections through an injectable-clock health tick.
 
 It does not own:
 
@@ -25,7 +28,7 @@ It does not own:
 - Authentication.
 - Secure token generation.
 - Database persistence.
-- Heartbeats or reconnect timeout cleanup.
+- Production deployment, load balancing, and durable reconnect cleanup.
 - Gameplay actions beyond the room lifecycle and `chooseMissingSuit` already
   supported by `roomSocketAdapter`.
 
@@ -39,27 +42,29 @@ type RoomSocketServerCoreState = {
 
 type RoomSocketConnection = {
   connectionId: string;
+  lastSeenAt: number;
   roomId?: string;
   sessionToken?: string;
+  playerId?: string;
 };
 ```
 
 `adapter` is the server-authoritative room table. `connections` is the future
-runtime's connection registry. In the current pure-function version, tests pass
-in synthetic connection ids such as `conn-host`.
+runtime's connection registry. All fields in `RoomSocketConnection` are
+server-internal and are excluded from client-visible snapshots.
 
 ## Connection Registration
 
 A real WebSocket wrapper should call:
 
 ```ts
-registerRoomSocketConnection(state, connectionId);
+registerRoomSocketConnection(state, connectionId, now);
 ```
 
 when a socket connects, and:
 
 ```ts
-unregisterRoomSocketConnection(state, connectionId);
+handleRoomSocketConnectionClosed(state, connectionId);
 ```
 
 when it disconnects.
@@ -105,15 +110,17 @@ where each returned message should go.
 
 ## SessionToken Routing
 
-Every accepted room action from `roomSocketAdapter` returns messages with a
-`recipientSessionToken`.
+Accepted actions carry a targeted `recipientSessionToken`; redacted snapshots
+do not contain a token and are routed by the server's internal room/player
+binding.
 
 Routing rules:
 
-- `recipientSessionToken: null` is sent back to the source connection. This is
-  used for rejected unauthenticated messages such as duplicate room creation.
-- A non-null `recipientSessionToken` is delivered to the connection whose
+- `actionRejected` is sent back to the requesting connection.
+- `actionAccepted` is delivered to the connection whose
   `roomId` and `sessionToken` match.
+- `roomSnapshot` is delivered to the connection whose `roomId` and `playerId`
+  match; the snapshot itself contains no session token.
 - If no connection owns that session, the message is added to `undelivered`.
 - When a session resumes on a newer connection, the core binds that
   `sessionToken` to the new connection and clears the old connection binding.
@@ -362,6 +369,33 @@ marks the same member and seat online, preserves the session token, and binds
 future snapshots to the newest connection. The WebSocket preview renders
 `在线`, `离线`, and `已恢复` badges plus the latest safe presence event.
 
+## Heartbeat And Stale Connections
+
+The server core stores `lastSeenAt` on `RoomSocketConnection` and exposes two
+pure operations:
+
+- `markRoomSocketConnectionAlive(state, connectionId, now)` records a pong
+  using a monotonic timestamp.
+- `tickRoomSocketConnectionHealth(state, now, timeoutMs)` expires connections
+  at the timeout boundary and returns the affected connection ids plus any safe
+  presence snapshots to route.
+
+The development server sends native `ws` ping frames every 10 seconds and uses
+a 30 second timeout by default. Both values and the clock are injectable. A
+timed-out socket first passes through the authoritative close transition and is
+then terminated, making a later `close` callback idempotent.
+
+Heartbeat expiry marks only the latest bound player session offline. It never
+removes room membership, seats, hands, dingque choices, scores, settlement
+entries, or session tokens. A session resumed on a new connection owns presence
+immediately; delayed pong, timeout, or close events from its old socket cannot
+override the new online state. Claim and qiang-gang deadlines remain active for
+offline players.
+
+Heartbeat timestamps, connection ids, timer handles, and session tokens stay
+inside the server process. `roomSnapshot` contains only the redacted player
+view, safe player id, event cursor, server time, and visible events.
+
 ## Screenshot Plan
 
 Portfolio screenshots to capture next:
@@ -405,6 +439,10 @@ countdown while the server remains authoritative.
 - Stale sockets being rejected before adapter execution and stale closes not
   overriding a newly resumed connection.
 - Latest-connection close broadcasting offline member/seat state.
+- Injected-clock pong refresh, timeout boundaries, idempotent repeated health
+  ticks, and stale old-connection timeouts after session recovery.
+- Serialized room snapshots omitting heartbeat metadata, connection ids, and
+  session tokens.
 
 `tests/game/roomSocketDevServer.test.ts` covers the real `ws` wrapper path:
 
@@ -435,8 +473,8 @@ the mock table remains available as the default portfolio-safe path.
 
 ## Next Milestone
 
-The next milestone is production hardening: heartbeat and stale-connection
-detection, persistent room recovery, deployment configuration for the
-WebSocket process, and extension of the settlement ledger to gang, chicken,
-and cha-jiao payments. Offline kicking, bot takeover, room dissolution, and
-database persistence are not part of the current implementation.
+The next milestone is round settlement expansion: gang payments, three/four
+chicken payments, and cha-jiao, followed by persistent room recovery and
+deployment configuration for the WebSocket process. Offline kicking, bot
+takeover, room dissolution, and database persistence are not part of the
+current implementation.

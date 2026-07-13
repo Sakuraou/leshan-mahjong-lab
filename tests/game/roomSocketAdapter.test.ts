@@ -31,8 +31,8 @@ test("maps createRoom to room service and returns a host snapshot", () => {
 
   const snapshot = snapshotMessages(result.messages)[0];
   assert.equal(snapshot.roomId, "socket-room-create");
-  assert.equal(snapshot.recipientSessionToken, "session-1");
-  assert.equal(snapshot.payload.sessionToken, "session-1");
+  assert.equal("recipientSessionToken" in snapshot, false);
+  assert.equal("sessionToken" in snapshot.payload, false);
   assert.equal(snapshot.payload.playerId, "player-1");
   assert.equal(snapshot.payload.lastEventId, 2);
   assert.deepEqual(
@@ -58,8 +58,8 @@ test("maps joinRoom to room service and broadcasts snapshots to sessions", () =>
   assert.equal(result.messages[0].type, "actionAccepted");
   assert.equal(result.messages[0].recipientSessionToken, "session-2");
   assert.deepEqual(
-    snapshots.map((message) => message.recipientSessionToken),
-    ["session-1", "session-2"],
+    snapshots.map((message) => message.payload.playerId),
+    ["player-1", "player-2"],
   );
   assert.equal(snapshots[1].payload.playerId, "player-2");
   assert.deepEqual(snapshots[1].payload.events, [{ type: "playerJoined", playerId: "player-2", displayName: "Player Two" }]);
@@ -113,7 +113,8 @@ test("maps resumeSession to missed events and a client snapshot", () => {
   const snapshot = snapshotMessages(result.messages)[0];
 
   assert.equal(result.messages[0].type, "actionAccepted");
-  assert.equal(snapshot.recipientSessionToken, "session-1");
+  assert.equal(result.messages[0].recipientSessionToken, "session-1");
+  assert.equal(snapshot.payload.playerId, "player-1");
   assert.deepEqual(
     snapshot.payload.events.map((event) => event.type),
     ["seatTaken", "readyChanged"],
@@ -137,7 +138,7 @@ test("broadcasts each session its own redacted view after startRound", () => {
   assert.equal(snapshots.length, 4);
 
   snapshots.forEach((message, index) => {
-    assert.equal(message.recipientSessionToken, filled.sessions[index]);
+    assert.equal(message.payload.playerId, `player-${index + 1}`);
     assert.equal(message.payload.view.localSeatId, index);
     assert.equal(message.payload.view.phase, "dingque");
     assert.deepEqual(message.payload.view.legalActions, ["chooseMissingSuit"]);

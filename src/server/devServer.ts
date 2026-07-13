@@ -1,12 +1,14 @@
 import { pathToFileURL } from "node:url";
-import { WebSocketServer, type RawData, type WebSocket } from "ws";
+import { WebSocket, WebSocketServer, type RawData } from "ws";
 import type { RoomSocketAdapterOptions } from "../game/index.ts";
 
 import {
   createRoomSocketServerCoreState,
   handleRoomSocketConnectionClosed,
   handleRoomSocketRawMessage,
+  markRoomSocketConnectionAlive,
   registerRoomSocketConnection,
+  tickRoomSocketConnectionHealth,
   tickRoomSocketServerDeadlines,
   type RoomSocketServerCoreState,
   type RoomSocketUndeliveredMessage,
@@ -25,6 +27,8 @@ export type RoomSocketDevServerOptions = RoomSocketAdapterOptions & {
   onLog?: (message: string) => void;
   onUndelivered?: (message: RoomSocketUndeliveredMessage) => void;
   deadlinePollIntervalMs?: number;
+  heartbeatIntervalMs?: number;
+  connectionTimeoutMs?: number;
 };
 
 export async function createRoomSocketDevServer(options: RoomSocketDevServerOptions = {}): Promise<RoomSocketDevServer> {
@@ -46,13 +50,47 @@ export async function createRoomSocketDevServer(options: RoomSocketDevServerOpti
     }
   }, options.deadlinePollIntervalMs ?? 250);
   deadlineTimer.unref();
+  const heartbeatTimer = setInterval(() => {
+    const now = options.nowFactory?.() ?? Date.now();
+    const result = tickRoomSocketConnectionHealth(
+      state,
+      now,
+      options.connectionTimeoutMs ?? 30_000,
+    );
+    state = result.state;
+
+    for (const outgoing of result.outgoing) {
+      sockets.get(outgoing.connectionId)?.send(JSON.stringify(outgoing.message));
+    }
+
+    for (const undelivered of result.undelivered) {
+      options.onUndelivered?.(undelivered);
+    }
+
+    for (const connectionId of result.expiredConnectionIds) {
+      options.onLog?.(`heartbeat timeout ${connectionId}`);
+      sockets.get(connectionId)?.terminate();
+    }
+
+    const activeConnectionIds = new Set(state.connections.map((connection) => connection.connectionId));
+    for (const [connectionId, socket] of sockets) {
+      if (activeConnectionIds.has(connectionId) && socket.readyState === WebSocket.OPEN) {
+        socket.ping();
+      }
+    }
+  }, options.heartbeatIntervalMs ?? 10_000);
+  heartbeatTimer.unref();
 
   server.on("connection", (socket) => {
     const connectionId = `conn-${nextConnectionNumber}`;
     nextConnectionNumber += 1;
     sockets.set(connectionId, socket);
-    state = registerRoomSocketConnection(state, connectionId);
+    state = registerRoomSocketConnection(state, connectionId, options.nowFactory?.() ?? Date.now());
     options.onLog?.(`connected ${connectionId}`);
+
+    socket.on("pong", () => {
+      state = markRoomSocketConnectionAlive(state, connectionId, options.nowFactory?.() ?? Date.now());
+    });
 
     socket.on("message", (data: RawData) => {
       const result = handleRoomSocketRawMessage(state, connectionId, data.toString());
@@ -103,6 +141,7 @@ export async function createRoomSocketDevServer(options: RoomSocketDevServerOpti
     close: () =>
       new Promise((resolve, reject) => {
         clearInterval(deadlineTimer);
+        clearInterval(heartbeatTimer);
         for (const socket of sockets.values()) {
           socket.close();
         }

@@ -270,6 +270,10 @@ function applyServerMessage(
     return {
       ...state,
       messages,
+      sessionTokenByPlayerId: {
+        ...state.sessionTokenByPlayerId,
+        [message.payload.playerId]: message.recipientSessionToken,
+      },
       acceptedMessages: [...state.acceptedMessages, message],
     };
   }
@@ -285,10 +289,6 @@ function applyServerMessage(
   return {
     ...state,
     messages,
-    sessionTokenByPlayerId: {
-      ...state.sessionTokenByPlayerId,
-      [message.payload.playerId]: message.payload.sessionToken,
-    },
     snapshotByPlayerId: {
       ...state.snapshotByPlayerId,
       [message.payload.playerId]: message.payload.view,

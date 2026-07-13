@@ -52,6 +52,26 @@ Rules:
 - The server may send a full snapshot after reconnect or a series of events
   when the client only missed a small range.
 
+## Transport Heartbeat
+
+Connection health uses native WebSocket control frames rather than an
+application-level room action. The development server sends `ping` frames on a
+fixed interval, records the matching `pong` as `lastSeenAt`, and runs a pure
+`tickConnectionHealth(now, timeoutMs)` style transition with an injectable
+clock.
+
+When a connection reaches the timeout boundary, the server closes only that
+transport binding and calls the existing presence transition. The player keeps
+their room membership, seat, hand, dingque, score ledger, and session token.
+Response-window deadlines continue to run, so an offline player is
+automatically treated as passing when the authoritative claim deadline expires.
+
+If the same session has already resumed on a newer connection, late `pong`,
+timeout, or `close` events from the old connection cannot mark the player
+offline. `connectionId`, `lastSeenAt`, heartbeat timer state, and session tokens
+are server-internal and never appear in `ClientVisibleRoomState` or a
+`roomSnapshot` payload.
+
 ## Room Events
 
 The server keeps an append-only room event log. These events are not all sent to
@@ -93,8 +113,7 @@ type ClientActionType =
   | "drawTile"
   | "discardTile"
   | "declareHu"
-  | "resumeSession"
-  | "ping";
+  | "resumeSession";
 ```
 
 ### Create Room
@@ -334,8 +353,7 @@ type ServerEventType =
   | "roomEvent"
   | "legalActionsChanged"
   | "actionAccepted"
-  | "actionRejected"
-  | "heartbeat";
+  | "actionRejected";
 ```
 
 ### Room Snapshot
@@ -368,11 +386,14 @@ type RoomEventPayload = {
 ```ts
 type ActionAcceptedPayload = {
   clientMessageId: string;
+  playerId: string;
 };
 ```
 
-The client can use this to clear optimistic pending state. The first prototype
-can skip optimistic updates and wait for `roomEvent` or `roomSnapshot`.
+The targeted `actionAccepted` envelope also provisions the owning session token
+to that connection. The client can use it to clear optimistic pending state and
+store the token for recovery. `roomSnapshot` deliberately omits the token and
+is routed by the server's internal player/session binding.
 
 ### Action Rejected
 
@@ -676,7 +697,9 @@ Validation should call the same rule modules that power the current tests:
 8. Add server-authoritative `drawTile` and `discardTile` actions. Done.
 9. Add connection-close presence updates and latest-connection-only resume.
    Done.
+10. Add native ping/pong heartbeat, injectable-clock stale connection expiry,
+    and latest-connection race protection. Done.
 
-The next networking milestone is heartbeat and stale-connection detection,
-followed by persistence and deployment hardening. Offline kicking, bot takeover,
-room dissolution, and database persistence are intentionally not implemented.
+The next networking milestone is persistent room recovery and deployment
+hardening. Offline kicking, bot takeover, room dissolution, and database
+persistence are intentionally not implemented.

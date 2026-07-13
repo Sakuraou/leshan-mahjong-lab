@@ -12,6 +12,7 @@ import {
 
 export type RoomSocketConnection = {
   connectionId: string;
+  lastSeenAt: number;
   roomId?: string;
   sessionToken?: string;
   playerId?: string;
@@ -48,6 +49,10 @@ export type RoomSocketServerCoreResult = {
   errors: RoomSocketProtocolError[];
 };
 
+export type RoomSocketConnectionHealthResult = RoomSocketServerCoreResult & {
+  expiredConnectionIds: string[];
+};
+
 export function createRoomSocketServerCoreState(options: RoomSocketAdapterOptions = {}): RoomSocketServerCoreState {
   return {
     adapter: createRoomSocketAdapterState(options),
@@ -58,6 +63,7 @@ export function createRoomSocketServerCoreState(options: RoomSocketAdapterOption
 export function registerRoomSocketConnection(
   state: RoomSocketServerCoreState,
   connectionId: string,
+  now = Date.now(),
 ): RoomSocketServerCoreState {
   if (state.connections.some((connection) => connection.connectionId === connectionId)) {
     return state;
@@ -65,7 +71,27 @@ export function registerRoomSocketConnection(
 
   return {
     ...state,
-    connections: [...state.connections, { connectionId }],
+    connections: [...state.connections, { connectionId, lastSeenAt: now }],
+  };
+}
+
+export function markRoomSocketConnectionAlive(
+  state: RoomSocketServerCoreState,
+  connectionId: string,
+  now = Date.now(),
+): RoomSocketServerCoreState {
+  const connection = state.connections.find((value) => value.connectionId === connectionId);
+  const nextSeenAt = connection === undefined ? now : Math.max(connection.lastSeenAt, now);
+
+  if (connection === undefined || connection.lastSeenAt === nextSeenAt) {
+    return state;
+  }
+
+  return {
+    ...state,
+    connections: state.connections.map((value) =>
+      value.connectionId === connectionId ? { ...value, lastSeenAt: nextSeenAt } : value,
+    ),
   };
 }
 
@@ -109,6 +135,35 @@ export function handleRoomSocketConnectionClosed(
     undelivered: delivery.undelivered,
     errors: [],
   };
+}
+
+export function tickRoomSocketConnectionHealth(
+  state: RoomSocketServerCoreState,
+  now: number,
+  timeoutMs: number,
+): RoomSocketConnectionHealthResult {
+  const expiredConnectionIds = state.connections
+    .filter((connection) => now - connection.lastSeenAt >= timeoutMs)
+    .map((connection) => connection.connectionId);
+
+  if (expiredConnectionIds.length === 0) {
+    return { ...emptyResult(state), expiredConnectionIds: [] };
+  }
+
+  let nextState = state;
+  const outgoing: RoomSocketOutboundMessage[] = [];
+  const undelivered: RoomSocketUndeliveredMessage[] = [];
+  const errors: RoomSocketProtocolError[] = [];
+
+  for (const connectionId of expiredConnectionIds) {
+    const result = handleRoomSocketConnectionClosed(nextState, connectionId);
+    nextState = result.state;
+    outgoing.push(...result.outgoing);
+    undelivered.push(...result.undelivered);
+    errors.push(...result.errors);
+  }
+
+  return { state: nextState, outgoing, undelivered, errors, expiredConnectionIds };
 }
 
 export function handleRoomSocketRawMessage(
@@ -201,12 +256,6 @@ function bindRequestingConnection(
     return state;
   }
 
-  const snapshot = messages.find(
-    (message) =>
-      message.type === "roomSnapshot" &&
-      message.recipientSessionToken === accepted.recipientSessionToken,
-  );
-
   return {
     ...state,
     connections: state.connections.map((connection) => {
@@ -215,12 +264,12 @@ function bindRequestingConnection(
           ...connection,
           roomId: accepted.roomId,
           sessionToken: accepted.recipientSessionToken,
-          ...(snapshot?.type === "roomSnapshot" ? { playerId: snapshot.payload.playerId } : {}),
+          playerId: accepted.payload.playerId,
         };
       }
 
       if (connection.roomId === accepted.roomId && connection.sessionToken === accepted.recipientSessionToken) {
-        return { connectionId: connection.connectionId };
+        return { connectionId: connection.connectionId, lastSeenAt: connection.lastSeenAt };
       }
 
       return connection;
@@ -259,8 +308,27 @@ function routeServerMessages(
   const undelivered: RoomSocketUndeliveredMessage[] = [];
 
   for (const message of messages) {
-    if (message.type === "actionRejected" || message.recipientSessionToken === null) {
+    if (message.type === "actionRejected") {
       outgoing.push({ connectionId: sourceConnectionId, message });
+      continue;
+    }
+
+    if (message.type === "roomSnapshot") {
+      const connection = state.connections.find(
+        (value) => value.roomId === message.roomId && value.playerId === message.payload.playerId,
+      );
+
+      if (connection !== undefined) {
+        outgoing.push({ connectionId: connection.connectionId, message });
+        continue;
+      }
+
+      const sessionToken = sessionTokenForPlayer(state, message.roomId, message.payload.playerId);
+
+      if (sessionToken !== undefined) {
+        undelivered.push({ recipientSessionToken: sessionToken, message });
+      }
+
       continue;
     }
 
@@ -277,6 +345,16 @@ function routeServerMessages(
   }
 
   return { outgoing, undelivered };
+}
+
+function sessionTokenForPlayer(
+  state: RoomSocketServerCoreState,
+  roomId: string,
+  playerId: string,
+): string | undefined {
+  return state.adapter.rooms
+    .find((room) => room.roomId === roomId)
+    ?.service.sessions.find((session) => session.playerId === playerId)?.sessionToken;
 }
 
 function protocolErrorResult(

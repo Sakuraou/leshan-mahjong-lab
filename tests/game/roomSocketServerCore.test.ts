@@ -5,7 +5,9 @@ import {
   createRoomSocketServerCoreState,
   handleRoomSocketConnectionClosed,
   handleRoomSocketRawMessage,
+  markRoomSocketConnectionAlive,
   registerRoomSocketConnection,
+  tickRoomSocketConnectionHealth,
   type RoomSocketServerCoreState,
 } from "../../src/server/index.ts";
 import type { PlayerId, RoomSocketClientMessage, RoomSocketServerMessage } from "../../src/game/index.ts";
@@ -332,16 +334,151 @@ test("only closing the latest session connection broadcasts offline presence", (
   ]);
 });
 
+test("refreshes only the target connection heartbeat with an injected clock", () => {
+  let server = createConnectedServerAt(["conn-a", "conn-b"], 1_000);
+  const adapter = server.adapter;
+
+  server = markRoomSocketConnectionAlive(server, "conn-a", 2_000);
+
+  assert.equal(connectionFor(server, "conn-a")?.lastSeenAt, 2_000);
+  assert.equal(connectionFor(server, "conn-b")?.lastSeenAt, 1_000);
+  assert.equal(server.adapter, adapter);
+  assert.equal(markRoomSocketConnectionAlive(server, "missing", 3_000), server);
+  assert.equal(markRoomSocketConnectionAlive(server, "conn-a", 2_000), server);
+  assert.equal(markRoomSocketConnectionAlive(server, "conn-a", 1_500), server);
+});
+
+test("expires a bound connection at the timeout boundary and remains idempotent", () => {
+  let server = createConnectedServerAt(["conn-host", "conn-guest"], 1_000);
+  server = handleRoomSocketRawMessage(
+    server,
+    "conn-host",
+    JSON.stringify(createRoomMessage("m-create", "server-room-heartbeat", "Host")),
+  ).state;
+  server = handleRoomSocketRawMessage(
+    server,
+    "conn-host",
+    JSON.stringify(takeSeatMessage("m-seat", "server-room-heartbeat", "session-1", 0)),
+  ).state;
+  server = handleRoomSocketRawMessage(
+    server,
+    "conn-host",
+    JSON.stringify({
+      protocolVersion: 1,
+      clientMessageId: "m-ready",
+      roomId: "server-room-heartbeat",
+      sessionToken: "session-1",
+      type: "toggleReady",
+      payload: {},
+    } satisfies RoomSocketClientMessage),
+  ).state;
+  server = handleRoomSocketRawMessage(
+    server,
+    "conn-guest",
+    JSON.stringify({
+      protocolVersion: 1,
+      clientMessageId: "m-join",
+      roomId: "server-room-heartbeat",
+      type: "joinRoom",
+      payload: { displayName: "Guest" },
+    } satisfies RoomSocketClientMessage),
+  ).state;
+  server = markRoomSocketConnectionAlive(server, "conn-guest", 5_900);
+
+  const beforeBoundary = tickRoomSocketConnectionHealth(server, 5_999, 5_000);
+  assert.deepEqual(beforeBoundary.expiredConnectionIds, []);
+  assert.equal(beforeBoundary.state, server);
+
+  const expired = tickRoomSocketConnectionHealth(server, 6_000, 5_000);
+  const room = expired.state.adapter.rooms[0].service.room;
+  const guestSnapshot = expired.outgoing.find((message) => message.connectionId === "conn-guest")?.message;
+
+  assert.deepEqual(expired.expiredConnectionIds, ["conn-host"]);
+  assert.equal(connectionFor(expired.state, "conn-host"), undefined);
+  assert.equal(room.members[0].connected, false);
+  assert.equal(room.seats[0].connected, false);
+  assert.equal(room.seats[0].playerId, "player-1");
+  assert.equal(room.seats[0].ready, true);
+  assert.equal(expired.state.adapter.rooms[0].service.sessions[0].sessionToken, "session-1");
+  assert.deepEqual(room.settlementLedger, []);
+  assert.equal(guestSnapshot?.type, "roomSnapshot");
+  assert.doesNotMatch(
+    JSON.stringify(guestSnapshot),
+    /"connectionId"|"lastSeenAt"|"heartbeat"|"sessionToken"|session-1/,
+  );
+
+  const repeated = tickRoomSocketConnectionHealth(expired.state, 6_001, 5_000);
+  assert.deepEqual(repeated.expiredConnectionIds, []);
+  assert.equal(repeated.state, expired.state);
+  assert.deepEqual(repeated.outgoing, []);
+});
+
+test("an old heartbeat timeout cannot override a resumed connection", () => {
+  let server = createConnectedServerAt(["conn-old", "conn-guest", "conn-new"], 1_000);
+  server = handleRoomSocketRawMessage(
+    server,
+    "conn-old",
+    JSON.stringify(createRoomMessage("m-create", "server-room-heartbeat-resume", "Host")),
+  ).state;
+  server = handleRoomSocketRawMessage(
+    server,
+    "conn-guest",
+    JSON.stringify({
+      protocolVersion: 1,
+      clientMessageId: "m-join",
+      roomId: "server-room-heartbeat-resume",
+      type: "joinRoom",
+      payload: { displayName: "Guest" },
+    } satisfies RoomSocketClientMessage),
+  ).state;
+  server = handleRoomSocketRawMessage(
+    server,
+    "conn-new",
+    JSON.stringify({
+      protocolVersion: 1,
+      clientMessageId: "m-resume",
+      roomId: "server-room-heartbeat-resume",
+      sessionToken: "session-1",
+      type: "resumeSession",
+      payload: { lastSeenEventId: 0 },
+    } satisfies RoomSocketClientMessage),
+  ).state;
+
+  server = markRoomSocketConnectionAlive(server, "conn-old", 5_000);
+  server = markRoomSocketConnectionAlive(server, "conn-new", 5_900);
+  server = markRoomSocketConnectionAlive(server, "conn-guest", 5_900);
+  assert.equal(sessionFor(server, "conn-old"), undefined);
+  assert.equal(sessionFor(server, "conn-new"), "session-1");
+
+  const expired = tickRoomSocketConnectionHealth(server, 6_000, 1_000);
+  assert.deepEqual(expired.expiredConnectionIds, ["conn-old"]);
+  assert.equal(expired.state.adapter.rooms[0].service.room.members[0].connected, true);
+  assert.equal(sessionFor(expired.state, "conn-new"), "session-1");
+  assert.deepEqual(expired.outgoing, []);
+  assert.equal(
+    handleRoomSocketConnectionClosed(expired.state, "conn-old").state,
+    expired.state,
+  );
+});
+
 function createConnectedServer(connectionIds: string[]): RoomSocketServerCoreState {
+  return createConnectedServerAt(connectionIds, Date.now());
+}
+
+function createConnectedServerAt(connectionIds: string[], now: number): RoomSocketServerCoreState {
   let nextSession = 1;
 
   return connectionIds.reduce(
-    (server, connectionId) => registerRoomSocketConnection(server, connectionId),
+    (server, connectionId) => registerRoomSocketConnection(server, connectionId, now),
     createRoomSocketServerCoreState({
       roomSeedFactory: () => "server-seed",
       sessionTokenFactory: () => `session-${nextSession++}`,
     }),
   );
+}
+
+function connectionFor(server: RoomSocketServerCoreState, connectionId: string) {
+  return server.connections.find((connection) => connection.connectionId === connectionId);
 }
 
 function createRoomMessage(clientMessageId: string, roomId: string, displayName: string): RoomSocketClientMessage {

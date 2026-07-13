@@ -81,6 +81,7 @@ type WebSocketStepKey =
   | "claim"
   | "resume";
 type WebSocketStepStatus = "idle" | "running" | "success" | "error";
+type WebSocketConnectionStatus = "idle" | "connecting" | "connected" | "reconnecting" | "error";
 type WebSocketStepState = {
   label: string;
   status: WebSocketStepStatus;
@@ -1401,7 +1402,7 @@ function WebSocketExperimentPanel({
   const helperTransports = useRef<WebSocketRoomTransport[]>([]);
   const [serverUrl, setServerUrl] = useState(webSocketExperimentUrl);
   const [experimentRoomId, setExperimentRoomId] = useState(createWebSocketExperimentRoomId);
-  const [connectionStatus, setConnectionStatus] = useState<"idle" | "connecting" | "connected" | "error">("idle");
+  const [connectionStatus, setConnectionStatus] = useState<WebSocketConnectionStatus>("idle");
   const [hostState, setHostState] = useState<WebSocketRoomTransportState | null>(null);
   const [guestState, setGuestState] = useState<WebSocketRoomTransportState | null>(null);
   const [helperStates, setHelperStates] = useState<WebSocketRoomTransportState[]>([]);
@@ -1418,6 +1419,25 @@ function WebSocketExperimentPanel({
     },
     [],
   );
+
+  useEffect(() => {
+    if (connectionStatus !== "connected") {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      const primaryTransports = [hostTransport.current, guestTransport.current].filter(
+        (transport): transport is WebSocketRoomTransport => transport !== null,
+      );
+
+      if (primaryTransports.some((transport) => transport.getState().status === "closed")) {
+        setConnectionStatus("error");
+        setWebSocketStep("connection", "error", "连接已中断，当前客户端已离线，可使用 session 恢复。");
+      }
+    }, 500);
+
+    return () => window.clearInterval(timer);
+  }, [connectionStatus]);
 
   useEffect(() => {
     actionsRef.current = {
@@ -2273,6 +2293,8 @@ function WebSocketExperimentPanel({
     }
 
     setWebSocketStep("resume", "running", "正在模拟页面刷新，并用本地 session 恢复 host/guest。");
+    setConnectionStatus("reconnecting");
+    setWebSocketStep("connection", "running", "正在重连并恢复 host/guest session。");
     appendWebSocketLog("模拟刷新：关闭 host/guest 连接，保留本地 sessionToken。");
 
     hostTransport.current?.close();
@@ -2292,8 +2314,6 @@ function WebSocketExperimentPanel({
 
       hostTransport.current = nextHost;
       guestTransport.current = nextGuest;
-      setConnectionStatus("connected");
-      setWebSocketStep("connection", "success", "刷新后已重新建立 host/guest 连接。");
 
       const hostResult = await nextHost.resumeSession({
         sessionToken: hostRecord.sessionToken,
@@ -2307,6 +2327,8 @@ function WebSocketExperimentPanel({
       if (!hostResult.ok || !guestResult.ok) {
         const reason = !hostResult.ok ? webSocketResumeFailureText(hostResult) : webSocketResumeFailureText(guestResult);
         setWebSocketStep("resume", "error", `恢复失败：${reason}。`);
+        setConnectionStatus("error");
+        setWebSocketStep("connection", "error", "连接已建立，但 session 恢复失败。");
         appendWebSocketLog(`resumeSession：恢复失败，${reason}。`);
         syncTransportState();
         return;
@@ -2317,6 +2339,8 @@ function WebSocketExperimentPanel({
         waitForWebSocketView(nextGuest, "player-2", (view) => view.localSeatId !== undefined),
       ]);
       const missedEvents = countWebSocketResumeEvents(nextHost.getState(), "player-1") + countWebSocketResumeEvents(nextGuest.getState(), "player-2");
+      setConnectionStatus("connected");
+      setWebSocketStep("connection", "success", "host/guest 连接正常，session 已恢复。");
       setWebSocketStep("resume", "success", `恢复成功：host/guest 已拉回 redacted snapshot，补回 ${missedEvents} 条 missed events。`);
       appendWebSocketLog(`resumeSession：恢复成功，补回 ${missedEvents} 条 missed events。`);
       syncTransportState();
@@ -2810,12 +2834,13 @@ function webSocketErrorCodeText(code: string): string {
   return messages[code] ?? code;
 }
 
-function webSocketStatusText(status: "idle" | "connecting" | "connected" | "error"): string {
+function webSocketStatusText(status: WebSocketConnectionStatus): string {
   const names = {
-    idle: "未连接",
-    connecting: "连接中",
-    connected: "已连接",
-    error: "连接失败",
+    idle: "已离线",
+    connecting: "正在连接",
+    connected: "连接正常",
+    reconnecting: "正在重连",
+    error: "已离线",
   };
   return names[status];
 }

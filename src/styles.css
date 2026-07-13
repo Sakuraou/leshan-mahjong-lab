@@ -704,6 +704,11 @@ button {
   color: #247a48;
 }
 
+.websocket-header > span[data-status="reconnecting"] {
+  background: #fff1c9;
+  color: #7a5b00;
+}
+
 .websocket-header > span[data-status="error"] {
   background: #f8dfd8;
   color: #9b3b27;

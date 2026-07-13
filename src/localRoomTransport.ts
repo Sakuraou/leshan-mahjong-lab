@@ -184,12 +184,13 @@ function applySocketMessages(
   const snapshotByPlayerId = { ...state.snapshotByPlayerId };
 
   for (const message of messages) {
-    if (message.type !== "roomSnapshot") {
-      continue;
+    if (message.type === "actionAccepted") {
+      sessionTokenByPlayerId[message.payload.playerId] = message.recipientSessionToken;
     }
 
-    sessionTokenByPlayerId[message.payload.playerId] = message.payload.sessionToken;
-    snapshotByPlayerId[message.payload.playerId] = message.payload.view;
+    if (message.type === "roomSnapshot") {
+      snapshotByPlayerId[message.payload.playerId] = message.payload.view;
+    }
   }
 
   return refreshSnapshots({

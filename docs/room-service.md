@@ -167,6 +167,18 @@ event, while the adapter can broadcast only the presence event to other
 sessions. Disconnection preserves seat ownership, readiness, round state,
 hands, dingque, scores, settlement records, and response deadlines.
 
+Heartbeat transport state intentionally stays outside `roomService`. The
+WebSocket server core owns `connectionId` and `lastSeenAt`; when a health tick
+expires the latest connection, it calls `markSessionDisconnected`. A later
+`resumeRoomSession` calls `markSessionConnected` and rebinds delivery to the
+newest socket. Late events from an old unbound connection therefore cannot
+change the resumed session's presence.
+
+Offline sessions remain part of claim and qiang-gang response windows. Existing
+authoritative deadlines eventually treat their missing response as a pass, so
+transport failure cannot block the round. No heartbeat timestamp, timer,
+connection id, or session token is copied into `ClientVisibleRoomState`.
+
 ## Action Flow
 
 ```text
@@ -257,6 +269,8 @@ lookup, event ids, and redacted room views.
 - Session tokens are secure by default and injectable for deterministic tests.
 - The service now covers dingque, draw/discard, claim windows, hu/peng/gang,
   response deadlines, hu-score settlement, and presence recovery.
+- WebSocket heartbeat and stale-connection detection live in the server core;
+  the service receives only connected/disconnected transitions.
 - State is in memory only. Restarting the server would lose rooms.
 - Offline kicking, bot takeover, room dissolution, and database persistence are
   not implemented.
