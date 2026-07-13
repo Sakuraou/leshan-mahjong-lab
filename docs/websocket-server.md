@@ -356,6 +356,24 @@ Portfolio screenshots to capture next:
 | Session recovery demo | "模拟刷新后恢复" button, resume success badge, restored host/guest snapshots, missed-event count |
 | Main table WebSocket preview | Main table limited preview showing real roomSnapshot room status, seats, readiness, wall count, redacted hand counts, and dingque state |
 
+## Server-Owned Response Deadlines
+
+The dev server runs one lightweight polling interval rather than creating a
+separate timer per response window. Each poll calls
+`tickRoomSocketServerDeadlines`, which delegates all timing decisions to the
+pure room/service/adapter core and then routes only changed redacted snapshots.
+
+Window state contains serializable `windowId`, `deadlineAt`, and status fields;
+timer handles never enter room state or client snapshots. The server clears its
+polling interval during shutdown. Tests inject a fixed clock and timeout length,
+while the real dev server defaults to a 250 ms poll and a 15 second response
+window.
+
+The old client-triggered `expireClaimWindow` protocol action has been removed.
+This prevents a valid session from ending another player's response time early.
+Snapshots include `serverNow`, allowing the frontend to render a calibrated
+countdown while the server remains authoritative.
+
 ## Current Test Coverage
 
 `tests/game/roomSocketServerCore.test.ts` covers:
@@ -387,26 +405,12 @@ wrapper against a real local WebSocket server:
   `lastSeenEventId`, then receive missed events and a restored redacted
   snapshot.
 
-The React panel itself is browser-verified manually during the current MVP
-stage: the full-flow button reaches `dingque`, renders four redacted snapshot
-summaries, and the recovery button restores host/guest snapshots after a
-simulated refresh without changing the mock table mode. The main-table preview
-mode is also browser-verified: after the full flow starts, it displays the real
-room status, 4/4 seats, 4/4 ready state, wall count, per-client redacted hand
-counts, and server-confirmed dingque updates while still leaving draw/discard
-outside the real WebSocket path.
+The React WebSocket preview now consumes server-authoritative dingque, draw,
+discard, claim, gang, hu, score-ledger, and response-deadline snapshots while
+the mock table remains available as the default portfolio-safe path.
 
 ## Next Milestone
 
-The real local WebSocket dev server, frontend WebSocket transport wrapper, full
-room-flow panel, session recovery demo, main-table preview, and
-server-authoritative dingque action are visible in the React UI. The next
-milestone is to move from dingque into server-authoritative turn actions without
-removing the mock fallback:
-
-1. Keep mock transport as the default portfolio-safe mode.
-2. Design WebSocket `drawTile` and `discardTile` payloads, validations,
-   broadcasts, and error codes.
-3. Add WebSocket draw/discard actions as server-authoritative round commands.
-4. Keep server-authoritative validation in `roomSocketAdapter` and
-   `roomService`.
+The next milestone is production hardening: heartbeat/presence tracking,
+persistent room recovery, deployment configuration for the WebSocket process,
+and extension of the settlement ledger to gang, chicken, and cha-jiao payments.

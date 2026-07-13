@@ -11,7 +11,6 @@ import {
   discardRoomTile,
   drawGangTile,
   drawRoomTile,
-  expireClaimWindow,
   joinRoom,
   passClaim,
   passQiangGang,
@@ -19,6 +18,8 @@ import {
   takeSeat,
   toggleReady,
   toClientVisibleRoomState,
+  tickRoomStateDeadlines,
+  DEFAULT_RESPONSE_WINDOW_TIMEOUT_MS,
   type ClaimHuResult,
   type ClaimAnGangResult,
   type ClaimBaGangResult,
@@ -31,7 +32,6 @@ import {
   type DiscardRoomTileResult,
   type DrawGangTileResult,
   type DrawRoomTileResult,
-  type ExpireClaimWindowResult,
   type JoinRoomResult,
   type PassClaimResult,
   type PassQiangGangResult,
@@ -51,9 +51,12 @@ export type RoomSession = {
 };
 
 export type SessionTokenFactory = () => string;
+export type NowFactory = () => number;
 
 export type CreateRoomSessionOptions = {
   sessionTokenFactory?: SessionTokenFactory;
+  nowFactory?: NowFactory;
+  responseWindowTimeoutMs?: number;
 };
 
 export type RoomServiceState = {
@@ -62,6 +65,8 @@ export type RoomServiceState = {
   lastEventId: number;
   nextPlayerNumber: number;
   sessionTokenFactory: SessionTokenFactory;
+  nowFactory: NowFactory;
+  responseWindowTimeoutMs: number;
 };
 
 export type CreateRoomSessionInput = {
@@ -90,8 +95,7 @@ export type RoomAction =
   | { type: "claimAnGang"; tile: Tile }
   | { type: "claimBaGang"; tile: Tile }
   | { type: "passQiangGang" }
-  | { type: "claimQiangGangHu" }
-  | { type: "expireClaimWindow" };
+  | { type: "claimQiangGangHu" };
 
 export type RoomServiceError =
   | "invalidSession"
@@ -111,8 +115,7 @@ export type RoomServiceError =
   | ResultFailureReason<ClaimQiangGangHuResult>
   | ResultFailureReason<ClaimSelfDrawHuResult>
   | ResultFailureReason<PassClaimResult>
-  | ResultFailureReason<PassQiangGangResult>
-  | ResultFailureReason<ExpireClaimWindowResult>;
+  | ResultFailureReason<PassQiangGangResult>;
 
 type ResultFailureReason<TResult> = TResult extends { ok: false; reason: infer TReason } ? TReason : never;
 
@@ -138,12 +141,21 @@ export type GetClientRoomViewResult =
   | { ok: true; session: RoomSession; view: ClientVisibleRoomState; lastEventId: number }
   | { ok: false; reason: "invalidSession" };
 
+export type RoomDeadlineTickResult = {
+  service: RoomServiceState;
+  changed: boolean;
+  expiredWindowId: string | null;
+  events: RoomEvent[];
+};
+
 export function createRoomSession(
   input: CreateRoomSessionInput,
   options: CreateRoomSessionOptions = {},
 ): CreateRoomSessionResult {
   const playerId = "player-1";
   const sessionTokenFactory = options.sessionTokenFactory ?? createSecureSessionToken;
+  const nowFactory = options.nowFactory ?? Date.now;
+  const responseWindowTimeoutMs = options.responseWindowTimeoutMs ?? DEFAULT_RESPONSE_WINDOW_TIMEOUT_MS;
   const sessionToken = issueSessionToken(sessionTokenFactory, []);
   const created = createRoom({ id: input.roomId, seed: input.seed });
   const joined = joinRoom(created, { playerId, displayName: input.displayName });
@@ -165,13 +177,15 @@ export function createRoomSession(
     lastEventId,
     nextPlayerNumber: 2,
     sessionTokenFactory,
+    nowFactory,
+    responseWindowTimeoutMs,
   };
 
   return {
     ok: true,
     service,
     session,
-    view: toClientVisibleRoomState(joined.room, playerId),
+    view: toClientVisibleRoomState(joined.room, playerId, nowFactory()),
     lastEventId,
     events: joined.room.eventLog,
   };
@@ -218,7 +232,8 @@ export function handleRoomAction(
     return { ok: false, reason: "invalidSession", service };
   }
 
-  const result = applyRoomAction(service.room, session.playerId, action);
+  const now = service.nowFactory();
+  const result = applyRoomAction(service, session.playerId, action, now);
 
   if (!result.ok) {
     return { ok: false, reason: result.reason, service };
@@ -232,7 +247,32 @@ export function handleRoomAction(
     lastEventId: nextLastEventId,
   };
 
-  return buildResponse(nextService, sessionToken, service.lastEventId);
+  return buildResponse(nextService, sessionToken, service.lastEventId, now);
+}
+
+export function tickRoomDeadlines(
+  service: RoomServiceState,
+  now = service.nowFactory(),
+): RoomDeadlineTickResult {
+  const result = tickRoomStateDeadlines(service.room, now);
+
+  if (!result.changed) {
+    return { service, changed: false, expiredWindowId: null, events: [] };
+  }
+
+  const nextLastEventId = advanceEventId(service, result.room);
+  const nextService: RoomServiceState = {
+    ...service,
+    room: result.room,
+    lastEventId: nextLastEventId,
+  };
+
+  return {
+    service: nextService,
+    changed: true,
+    expiredWindowId: result.expiredWindowId,
+    events: result.room.eventLog.slice(service.lastEventId),
+  };
 }
 
 export function resumeRoomSession(
@@ -257,7 +297,7 @@ export function resumeRoomSession(
     ok: true,
     service: nextService,
     session: nextSession,
-    view: toClientVisibleRoomState(nextService.room, nextSession.playerId),
+    view: toClientVisibleRoomState(nextService.room, nextSession.playerId, nextService.nowFactory()),
     lastEventId: nextService.lastEventId,
     events: missedEvents,
     missedEvents,
@@ -267,6 +307,7 @@ export function resumeRoomSession(
 export function getClientRoomView(
   service: RoomServiceState,
   sessionToken: string,
+  now = service.nowFactory(),
 ): GetClientRoomViewResult {
   const session = findSession(service, sessionToken);
 
@@ -277,15 +318,16 @@ export function getClientRoomView(
   return {
     ok: true,
     session,
-    view: toClientVisibleRoomState(service.room, session.playerId),
+    view: toClientVisibleRoomState(service.room, session.playerId, now),
     lastEventId: service.lastEventId,
   };
 }
 
 function applyRoomAction(
-  room: RoomState,
+  service: RoomServiceState,
   playerId: string,
   action: RoomAction,
+  now: number,
 ):
   | TakeSeatResult
   | ToggleReadyResult
@@ -302,8 +344,8 @@ function applyRoomAction(
   | ClaimQiangGangHuResult
   | ClaimSelfDrawHuResult
   | PassClaimResult
-  | PassQiangGangResult
-  | ExpireClaimWindowResult {
+  | PassQiangGangResult {
+  const room = service.room;
   if (action.type === "takeSeat") {
     return takeSeat(room, playerId, action.seatId);
   }
@@ -325,7 +367,10 @@ function applyRoomAction(
   }
 
   if (action.type === "discardTile") {
-    return discardRoomTile(room, playerId, action.tile);
+    return discardRoomTile(room, playerId, action.tile, {
+      now,
+      timeoutMs: service.responseWindowTimeoutMs,
+    });
   }
 
   if (action.type === "passClaim") {
@@ -353,7 +398,10 @@ function applyRoomAction(
   }
 
   if (action.type === "claimBaGang") {
-    return claimBaGang(room, playerId, action.tile);
+    return claimBaGang(room, playerId, action.tile, {
+      now,
+      timeoutMs: service.responseWindowTimeoutMs,
+    });
   }
 
   if (action.type === "passQiangGang") {
@@ -364,10 +412,6 @@ function applyRoomAction(
     return claimQiangGangHu(room, playerId);
   }
 
-  if (action.type === "expireClaimWindow") {
-    return expireClaimWindow(room);
-  }
-
   return chooseMissingSuit(room, playerId, action.suit);
 }
 
@@ -375,6 +419,7 @@ function buildResponse(
   service: RoomServiceState,
   sessionToken: string,
   previousLastEventId: number,
+  now = service.nowFactory(),
 ): RoomServiceResult {
   const session = findSession(service, sessionToken);
 
@@ -386,7 +431,7 @@ function buildResponse(
     ok: true,
     service,
     session,
-    view: toClientVisibleRoomState(service.room, session.playerId),
+    view: toClientVisibleRoomState(service.room, session.playerId, now),
     lastEventId: service.lastEventId,
     events: service.room.eventLog.slice(previousLastEventId),
   };

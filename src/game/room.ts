@@ -19,6 +19,17 @@ import {
 import type { Meld, PlayerId, Rank, RoundState, ScorePattern, Suit, Tile } from "./types.ts";
 
 const seatIds: PlayerId[] = [0, 1, 2, 3];
+export const DEFAULT_RESPONSE_WINDOW_TIMEOUT_MS = 15_000;
+
+export type ResponseWindowKind = "discardClaim" | "qiangGang";
+export type ResponseWindowStatus = "open" | "expired";
+export type ResponseWindowTiming = { now?: number; timeoutMs?: number };
+
+type ResponseWindowMetadata = {
+  windowId: string;
+  deadlineAt: number;
+  status: ResponseWindowStatus;
+};
 
 export type RoomStatus = "waiting" | "dingque" | "playing" | "ended";
 
@@ -39,7 +50,7 @@ export type ClientLegalAction =
   | "passQiangGang"
   | "claimQiangGangHu";
 
-export type ClaimWindow = {
+export type ClaimWindow = ResponseWindowMetadata & {
   discardedBySeatId: PlayerId;
   discardedByPlayerId: string;
   tile: Tile;
@@ -58,7 +69,7 @@ export type HuClaim = {
   points: number;
 };
 
-export type BaGangClaimWindow = {
+export type BaGangClaimWindow = ResponseWindowMetadata & {
   upgradedBySeatId: PlayerId;
   upgradedByPlayerId: string;
   targetTile: Tile;
@@ -70,6 +81,14 @@ export type BaGangClaimWindow = {
 };
 
 export type ClientVisibleBaGangClaimWindow = Omit<BaGangClaimWindow, "pengMeldIndex">;
+
+export type ClientVisibleResponseWindow = {
+  windowId: string;
+  kind: ResponseWindowKind;
+  deadlineAt: number;
+  remainingMs: number;
+  status: ResponseWindowStatus;
+};
 
 export type GangDrawState = {
   seatId: PlayerId;
@@ -154,7 +173,17 @@ export type RoomEvent =
       genCount: number;
       points: number;
     }
-  | { type: "qiangGangWindowClosed"; reason: "allPassed" | "robbed" }
+  | {
+      type: "qiangGangWindowClosed";
+      reason: "allPassed" | "robbed" | "timeoutAllPassed" | "timeoutRobbed";
+    }
+  | {
+      type: "responseWindowExpired";
+      windowId: string;
+      kind: ResponseWindowKind;
+      timedOutPlayerIds: PlayerId[];
+      outcome: "allPassed" | "claimed" | "robbed";
+    }
   | { type: "gangTileDrawn"; seatId: PlayerId; playerId: string; gangType: GangDrawState["gangType"] }
   | { type: "roundEnded"; reason: RoundEndState["reason"]; remainingPlayerIds: PlayerId[] }
   | { type: "claimWindowClosed"; reason: "allPassed" | "timeout" | "claimed"; nextPlayer: PlayerId };
@@ -187,6 +216,7 @@ export type RoomState = {
   chaJiao: ChaJiaoResult | null;
   scores: PlayerScoreBalance[];
   settlementLedger: HuSettlementEntry[];
+  resolvedWindowIds: string[];
   eventLog: RoomEvent[];
 };
 
@@ -222,6 +252,7 @@ export type ClientVisibleRoomState = {
   chaJiao: ChaJiaoResult | null;
   scores: PlayerScoreBalance[];
   settlementLedger: HuSettlementEntry[];
+  responseWindow: ClientVisibleResponseWindow | null;
   eventLog: ClientRoomEvent[];
 };
 
@@ -424,7 +455,17 @@ export type ClaimQiangGangHuResult =
 
 export type ExpireClaimWindowResult =
   | { ok: true; room: RoomState }
-  | { ok: false; reason: "noClaimWindow" };
+  | { ok: false; reason: "noClaimWindow" | "windowMismatch" | "deadlineNotReached" };
+
+export type ExpireQiangGangWindowResult =
+  | { ok: true; room: RoomState }
+  | { ok: false; reason: "noQiangGangWindow" | "windowMismatch" | "deadlineNotReached" };
+
+export type TickRoomDeadlinesResult = {
+  room: RoomState;
+  changed: boolean;
+  expiredWindowId: string | null;
+};
 
 export function createRoom(input: CreateRoomInput): RoomState {
   return {
@@ -449,6 +490,7 @@ export function createRoom(input: CreateRoomInput): RoomState {
     chaJiao: null,
     scores: createInitialScoreBalances(),
     settlementLedger: [],
+    resolvedWindowIds: [],
     eventLog: [{ type: "roomCreated", roomId: input.id }],
   };
 }
@@ -714,7 +756,12 @@ export function drawGangTile(room: RoomState, playerId: string): DrawGangTileRes
   };
 }
 
-export function discardRoomTile(room: RoomState, playerId: string, tile: Tile): DiscardRoomTileResult {
+export function discardRoomTile(
+  room: RoomState,
+  playerId: string,
+  tile: Tile,
+  timing: ResponseWindowTiming = {},
+): DiscardRoomTileResult {
   if (room.round === null) {
     return { ok: false, reason: "roundNotStarted" };
   }
@@ -762,7 +809,14 @@ export function discardRoomTile(room: RoomState, playerId: string, tile: Tile): 
       phase: "claim",
       selfDrawEligible: false,
       round: result.round,
-      claimWindow: createClaimWindow(result.round, seat.seatId, playerId, tile, result.nextPlayer),
+      claimWindow: createClaimWindow(
+        result.round,
+        seat.seatId,
+        playerId,
+        tile,
+        result.nextPlayer,
+        responseWindowMetadata(room, "discardClaim", timing),
+      ),
       eventLog: [
         ...room.eventLog,
         { type: "tileDiscarded", seatId: seat.seatId, playerId, tile },
@@ -964,6 +1018,7 @@ export function claimSelfDrawHu(room: RoomState, playerId: string): ClaimSelfDra
       loserSeatId: payer.id,
       loserPlayerId: room.seats[payer.id].playerId!,
       reason: "selfDrawHu",
+      sourceWindowId: null,
       rawPoints: huCheck.score.rawPoints,
       finalPoints: huCheck.score.cappedPoints,
       relatedEvent: { type: "selfDrawHuClaimed", seatId: seat.seatId },
@@ -1057,7 +1112,12 @@ export function claimAnGang(room: RoomState, playerId: string, tile: Tile): Clai
   };
 }
 
-export function claimBaGang(room: RoomState, playerId: string, tile: Tile): ClaimBaGangResult {
+export function claimBaGang(
+  room: RoomState,
+  playerId: string,
+  tile: Tile,
+  timing: ResponseWindowTiming = {},
+): ClaimBaGangResult {
   const ready = prepareActiveGang(room, playerId);
 
   if (!ready.ok) {
@@ -1084,6 +1144,7 @@ export function claimBaGang(room: RoomState, playerId: string, tile: Tile): Clai
     tile,
     addedTile,
     pengMeldIndex,
+    responseWindowMetadata(room, "qiangGang", timing),
   );
 
   const declaredRoom: RoomState = {
@@ -1336,24 +1397,126 @@ function claimMeldFromDiscard(
   };
 }
 
-export function expireClaimWindow(room: RoomState): ExpireClaimWindowResult {
+export function expireClaimWindow(
+  room: RoomState,
+  expectedWindowId?: string,
+  now = Date.now(),
+): ExpireClaimWindowResult {
   if (room.claimWindow === null || room.phase !== "claim") {
     return { ok: false, reason: "noClaimWindow" };
   }
+
+  if (expectedWindowId !== undefined && room.claimWindow.windowId !== expectedWindowId) {
+    return { ok: false, reason: "windowMismatch" };
+  }
+
+  if (now < room.claimWindow.deadlineAt) {
+    return { ok: false, reason: "deadlineNotReached" };
+  }
+
+  const timedOutPlayerIds = room.claimWindow.pendingPlayerIds.filter(
+    (seatId) => !hasClaimResponse(room.claimWindow!, seatId),
+  );
+  const expiredWindow: ClaimWindow = {
+    ...room.claimWindow,
+    status: "expired",
+    passedPlayerIds: [...room.claimWindow.passedPlayerIds, ...timedOutPlayerIds],
+  };
+  const outcome = expiredWindow.huClaims.length > 0 ? "claimed" : "allPassed";
+  const expiredRoom: RoomState = {
+    ...room,
+    claimWindow: null,
+    eventLog: [
+      ...room.eventLog,
+      {
+        type: "responseWindowExpired",
+        windowId: expiredWindow.windowId,
+        kind: "discardClaim",
+        timedOutPlayerIds,
+        outcome,
+      },
+    ],
+  };
 
   return {
     ok: true,
     room: finishRoundIfNeeded(
       closeClaimWindow(
-        settleDiscardClaimWindow({ ...room, claimWindow: null }, room.claimWindow),
-        room.claimWindow,
+        settleDiscardClaimWindow(expiredRoom, expiredWindow),
+        expiredWindow,
         "timeout",
       ),
     ),
   };
 }
 
-export function toClientVisibleRoomState(room: RoomState, playerId: string): ClientVisibleRoomState {
+export function expireQiangGangWindow(
+  room: RoomState,
+  expectedWindowId?: string,
+  now = Date.now(),
+): ExpireQiangGangWindowResult {
+  if (room.baGangClaimWindow === null || room.phase !== "qiangGang") {
+    return { ok: false, reason: "noQiangGangWindow" };
+  }
+
+  if (expectedWindowId !== undefined && room.baGangClaimWindow.windowId !== expectedWindowId) {
+    return { ok: false, reason: "windowMismatch" };
+  }
+
+  if (now < room.baGangClaimWindow.deadlineAt) {
+    return { ok: false, reason: "deadlineNotReached" };
+  }
+
+  const timedOutPlayerIds = room.baGangClaimWindow.pendingPlayerIds.filter(
+    (seatId) => !hasBaGangClaimResponse(room.baGangClaimWindow!, seatId),
+  );
+  const expiredWindow: BaGangClaimWindow = {
+    ...room.baGangClaimWindow,
+    status: "expired",
+    passedPlayerIds: [...room.baGangClaimWindow.passedPlayerIds, ...timedOutPlayerIds],
+  };
+  const outcome = expiredWindow.huClaims.length > 0 ? "robbed" : "allPassed";
+  const expiredRoom: RoomState = {
+    ...room,
+    baGangClaimWindow: expiredWindow,
+    eventLog: [
+      ...room.eventLog,
+      {
+        type: "responseWindowExpired",
+        windowId: expiredWindow.windowId,
+        kind: "qiangGang",
+        timedOutPlayerIds,
+        outcome,
+      },
+    ],
+  };
+
+  return { ok: true, room: settleBaGangClaimWindow(expiredRoom, expiredWindow, "timeout") };
+}
+
+export function tickRoomStateDeadlines(room: RoomState, now = Date.now()): TickRoomDeadlinesResult {
+  if (room.claimWindow !== null && now >= room.claimWindow.deadlineAt) {
+    const result = expireClaimWindow(room, room.claimWindow.windowId, now);
+    return result.ok
+      ? { room: result.room, changed: true, expiredWindowId: room.claimWindow.windowId }
+      : { room, changed: false, expiredWindowId: null };
+  }
+
+  if (room.baGangClaimWindow !== null && now >= room.baGangClaimWindow.deadlineAt) {
+    const result = expireQiangGangWindow(room, room.baGangClaimWindow.windowId, now);
+    return result.ok
+      ? { room: result.room, changed: true, expiredWindowId: room.baGangClaimWindow.windowId }
+      : { room, changed: false, expiredWindowId: null };
+  }
+
+  return { room, changed: false, expiredWindowId: null };
+}
+
+export function toClientVisibleRoomState(
+  room: RoomState,
+  playerId: string,
+  now = Date.now(),
+): ClientVisibleRoomState {
   const localSeatId = room.seats.find((seat) => seat.playerId === playerId)?.seatId ?? null;
 
   return {
@@ -1392,6 +1555,9 @@ export function toClientVisibleRoomState(room: RoomState, playerId: string): Cli
       room.baGangClaimWindow === null
         ? null
         : {
+            windowId: room.baGangClaimWindow.windowId,
+            deadlineAt: room.baGangClaimWindow.deadlineAt,
+            status: room.baGangClaimWindow.status,
             upgradedBySeatId: room.baGangClaimWindow.upgradedBySeatId,
             upgradedByPlayerId: room.baGangClaimWindow.upgradedByPlayerId,
             targetTile: room.baGangClaimWindow.targetTile,
@@ -1414,7 +1580,24 @@ export function toClientVisibleRoomState(room: RoomState, playerId: string): Cli
     chaJiao: room.chaJiao,
     scores: room.scores,
     settlementLedger: room.settlementLedger,
+    responseWindow: clientVisibleResponseWindow(room, now),
     eventLog: room.eventLog.map((event) => toClientVisibleRoomEvent(event, localSeatId)),
+  };
+}
+
+function clientVisibleResponseWindow(room: RoomState, now: number): ClientVisibleResponseWindow | null {
+  const window = room.claimWindow ?? room.baGangClaimWindow;
+
+  if (window === null) {
+    return null;
+  }
+
+  return {
+    windowId: window.windowId,
+    kind: room.claimWindow === window ? "discardClaim" : "qiangGang",
+    deadlineAt: window.deadlineAt,
+    remainingMs: Math.max(0, window.deadlineAt - now),
+    status: window.status,
   };
 }
 
@@ -1543,8 +1726,10 @@ function createClaimWindow(
   discardedByPlayerId: string,
   tile: Tile,
   nextPlayer: PlayerId,
+  metadata: ResponseWindowMetadata,
 ): ClaimWindow {
   return {
+    ...metadata,
     discardedBySeatId,
     discardedByPlayerId,
     tile,
@@ -1568,8 +1753,10 @@ function createBaGangClaimWindow(
   targetTile: Tile,
   addedTile: Tile,
   pengMeldIndex: number,
+  metadata: ResponseWindowMetadata,
 ): BaGangClaimWindow {
   return {
+    ...metadata,
     upgradedBySeatId,
     upgradedByPlayerId,
     targetTile,
@@ -1578,6 +1765,21 @@ function createBaGangClaimWindow(
     pendingPlayerIds: claimPendingPlayerIds(round, upgradedBySeatId),
     passedPlayerIds: [],
     huClaims: [],
+  };
+}
+
+function responseWindowMetadata(
+  room: RoomState,
+  kind: ResponseWindowKind,
+  timing: ResponseWindowTiming,
+): ResponseWindowMetadata {
+  const now = timing.now ?? Date.now();
+  const timeoutMs = timing.timeoutMs ?? DEFAULT_RESPONSE_WINDOW_TIMEOUT_MS;
+
+  return {
+    windowId: `${room.id}:${kind}:${room.eventLog.length + 1}`,
+    deadlineAt: now + timeoutMs,
+    status: "open",
   };
 }
 
@@ -1722,6 +1924,7 @@ function settleDiscardClaimWindow(room: RoomState, claimWindow: ClaimWindow): Ro
     claimWindow.huClaims,
     "discardHu",
     "huClaimed",
+    claimWindow.windowId,
   );
 }
 
@@ -1732,6 +1935,7 @@ function settleHuClaims(
   huClaims: HuClaim[],
   reason: HuSettlementReason,
   relatedEventType: HuSettlementEventType,
+  sourceWindowId: string,
 ): RoomState {
   return applyRoomHuSettlement(
     room,
@@ -1741,6 +1945,7 @@ function settleHuClaims(
       loserSeatId,
       loserPlayerId,
       reason,
+      sourceWindowId,
       rawPoints: claim.rawPoints,
       finalPoints: claim.points,
       relatedEvent: { type: relatedEventType, seatId: claim.seatId },
@@ -1758,7 +1963,11 @@ function applyRoomHuSettlement(room: RoomState, transfers: HuSettlementTransfer[
   };
 }
 
-function settleBaGangClaimWindow(room: RoomState, claimWindow: BaGangClaimWindow): RoomState {
+function settleBaGangClaimWindow(
+  room: RoomState,
+  claimWindow: BaGangClaimWindow,
+  trigger: "allResponded" | "timeout" = "allResponded",
+): RoomState {
   if (room.round === null) {
     return room;
   }
@@ -1774,6 +1983,7 @@ function settleBaGangClaimWindow(room: RoomState, claimWindow: BaGangClaimWindow
       claimWindow.huClaims,
       "qiangGangHu",
       "qiangGangHuClaimed",
+      claimWindow.windowId,
     );
     const nextRound: RoundState = {
       ...room.round,
@@ -1790,7 +2000,14 @@ function settleBaGangClaimWindow(room: RoomState, claimWindow: BaGangClaimWindow
       round: nextRound,
       baGangClaimWindow: null,
       gangDraw: null,
-      eventLog: [...room.eventLog, { type: "qiangGangWindowClosed", reason: "robbed" }],
+      resolvedWindowIds: appendResolvedWindowId(room.resolvedWindowIds, claimWindow.windowId),
+      eventLog: [
+        ...room.eventLog,
+        {
+          type: "qiangGangWindowClosed",
+          reason: trigger === "timeout" ? "timeoutRobbed" : "robbed",
+        },
+      ],
     });
   }
 
@@ -1822,6 +2039,7 @@ function settleBaGangClaimWindow(room: RoomState, claimWindow: BaGangClaimWindow
     selfDrawEligible: false,
     round: nextRound,
     baGangClaimWindow: null,
+    resolvedWindowIds: appendResolvedWindowId(room.resolvedWindowIds, claimWindow.windowId),
     gangDraw: {
       seatId: claimWindow.upgradedBySeatId,
       playerId: claimWindow.upgradedByPlayerId,
@@ -1837,7 +2055,10 @@ function settleBaGangClaimWindow(room: RoomState, claimWindow: BaGangClaimWindow
         tile: claimWindow.targetTile,
         usedTiles: [claimWindow.tile],
       },
-      { type: "qiangGangWindowClosed", reason: "allPassed" },
+      {
+        type: "qiangGangWindowClosed",
+        reason: trigger === "timeout" ? "timeoutAllPassed" : "allPassed",
+      },
     ],
   });
 }
@@ -1860,8 +2081,15 @@ function closeClaimWindow(
     selfDrawEligible: false,
     round: room.round === null ? null : { ...room.round, currentPlayer: nextPlayer },
     claimWindow: null,
+    resolvedWindowIds: appendResolvedWindowId(room.resolvedWindowIds, claimWindow.windowId),
     eventLog: [...room.eventLog, { type: "claimWindowClosed", reason, nextPlayer }],
   };
+}
+
+function appendResolvedWindowId(resolvedWindowIds: string[], windowId: string): string[] {
+  return resolvedWindowIds.includes(windowId)
+    ? resolvedWindowIds
+    : [...resolvedWindowIds, windowId];
 }
 
 function finishRoundIfNeeded(room: RoomState): RoomState {

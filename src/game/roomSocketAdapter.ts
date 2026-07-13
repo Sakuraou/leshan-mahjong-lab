@@ -5,6 +5,8 @@ import {
   handleRoomAction,
   joinRoomSession,
   resumeRoomSession,
+  tickRoomDeadlines,
+  type NowFactory,
   type RoomAction,
   type RoomServiceError,
   type RoomServiceState,
@@ -22,6 +24,8 @@ export type RoomSocketAdapterState = {
   rooms: RoomSocketRoomState[];
   roomSeedFactory: RoomSeedFactory;
   sessionTokenFactory: SessionTokenFactory;
+  nowFactory: NowFactory;
+  responseWindowTimeoutMs: number;
 };
 
 export type RoomSeedFactory = () => string;
@@ -29,6 +33,8 @@ export type RoomSeedFactory = () => string;
 export type RoomSocketAdapterOptions = {
   roomSeedFactory?: RoomSeedFactory;
   sessionTokenFactory?: SessionTokenFactory;
+  nowFactory?: NowFactory;
+  responseWindowTimeoutMs?: number;
 };
 
 export type RoomSocketRoomState = {
@@ -183,14 +189,6 @@ export type RoomSocketClientMessage =
       clientMessageId: string;
       roomId: string;
       sessionToken: string;
-      type: "expireClaimWindow";
-      payload: Record<string, never>;
-    }
-  | {
-      protocolVersion: 1;
-      clientMessageId: string;
-      roomId: string;
-      sessionToken: string;
       type: "resumeSession";
       payload: { lastSeenEventId?: number };
     };
@@ -226,6 +224,7 @@ export type RoomSnapshotPayload = {
   sessionToken: string;
   playerId: string;
   lastEventId: number;
+  serverNow: number;
   events: ClientRoomEvent[];
 };
 
@@ -236,11 +235,17 @@ export type RoomSocketAdapterResult = {
   messages: RoomSocketServerMessage[];
 };
 
+export type RoomSocketDeadlineTickResult = RoomSocketAdapterResult & {
+  expiredWindowIds: string[];
+};
+
 export function createRoomSocketAdapterState(options: RoomSocketAdapterOptions = {}): RoomSocketAdapterState {
   return {
     rooms: [],
     roomSeedFactory: options.roomSeedFactory ?? createSecureRoomSeed,
     sessionTokenFactory: options.sessionTokenFactory ?? createSecureSessionToken,
+    nowFactory: options.nowFactory ?? Date.now,
+    responseWindowTimeoutMs: options.responseWindowTimeoutMs ?? 15_000,
   };
 }
 
@@ -272,6 +277,29 @@ export function handleRoomSocketMessage(
   return handleRoomServiceAction(adapter, room.service, message, clientMessageToRoomAction(message));
 }
 
+export function tickRoomSocketDeadlines(
+  adapter: RoomSocketAdapterState,
+  now = adapter.nowFactory(),
+): RoomSocketDeadlineTickResult {
+  let nextAdapter = adapter;
+  const messages: RoomSocketServerMessage[] = [];
+  const expiredWindowIds: string[] = [];
+
+  for (const room of adapter.rooms) {
+    const result = tickRoomDeadlines(room.service, now);
+
+    if (!result.changed || result.expiredWindowId === null) {
+      continue;
+    }
+
+    nextAdapter = upsertRoom(nextAdapter, result.service);
+    expiredWindowIds.push(result.expiredWindowId);
+    messages.push(...snapshotMessagesForSessions(result.service, result.events, now));
+  }
+
+  return { adapter: nextAdapter, messages, expiredWindowIds };
+}
+
 function handleCreateRoom(
   adapter: RoomSocketAdapterState,
   message: Extract<RoomSocketClientMessage, { type: "createRoom" }>,
@@ -289,7 +317,11 @@ function handleCreateRoom(
       seed: adapter.roomSeedFactory(),
       displayName: message.payload.displayName,
     },
-    { sessionTokenFactory: adapter.sessionTokenFactory },
+    {
+      sessionTokenFactory: adapter.sessionTokenFactory,
+      nowFactory: adapter.nowFactory,
+      responseWindowTimeoutMs: adapter.responseWindowTimeoutMs,
+    },
   );
   const nextAdapter = upsertRoom(adapter, result.service);
 
@@ -377,8 +409,7 @@ function handleRoomServiceAction(
         | "claimAnGang"
         | "claimBaGang"
         | "passQiangGang"
-        | "claimQiangGangHu"
-        | "expireClaimWindow";
+        | "claimQiangGangHu";
     }
   >,
   action: RoomAction,
@@ -423,8 +454,7 @@ function clientMessageToRoomAction(
         | "claimAnGang"
         | "claimBaGang"
         | "passQiangGang"
-        | "claimQiangGangHu"
-        | "expireClaimWindow";
+        | "claimQiangGangHu";
     }
   >,
 ): RoomAction {
@@ -488,23 +518,24 @@ function clientMessageToRoomAction(
     return { type: "claimQiangGangHu" };
   }
 
-  if (message.type === "expireClaimWindow") {
-    return { type: "expireClaimWindow" };
-  }
-
   return { type: "chooseMissingSuit", suit: message.payload.suit };
 }
 
-function snapshotMessagesForSessions(service: RoomServiceState, events: RoomEvent[]): RoomSocketServerMessage[] {
-  return service.sessions.map((session) => snapshotMessage(service, session.sessionToken, events));
+function snapshotMessagesForSessions(
+  service: RoomServiceState,
+  events: RoomEvent[],
+  serverNow = service.nowFactory(),
+): RoomSocketServerMessage[] {
+  return service.sessions.map((session) => snapshotMessage(service, session.sessionToken, events, serverNow));
 }
 
 function snapshotMessage(
   service: RoomServiceState,
   sessionToken: string,
   events: RoomEvent[],
+  serverNow = service.nowFactory(),
 ): RoomSocketServerMessage {
-  const view = getClientRoomView(service, sessionToken);
+  const view = getClientRoomView(service, sessionToken, serverNow);
 
   if (!view.ok) {
     throw new Error(view.reason);
@@ -521,6 +552,7 @@ function snapshotMessage(
       sessionToken,
       playerId: view.session.playerId,
       lastEventId: service.lastEventId,
+      serverNow,
       events: events.map((event) => toClientVisibleRoomEvent(event, view.view.localSeatId)),
     },
   };

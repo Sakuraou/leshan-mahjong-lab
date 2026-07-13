@@ -1,6 +1,7 @@
 import {
   createRoomSocketAdapterState,
   handleRoomSocketMessage,
+  tickRoomSocketDeadlines,
   type PlayerId,
   type RoomSocketAdapterOptions,
   type RoomSocketAdapterState,
@@ -103,6 +104,22 @@ export function handleRoomSocketRawMessage(
     adapterResult.messages,
   );
   const delivery = routeServerMessages(nextState, connectionId, adapterResult.messages);
+
+  return {
+    state: nextState,
+    outgoing: delivery.outgoing,
+    undelivered: delivery.undelivered,
+    errors: [],
+  };
+}
+
+export function tickRoomSocketServerDeadlines(
+  state: RoomSocketServerCoreState,
+  now?: number,
+): RoomSocketServerCoreResult {
+  const result = tickRoomSocketDeadlines(state.adapter, now);
+  const nextState = { ...state, adapter: result.adapter };
+  const delivery = routeServerMessages(nextState, "", result.messages);
 
   return {
     state: nextState,
@@ -259,8 +276,7 @@ function isRoomSocketClientMessage(value: unknown): value is RoomSocketClientMes
     value.type === "claimMingGang" ||
     value.type === "passQiangGang" ||
     value.type === "claimQiangGangHu" ||
-    value.type === "drawGangTile" ||
-    value.type === "expireClaimWindow"
+    value.type === "drawGangTile"
   ) {
     return isSessionRoomMessage(value) && isRecord(value.payload);
   }

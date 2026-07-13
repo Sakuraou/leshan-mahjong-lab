@@ -347,6 +347,7 @@ decides a full state replacement is simpler than replaying events.
 type RoomSnapshotPayload = {
   view: ClientVisibleRoomState;
   lastEventId: number;
+  serverNow: number;
 };
 ```
 
@@ -449,6 +450,13 @@ type ClientVisibleRoomState = {
   };
   scores: PlayerScoreBalance[];
   settlementLedger: HuSettlementEntry[];
+  responseWindow: null | {
+    windowId: string;
+    kind: "discardClaim" | "qiangGang";
+    deadlineAt: number;
+    remainingMs: number;
+    status: "open" | "expired";
+  };
   eventLog: RoomEvent[];
 };
 
@@ -492,6 +500,24 @@ total remain outside this ledger phase.
 
 This matches the frontend client-perspective switcher: changing perspective
 should only change which hand is visible, not the authoritative game state.
+
+## Authoritative Response Deadlines
+
+Every discard-claim and qiang-gang window receives a stable `windowId`, an
+absolute `deadlineAt`, and an open/expired status. The adapter includes one
+`serverNow` value for the entire snapshot broadcast so all clients calculate
+the same remaining time.
+
+Clients cannot send an `expireClaimWindow` command. A server-owned periodic
+tick calls the pure deadline reducer. At the deadline, unresolved players are
+treated as passed, existing hu claims remain valid, and the window settles in
+one atomic transition. A stale callback must present the expected `windowId`;
+it cannot close a newer window.
+
+Expiration emits `responseWindowExpired` with the window kind, timed-out seats,
+and outcome. Resolved IDs are retained internally and hu-ledger entries keep
+their source window ID, preventing duplicate turn progression or duplicate
+payments when a tick is retried.
 
 ## Legal Actions
 

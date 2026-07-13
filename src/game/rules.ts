@@ -159,6 +159,7 @@ export type HuSettlementEntry = {
   loserSeatId: PlayerId;
   loserPlayerId: string;
   reason: HuSettlementReason;
+  sourceWindowId: string | null;
   basePoints: 1;
   rawPoints: number;
   finalPoints: number;
@@ -211,6 +212,15 @@ export function applyHuSettlementBatch(
   transfers: HuSettlementTransfer[],
 ): HuSettlementBatchResult {
   if (transfers.length === 0) {
+    return { scores, ledger, entries: [] };
+  }
+
+  const sourceWindowId = transfers[0].sourceWindowId;
+
+  if (
+    sourceWindowId !== null &&
+    ledger.some((entry) => entry.sourceWindowId === sourceWindowId)
+  ) {
     return { scores, ledger, entries: [] };
   }
 

@@ -58,6 +58,16 @@ After dingque:
 - Because self-draw doubles the result, self-draw ping hu can win as 2 points.
 - Discard ping hu is only 1 point, so it cannot win.
 
+### Server Response Timeout
+
+- Discard and qiang-gang response windows use a server-authoritative deadline.
+- When the deadline is reached, every player who has not responded is treated
+  as passing.
+- Hu claims submitted before the deadline remain valid and settle together.
+- With no discard hu, play moves to the next active player's draw phase.
+- With no qiang gang hu, the ba gang is committed and enters gang draw.
+- A resolved window cannot advance the round or settle scores a second time.
+
 ## Base Score And Cap
 
 - Base score is 1.

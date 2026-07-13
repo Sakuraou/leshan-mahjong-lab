@@ -8,7 +8,11 @@ import { createRoomSocketDevServer } from "../../src/server/devServer.ts";
 import type { PlayerId, Suit, Tile } from "../../src/game/index.ts";
 
 test("websocket room transport tracks session snapshots over a real dev server", async () => {
-  const server = await createRoomSocketDevServer({ port: 0 });
+  const server = await createRoomSocketDevServer({
+    port: 0,
+    responseWindowTimeoutMs: 50,
+    deadlinePollIntervalMs: 10,
+  });
   const roomId = "transport-real-ws-room";
   const transports: WebSocketRoomTransport[] = [];
 
@@ -86,9 +90,13 @@ test("websocket room transport tracks session snapshots over a real dev server",
     assert.equal(discarded.ok, true);
     await waitForDiscardSnapshots(transports, hostDiscard);
 
-    const expiredClaim = await transports[1].expireClaimWindow("player-2");
-    assert.equal(expiredClaim.ok, true);
     await waitForClaimWindowClosed(transports);
+    assert.equal(
+      transports[1]
+        .getClientView("player-2")
+        ?.eventLog.some((event) => event.type === "responseWindowExpired"),
+      true,
+    );
 
     const playerTwoDraw = await transports[1].drawTile("player-2");
     assert.equal(playerTwoDraw.ok, true);

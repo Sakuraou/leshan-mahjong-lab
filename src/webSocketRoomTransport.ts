@@ -14,6 +14,8 @@ export type WebSocketRoomTransportState = {
   nextClientMessageNumber: number;
   sessionTokenByPlayerId: Record<string, string | undefined>;
   snapshotByPlayerId: Record<string, ClientVisibleRoomState | undefined>;
+  serverNowByPlayerId: Record<string, number | undefined>;
+  snapshotReceivedAtByPlayerId: Record<string, number | undefined>;
   messages: RoomSocketServerMessage[];
   acceptedMessages: Extract<RoomSocketServerMessage, { type: "actionAccepted" }>[];
   rejectedMessages: Extract<RoomSocketServerMessage, { type: "actionRejected" }>[];
@@ -39,7 +41,6 @@ export type WebSocketRoomTransport = {
   claimBaGang: (playerId: string, tile: Tile) => Promise<WebSocketRoomTransportActionResult>;
   passQiangGang: (playerId: string) => Promise<WebSocketRoomTransportActionResult>;
   claimQiangGangHu: (playerId: string) => Promise<WebSocketRoomTransportActionResult>;
-  expireClaimWindow: (playerId: string) => Promise<WebSocketRoomTransportActionResult>;
   waitForSnapshot: (playerId: string, timeoutMs?: number) => Promise<ClientVisibleRoomState>;
   waitForMessageCount: (count: number, timeoutMs?: number) => Promise<RoomSocketServerMessage[]>;
   getClientView: (playerId: string) => ClientVisibleRoomState | undefined;
@@ -110,6 +111,8 @@ export async function createWebSocketRoomTransport(
     nextClientMessageNumber: 1,
     sessionTokenByPlayerId: {},
     snapshotByPlayerId: {},
+    serverNowByPlayerId: {},
+    snapshotReceivedAtByPlayerId: {},
     messages: [],
     acceptedMessages: [],
     rejectedMessages: [],
@@ -170,8 +173,7 @@ export async function createWebSocketRoomTransport(
             | "claimAnGang"
             | "claimBaGang"
             | "passQiangGang"
-            | "claimQiangGangHu"
-            | "expireClaimWindow";
+            | "claimQiangGangHu";
         }
       >,
       "protocolVersion" | "clientMessageId" | "roomId" | "sessionToken"
@@ -244,7 +246,6 @@ export async function createWebSocketRoomTransport(
     claimBaGang: (playerId, tile) => sendSessionMessage(playerId, { type: "claimBaGang", payload: { tile } }),
     passQiangGang: (playerId) => sendSessionMessage(playerId, { type: "passQiangGang", payload: {} }),
     claimQiangGangHu: (playerId) => sendSessionMessage(playerId, { type: "claimQiangGangHu", payload: {} }),
-    expireClaimWindow: (playerId) => sendSessionMessage(playerId, { type: "expireClaimWindow", payload: {} }),
     waitForSnapshot: (playerId, timeoutMs = actionTimeoutMs) => waitForSnapshot(state, snapshotWaiters, playerId, timeoutMs),
     waitForMessageCount: (count, timeoutMs = actionTimeoutMs) =>
       waitForMessageCount(state, messageCountWaiters, count, timeoutMs),
@@ -291,6 +292,14 @@ function applyServerMessage(
     snapshotByPlayerId: {
       ...state.snapshotByPlayerId,
       [message.payload.playerId]: message.payload.view,
+    },
+    serverNowByPlayerId: {
+      ...state.serverNowByPlayerId,
+      [message.payload.playerId]: message.payload.serverNow,
+    },
+    snapshotReceivedAtByPlayerId: {
+      ...state.snapshotReceivedAtByPlayerId,
+      [message.payload.playerId]: Date.now(),
     },
   };
 }

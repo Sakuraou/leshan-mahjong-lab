@@ -112,6 +112,9 @@ server authoritative.
 - [x] Add the first server-authoritative zero-sum hu score ledger for self-draw,
   discard multi-win, and qiang-gang multi-win payments, with public redacted
   balances and stable batch ordering
+- [x] Add server-owned response deadlines, deterministic clock injection,
+  idempotent timeout settlement, automatic dev-server ticks, and synchronized
+  client countdown snapshots
 - Wrap `roomSocketAdapter` with a production-ready WebSocket server entry
 - Connect table UI to WebSocket room snapshots
 - Add reconnect with a local session token

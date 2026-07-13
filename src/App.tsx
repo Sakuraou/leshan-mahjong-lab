@@ -120,7 +120,6 @@ type WebSocketPreviewActions = {
   claimBaGang: (playerId: string, tile: Tile) => Promise<void>;
   passQiangGang: (playerId: string) => Promise<void>;
   claimQiangGangHu: (playerId: string) => Promise<void>;
-  expireClaimWindow: (playerId: string) => Promise<void>;
 };
 
 type TableMode = "room" | "standalone" | "websocketPreview";
@@ -514,7 +513,6 @@ export function App() {
             onClaimBaGang={(playerId, tile) => webSocketPreviewActions.current?.claimBaGang(playerId, tile)}
             onPassQiangGang={(playerId) => webSocketPreviewActions.current?.passQiangGang(playerId)}
             onClaimQiangGangHu={(playerId) => webSocketPreviewActions.current?.claimQiangGangHu(playerId)}
-            onExpireClaimWindow={(playerId) => webSocketPreviewActions.current?.expireClaimWindow(playerId)}
           />
         ) : tableMode === "room" && room.round === null ? (
           <RoomPanel
@@ -653,7 +651,6 @@ function WebSocketTablePreview({
   onClaimBaGang,
   onPassQiangGang,
   onClaimQiangGangHu,
-  onExpireClaimWindow,
 }: {
   preview: WebSocketPreviewState;
   onExit: () => void;
@@ -670,7 +667,6 @@ function WebSocketTablePreview({
   onClaimBaGang: (playerId: string, tile: Tile) => void;
   onPassQiangGang: (playerId: string) => void;
   onClaimQiangGangHu: (playerId: string) => void;
-  onExpireClaimWindow: (playerId: string) => void;
 }) {
   const clients = getWebSocketPreviewClients(preview);
   const primary = clients.find((client) => client.snapshot !== null) ?? clients[0];
@@ -681,6 +677,28 @@ function WebSocketTablePreview({
   const remainingPlayers = round?.players.filter((player) => !player.hasWon).length ?? 0;
   const chaJiao = snapshot?.chaJiao ?? null;
   const recentSettlements = snapshot?.settlementLedger.slice(-6).reverse() ?? [];
+  const responseWindow = snapshot?.responseWindow ?? null;
+  const [deadlineNow, setDeadlineNow] = useState(Date.now());
+  const latestExpiry = snapshot?.eventLog.findLast((event) => event.type === "responseWindowExpired") ?? null;
+  const responseSnapshotReceivedAt = primary?.state?.snapshotReceivedAtByPlayerId[primary.playerId] ?? deadlineNow;
+
+  useEffect(() => {
+    setDeadlineNow(Date.now());
+
+    if (responseWindow === null) {
+      return;
+    }
+
+    const timer = window.setInterval(() => setDeadlineNow(Date.now()), 250);
+    return () => window.clearInterval(timer);
+  }, [responseWindow?.windowId]);
+
+  const remainingSeconds =
+    responseWindow === null
+      ? null
+      : Math.ceil(
+          Math.max(0, responseWindow.remainingMs - (deadlineNow - responseSnapshotReceivedAt)) / 1_000,
+        );
 
   return (
     <section className="websocket-table-preview" aria-label="真实 WebSocket 桌面预览">
@@ -702,7 +720,29 @@ function WebSocketTablePreview({
         <Stat label="未胡" value={round === null ? "-" : `${remainingPlayers}`} />
         <Stat label="牌墙" value={round?.wallCount?.toString() ?? "-"} />
         <Stat label="查叫" value={chaJiao === null ? "未生成" : "已生成"} />
+        <Stat
+          label="响应倒计时"
+          value={responseWindow === null ? "-" : `${remainingSeconds} 秒`}
+        />
       </div>
+
+      {responseWindow !== null && (
+        <div className="preview-deadline-status">
+          <strong>{responseWindow.kind === "qiangGang" ? "等待抢杠胡" : "等待碰杠胡响应"}</strong>
+          <span>窗口：{responseWindow.windowId}</span>
+          <span>到期后未响应玩家由服务端自动过牌</span>
+        </div>
+      )}
+
+      {responseWindow === null && latestExpiry?.type === "responseWindowExpired" && (
+        <div className="preview-deadline-status" data-expired="true">
+          <strong>最近一次响应已自动收束</strong>
+          <span>
+            {latestExpiry.kind === "qiangGang" ? "抢杠" : "出牌"}窗口 {latestExpiry.windowId}：
+            {latestExpiry.outcome === "allPassed" ? "全部过牌" : latestExpiry.outcome === "claimed" ? "胡牌成立" : "抢杠胡成立"}
+          </span>
+        </div>
+      )}
 
       <div className="preview-settlement-ledger" aria-label="最近输赢积分">
         <strong>最近输赢</strong>
@@ -775,7 +815,6 @@ function WebSocketTablePreview({
                 onClaimBaGang={onClaimBaGang}
                 onPassQiangGang={onPassQiangGang}
                 onClaimQiangGangHu={onClaimQiangGangHu}
-                onExpireClaimWindow={onExpireClaimWindow}
               />
             ))}
           </div>
@@ -831,7 +870,6 @@ function WebSocketPreviewClientCard({
   onClaimBaGang,
   onPassQiangGang,
   onClaimQiangGangHu,
-  onExpireClaimWindow,
 }: {
   client: WebSocketPreviewClient;
   onChooseMissingSuit: (playerId: string, suit: Suit) => void;
@@ -847,7 +885,6 @@ function WebSocketPreviewClientCard({
   onClaimBaGang: (playerId: string, tile: Tile) => void;
   onPassQiangGang: (playerId: string) => void;
   onClaimQiangGangHu: (playerId: string) => void;
-  onExpireClaimWindow: (playerId: string) => void;
 }) {
   const snapshot = client.snapshot;
   const round = snapshot?.round ?? null;
@@ -891,7 +928,6 @@ function WebSocketPreviewClientCard({
     legalActions.includes("claimBaGang"),
   );
   const canDrawGangTile = legalActions.includes("drawGangTile") && client.sessionToken !== null;
-  const canExpireClaimWindow = claimWindow !== null && client.sessionToken !== null;
   const visibleHand = localPlayer?.hand ?? [];
   const remainingPlayerCount = players.filter((player) => !player.hasWon).length;
 
@@ -1003,9 +1039,6 @@ function WebSocketPreviewClientCard({
         </button>
         <button type="button" disabled={!canPassQiangGang} onClick={() => onPassQiangGang(client.playerId)}>
           抢杠过牌
-        </button>
-        <button type="button" disabled={!canExpireClaimWindow} onClick={() => onExpireClaimWindow(client.playerId)}>
-          模拟超时
         </button>
       </div>
       <div>
@@ -1365,7 +1398,6 @@ function WebSocketExperimentPanel({
       claimBaGang: handleClaimWebSocketBaGang,
       passQiangGang: handlePassWebSocketQiangGang,
       claimQiangGangHu: handleClaimWebSocketQiangGangHu,
-      expireClaimWindow: handleExpireWebSocketClaimWindow,
     };
 
     return () => {
@@ -2155,30 +2187,6 @@ function WebSocketExperimentPanel({
       setWebSocketStep("claim", "success", input.successText);
     } else {
       setWebSocketStep("claim", "error", `${input.errorText}：${webSocketActionErrorText(result)}。`);
-    }
-
-    syncTransportState();
-  }
-
-  async function handleExpireWebSocketClaimWindow(playerId: string) {
-    const transport = webSocketTransportForPlayer(playerId);
-
-    if (transport === null) {
-      setWebSocketStep("claim", "error", `模拟超时失败：${playerId} 还没有可用的 WebSocket session。`);
-      appendWebSocketLog(`expireClaimWindow：${playerId} 缺少 WebSocket session。`);
-      syncTransportState();
-      return;
-    }
-
-    setWebSocketStep("claim", "running", `${playerId} 正在模拟响应窗口超时。`);
-    const result = await transport.expireClaimWindow(playerId);
-    appendWebSocketLog(`expireClaimWindow：${playerId}，${webSocketActionText(result)}。`);
-
-    if (result.ok) {
-      await waitForWebSocketView(transport, playerId, (view) => view.claimWindow === null).catch(() => undefined);
-      setWebSocketStep("claim", "success", "响应窗口已由服务端关闭，下一家进入摸牌阶段。");
-    } else {
-      setWebSocketStep("claim", "error", `模拟超时失败：${webSocketActionErrorText(result)}。`);
     }
 
     syncTransportState();
@@ -3197,7 +3205,11 @@ function roomEventText(event: RoomEvent, room: RoomState): string {
     case "qiangGangHuClaimed":
       return `${roomPlayerName(room, event.playerId)} 抢杠胡 ${tileText(event.tile)}，责任玩家为 ${roomPlayerName(room, event.responsiblePlayerId)}，约 ${event.points} 分${genText(event.genCount)}。`;
     case "qiangGangWindowClosed":
-      return event.reason === "robbed" ? "抢杠胡响应结束，原碰牌保持不变。" : "全部玩家过牌，巴杠正式提交。";
+      return event.reason === "robbed" || event.reason === "timeoutRobbed"
+        ? `${event.reason === "timeoutRobbed" ? "抢杠响应超时，" : ""}抢杠胡成立，原碰牌保持不变。`
+        : `${event.reason === "timeoutAllPassed" ? "抢杠响应超时，" : ""}无人抢胡，巴杠正式提交。`;
+    case "responseWindowExpired":
+      return `${event.kind === "qiangGang" ? "抢杠" : "出牌"}响应窗口超时，玩家 ${event.timedOutPlayerIds.map((seatId) => seatId + 1).join("、") || "无"} 自动过牌。`;
     case "roundEnded":
       return event.reason === "onePlayerLeft"
         ? `血战结束，只剩玩家 ${event.remainingPlayerIds.map((seatId) => seatId + 1).join("、")} 未胡。`

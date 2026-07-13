@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   createRoomSocketAdapterState as createRoomSocketAdapterStateBase,
   handleRoomSocketMessage,
+  tickRoomSocketDeadlines,
   type RoomSocketAdapterState,
   type RoomSocketClientMessage,
   type RoomSocketServerMessage,
@@ -262,6 +263,55 @@ test("maps discardTile and broadcasts redacted snapshots to every session", () =
     { type: "claimWindowOpened", discardedBySeatId: 0, tile: prepared.discard, pendingPlayerIds: [1, 2, 3] },
   ]);
   assert.equal(snapshots[1].payload.view.claimWindow?.pendingPlayerIds.length, 3);
+});
+
+test("broadcasts identical redacted snapshots when a server deadline tick expires a window", () => {
+  const prepared = prepareAdapterForDealerDiscard("socket-room-deadline");
+  const adapter: RoomSocketAdapterState = {
+    ...prepared.adapter,
+    nowFactory: () => 100_000,
+    responseWindowTimeoutMs: 8_000,
+    rooms: prepared.adapter.rooms.map((room) => ({
+      ...room,
+      service: {
+        ...room.service,
+        nowFactory: () => 100_000,
+        responseWindowTimeoutMs: 8_000,
+      },
+    })),
+  };
+  const discarded = dispatch(adapter, {
+    protocolVersion: 1,
+    clientMessageId: "m-deadline-discard",
+    roomId: "socket-room-deadline",
+    sessionToken: prepared.sessions[0],
+    type: "discardTile",
+    payload: { tile: prepared.discard },
+  });
+  const openedSnapshots = snapshotMessages(discarded.messages);
+  const windowId = openedSnapshots[0].payload.view.responseWindow?.windowId;
+  assert.ok(windowId);
+  openedSnapshots.forEach((message) => {
+    assert.equal(message.payload.serverNow, 100_000);
+    assert.equal(message.payload.view.responseWindow?.windowId, windowId);
+    assert.equal(message.payload.view.responseWindow?.remainingMs, 8_000);
+  });
+
+  assert.equal(tickRoomSocketDeadlines(discarded.adapter, 107_999).messages.length, 0);
+  const expired = tickRoomSocketDeadlines(discarded.adapter, 108_000);
+  const expiredSnapshots = snapshotMessages(expired.messages);
+  assert.deepEqual(expired.expiredWindowIds, [windowId]);
+  assert.equal(expiredSnapshots.length, 4);
+  expiredSnapshots.forEach((message, index) => {
+    assert.equal(message.payload.serverNow, 108_000);
+    assert.equal(message.payload.view.responseWindow, null);
+    assert.equal(message.payload.view.localSeatId, index);
+    assert.equal(message.payload.view.round?.players[index].hand !== null, true);
+    message.payload.view.round?.players.forEach((player, playerIndex) => {
+      if (playerIndex !== index) assert.equal(player.hand, null);
+    });
+  });
+  assert.equal(tickRoomSocketDeadlines(expired.adapter, 108_001).messages.length, 0);
 });
 
 function fillReadyAdapter(roomId: string): { adapter: RoomSocketAdapterState; sessions: string[] } {

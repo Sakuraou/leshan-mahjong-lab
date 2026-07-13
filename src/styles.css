@@ -443,6 +443,20 @@ button {
   display: block;
 }
 
+.preview-deadline-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid #d5e0e8;
+  color: #28332d;
+}
+
+.preview-deadline-status[data-expired="true"] {
+  color: #8a4b20;
+}
+
 
 .preview-cha-jiao {
   display: grid;

@@ -7,6 +7,7 @@ import {
   handleRoomAction,
   joinRoomSession,
   resumeRoomSession,
+  tickRoomDeadlines,
   type RoomServiceState,
   type RoomSession,
   type Suit,
@@ -188,6 +189,31 @@ test("discards through the authoritative service and returns a redacted view", (
     { type: "claimWindowOpened", discardedBySeatId: 0, tile: prepared.discard, pendingPlayerIds: [1, 2, 3] },
   ]);
   assert.equal(discarded.view.claimWindow?.pendingPlayerIds.length, 3);
+});
+
+test("ticks authoritative room deadlines with an injected clock", () => {
+  const prepared = prepareServiceForDealerDiscard("service-deadline-room");
+  const service: RoomServiceState = {
+    ...prepared.service,
+    nowFactory: () => 100_000,
+    responseWindowTimeoutMs: 8_000,
+  };
+  const discarded = handleRoomAction(service, prepared.sessions[0].sessionToken, {
+    type: "discardTile",
+    tile: prepared.discard,
+  });
+  assert.equal(discarded.ok, true);
+  if (!discarded.ok) return;
+
+  assert.equal(discarded.service.room.claimWindow?.deadlineAt, 108_000);
+  assert.equal(discarded.view.responseWindow?.remainingMs, 8_000);
+  assert.equal(tickRoomDeadlines(discarded.service, 107_999).changed, false);
+
+  const expired = tickRoomDeadlines(discarded.service, 108_000);
+  assert.equal(expired.changed, true);
+  assert.equal(expired.service.room.phase, "draw");
+  assert.equal(expired.events.some((event) => event.type === "responseWindowExpired"), true);
+  assert.equal(tickRoomDeadlines(expired.service, 108_001).changed, false);
 });
 
 test("rejects service draw when dingque is missing, out of turn, or outside draw phase", () => {

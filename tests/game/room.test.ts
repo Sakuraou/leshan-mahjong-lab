@@ -14,12 +14,14 @@ import {
   drawGangTile,
   discardRoomTile,
   drawRoomTile,
+  expireClaimWindow,
   passClaim,
   passQiangGang,
   joinRoom,
   startRoomRound,
   takeSeat,
   tile,
+  tickRoomStateDeadlines,
   toggleReady,
   toClientVisibleRoomState,
   type RoomState,
@@ -403,6 +405,80 @@ test("closes the claim window after all eligible players pass", () => {
     reason: "allPassed",
     nextPlayer: 1,
   });
+});
+
+test("expires an unanswered discard window at the injected deadline and remains idempotent", () => {
+  const { room, discard } = readyRoomForDealerDiscard();
+  const discarded = discardRoomTile(room, "p1", discard, { now: 100_000, timeoutMs: 8_000 });
+  assert.equal(discarded.ok, true);
+  if (!discarded.ok) return;
+
+  const windowId = discarded.room.claimWindow?.windowId;
+  assert.ok(windowId);
+  assert.equal(discarded.room.claimWindow?.deadlineAt, 108_000);
+  assert.deepEqual(toClientVisibleRoomState(discarded.room, "p2", 100_500).responseWindow, {
+    windowId,
+    kind: "discardClaim",
+    deadlineAt: 108_000,
+    remainingMs: 7_500,
+    status: "open",
+  });
+
+  const early = tickRoomStateDeadlines(discarded.room, 107_999);
+  assert.equal(early.changed, false);
+  assert.equal(early.room, discarded.room);
+  assert.deepEqual(expireClaimWindow(discarded.room, "stale-window", 108_000), {
+    ok: false,
+    reason: "windowMismatch",
+  });
+
+  const expired = tickRoomStateDeadlines(discarded.room, 108_000);
+  assert.equal(expired.changed, true);
+  assert.equal(expired.expiredWindowId, windowId);
+  assert.equal(expired.room.claimWindow, null);
+  assert.equal(expired.room.phase, "draw");
+  assert.equal(expired.room.round?.currentPlayer, 1);
+  assert.deepEqual(expired.room.settlementLedger, []);
+  assert.equal(expired.room.resolvedWindowIds.includes(windowId), true);
+  assert.deepEqual(expired.room.eventLog.at(-2), {
+    type: "responseWindowExpired",
+    windowId,
+    kind: "discardClaim",
+    timedOutPlayerIds: [1, 2, 3],
+    outcome: "allPassed",
+  });
+
+  const repeated = tickRoomStateDeadlines(expired.room, 200_000);
+  assert.equal(repeated.changed, false);
+  assert.equal(repeated.room, expired.room);
+});
+
+test("keeps single and multiple discard hu claims when the remaining players time out", () => {
+  for (const winners of [["p2"], ["p2", "p3"]] as const) {
+    const prepared = winners.length === 1 ? readyRoomForClaimHu() : readyRoomForMultiHu();
+    const discarded = discardRoomTile(prepared.room, "p1", prepared.discard, {
+      now: 1_000,
+      timeoutMs: 5_000,
+    });
+    assert.equal(discarded.ok, true);
+    if (!discarded.ok) continue;
+
+    const claimed = winners.reduce((nextRoom, winner) => {
+      const result = claimHu(nextRoom, winner);
+      assert.equal(result.ok, true);
+      return result.ok ? result.room : nextRoom;
+    }, discarded.room);
+    const expired = tickRoomStateDeadlines(claimed, 6_000);
+
+    assert.equal(expired.changed, true);
+    assert.deepEqual(
+      expired.room.scores.map((score) => score.points),
+      winners.length === 1 ? [-16, 16, 0, 0] : [-32, 16, 16, 0],
+    );
+    assert.equal(expired.room.settlementLedger.length, winners.length);
+    assert.equal(new Set(expired.room.settlementLedger.map((entry) => entry.batchId)).size, 1);
+    assert.equal(expired.room.eventLog.some((event) => event.type === "responseWindowExpired"), true);
+  }
 });
 
 test("lets a player claim discard hu from the claim window", () => {
@@ -878,7 +954,7 @@ test("declares ba gang, keeps peng pending, and commits after every player passe
     melds: [{ type: "peng", tile: gangTile, tiles: [gangTile, gangTile, gangTile], fromPlayer: 2 }],
   });
 
-  const claimed = claimBaGang(room, "p1", gangTile);
+  const claimed = claimBaGang(room, "p1", gangTile, { now: 1_000, timeoutMs: 5_000 });
   assert.equal(claimed.ok, true);
 
   if (!claimed.ok) {
@@ -895,6 +971,9 @@ test("declares ba gang, keeps peng pending, and commits after every player passe
     },
   ]);
   assert.deepEqual(claimed.room.baGangClaimWindow, {
+    windowId: `${room.id}:qiangGang:${room.eventLog.length + 1}`,
+    deadlineAt: 6_000,
+    status: "open",
     upgradedBySeatId: 0,
     upgradedByPlayerId: "p1",
     targetTile: gangTile,
@@ -1007,6 +1086,56 @@ test("records multiple qiang gang hu claims before blood battle continues", () =
   assert.equal(resolved.room.eventLog.filter((event) => event.type === "qiangGangHuClaimed").length, 2);
   assert.deepEqual(resolved.room.scores.map((score) => score.points), [-32, 16, 16, 0]);
   assert.equal(new Set(resolved.room.settlementLedger.map((entry) => entry.batchId)).size, 1);
+});
+
+test("commits ba gang when every unanswered qiang gang response times out", () => {
+  const { room, gangTile } = readyRoomForQiangGangHu([]);
+  const declared = claimBaGang(room, "p1", gangTile, { now: 10_000, timeoutMs: 4_000 });
+  assert.equal(declared.ok, true);
+  if (!declared.ok) return;
+  const windowId = declared.room.baGangClaimWindow?.windowId;
+  assert.ok(windowId);
+
+  const expired = tickRoomStateDeadlines(declared.room, 14_000);
+  assert.equal(expired.changed, true);
+  assert.equal(expired.expiredWindowId, windowId);
+  assert.equal(expired.room.baGangClaimWindow, null);
+  assert.equal(expired.room.phase, "gangDraw");
+  assert.equal(expired.room.round?.players[0].melds[0].type, "baGang");
+  assert.deepEqual(expired.room.settlementLedger, []);
+  assert.equal(expired.room.eventLog.at(-1)?.type, "qiangGangWindowClosed");
+  assert.deepEqual(expired.room.eventLog.at(-1), {
+    type: "qiangGangWindowClosed",
+    reason: "timeoutAllPassed",
+  });
+});
+
+test("keeps qiang gang hu claims when remaining responders time out", () => {
+  for (const huSeats of [[1], [1, 2]] as const) {
+    const { room, gangTile } = readyRoomForQiangGangHu([...huSeats]);
+    const declared = claimBaGang(room, "p1", gangTile, { now: 20_000, timeoutMs: 3_000 });
+    assert.equal(declared.ok, true);
+    if (!declared.ok) continue;
+
+    const claimed = huSeats.reduce((nextRoom, seatId) => {
+      const result = claimQiangGangHu(nextRoom, `p${seatId + 1}`);
+      assert.equal(result.ok, true);
+      return result.ok ? result.room : nextRoom;
+    }, declared.room);
+    const expired = tickRoomStateDeadlines(claimed, 23_000);
+
+    assert.equal(expired.changed, true);
+    assert.equal(expired.room.round?.players[0].melds[0].type, "peng");
+    assert.equal(expired.room.settlementLedger.length, huSeats.length);
+    assert.deepEqual(
+      expired.room.scores.map((score) => score.points),
+      huSeats.length === 1 ? [-16, 16, 0, 0] : [-32, 16, 16, 0],
+    );
+    assert.deepEqual(expired.room.eventLog.at(-1), {
+      type: "qiangGangWindowClosed",
+      reason: "timeoutRobbed",
+    });
+  }
 });
 
 test("settles multi-hu ledger identically regardless of claim response order", () => {

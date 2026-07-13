@@ -1,11 +1,13 @@
 import { pathToFileURL } from "node:url";
 import { WebSocketServer, type RawData, type WebSocket } from "ws";
+import type { RoomSocketAdapterOptions } from "../game/index.ts";
 
 import {
   createRoomSocketServerCoreState,
   handleRoomSocketRawMessage,
   registerRoomSocketConnection,
   unregisterRoomSocketConnection,
+  tickRoomSocketServerDeadlines,
   type RoomSocketServerCoreState,
   type RoomSocketUndeliveredMessage,
 } from "./roomSocketServerCore.ts";
@@ -17,19 +19,33 @@ export type RoomSocketDevServer = {
   getState: () => RoomSocketServerCoreState;
 };
 
-export type RoomSocketDevServerOptions = {
+export type RoomSocketDevServerOptions = RoomSocketAdapterOptions & {
   host?: string;
   port?: number;
   onLog?: (message: string) => void;
   onUndelivered?: (message: RoomSocketUndeliveredMessage) => void;
+  deadlinePollIntervalMs?: number;
 };
 
 export async function createRoomSocketDevServer(options: RoomSocketDevServerOptions = {}): Promise<RoomSocketDevServer> {
   const host = options.host ?? "127.0.0.1";
   let nextConnectionNumber = 1;
-  let state = createRoomSocketServerCoreState();
+  let state = createRoomSocketServerCoreState(options);
   const sockets = new Map<string, WebSocket>();
   const server = new WebSocketServer({ host, port: options.port ?? 0 });
+  const deadlineTimer = setInterval(() => {
+    const result = tickRoomSocketServerDeadlines(state, options.nowFactory?.());
+    state = result.state;
+
+    for (const outgoing of result.outgoing) {
+      sockets.get(outgoing.connectionId)?.send(JSON.stringify(outgoing.message));
+    }
+
+    for (const undelivered of result.undelivered) {
+      options.onUndelivered?.(undelivered);
+    }
+  }, options.deadlinePollIntervalMs ?? 250);
+  deadlineTimer.unref();
 
   server.on("connection", (socket) => {
     const connectionId = `conn-${nextConnectionNumber}`;
@@ -76,6 +92,7 @@ export async function createRoomSocketDevServer(options: RoomSocketDevServerOpti
     url: `ws://${host}:${port}`,
     close: () =>
       new Promise((resolve, reject) => {
+        clearInterval(deadlineTimer);
         for (const socket of sockets.values()) {
           socket.close();
         }
