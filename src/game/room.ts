@@ -7,6 +7,15 @@ import {
 } from "./round.ts";
 import { isYaoJi, sameTile, tile } from "./tiles.ts";
 import { checkCurrentPlayerHu, checkDiscardHu } from "./win.ts";
+import {
+  applyHuSettlementBatch,
+  createInitialScoreBalances,
+  type HuSettlementEntry,
+  type HuSettlementEventType,
+  type HuSettlementReason,
+  type HuSettlementTransfer,
+  type PlayerScoreBalance,
+} from "./rules.ts";
 import type { Meld, PlayerId, Rank, RoundState, ScorePattern, Suit, Tile } from "./types.ts";
 
 const seatIds: PlayerId[] = [0, 1, 2, 3];
@@ -45,6 +54,7 @@ export type HuClaim = {
   playerId: string;
   patterns: ScorePattern[];
   genCount: number;
+  rawPoints: number;
   points: number;
 };
 
@@ -175,6 +185,8 @@ export type RoomState = {
   gangDraw: GangDrawState | null;
   roundEnd: RoundEndState | null;
   chaJiao: ChaJiaoResult | null;
+  scores: PlayerScoreBalance[];
+  settlementLedger: HuSettlementEntry[];
   eventLog: RoomEvent[];
 };
 
@@ -208,6 +220,8 @@ export type ClientVisibleRoomState = {
   gangDraw: ClientVisibleGangDrawState | null;
   roundEnd: RoundEndState | null;
   chaJiao: ChaJiaoResult | null;
+  scores: PlayerScoreBalance[];
+  settlementLedger: HuSettlementEntry[];
   eventLog: ClientRoomEvent[];
 };
 
@@ -433,6 +447,8 @@ export function createRoom(input: CreateRoomInput): RoomState {
     gangDraw: null,
     roundEnd: null,
     chaJiao: null,
+    scores: createInitialScoreBalances(),
+    settlementLedger: [],
     eventLog: [{ type: "roomCreated", roomId: input.id }],
   };
 }
@@ -488,6 +504,9 @@ export function takeSeat(room: RoomState, playerId: string, seatId: PlayerId): T
         connected: member.connected,
         ready: false,
       }),
+      scores: room.scores.map((score) =>
+        score.seatId === seatId ? { ...score, playerId } : score,
+      ),
       eventLog: [...room.eventLog, { type: "seatTaken", seatId, playerId }],
     },
   };
@@ -795,7 +814,13 @@ export function passClaim(room: RoomState, playerId: string): PassClaimResult {
 
   return {
     ok: true,
-    room: allResponded ? closeClaimWindow(nextRoom, room.claimWindow, "allPassed") : nextRoom,
+    room: allResponded
+      ? closeClaimWindow(
+          settleDiscardClaimWindow(nextRoom, nextClaimWindow),
+          room.claimWindow,
+          nextClaimWindow.huClaims.length > 0 ? "claimed" : "allPassed",
+        )
+      : nextRoom,
   };
 }
 
@@ -837,6 +862,7 @@ export function claimHu(room: RoomState, playerId: string): ClaimHuResult {
     playerId,
     patterns: huCheck.patterns,
     genCount: huCheck.score.genCount,
+    rawPoints: huCheck.score.rawPoints,
     points: huCheck.score.cappedPoints,
   };
   const nextRound: RoundState = {
@@ -867,7 +893,15 @@ export function claimHu(room: RoomState, playerId: string): ClaimHuResult {
 
   return {
     ok: true,
-    room: allResponded ? finishRoundIfNeeded(closeClaimWindow(nextRoom, room.claimWindow, "allPassed")) : nextRoom,
+    room: allResponded
+      ? finishRoundIfNeeded(
+          closeClaimWindow(
+            settleDiscardClaimWindow(nextRoom, nextClaimWindow),
+            room.claimWindow,
+            "claimed",
+          ),
+        )
+      : nextRoom,
   };
 }
 
@@ -919,11 +953,27 @@ export function claimSelfDrawHu(room: RoomState, playerId: string): ClaimSelfDra
       value.id === seat.seatId ? { ...value, hasWon: true } : value,
     ),
   };
+  const selfDrawPayers = room.round.players.filter(
+    (player) => player.id !== seat.seatId && !player.hasWon,
+  );
+  const settledRoom = applyRoomHuSettlement(
+    room,
+    selfDrawPayers.map((payer) => ({
+      winnerSeatId: seat.seatId,
+      winnerPlayerId: playerId,
+      loserSeatId: payer.id,
+      loserPlayerId: room.seats[payer.id].playerId!,
+      reason: "selfDrawHu",
+      rawPoints: huCheck.score.rawPoints,
+      finalPoints: huCheck.score.cappedPoints,
+      relatedEvent: { type: "selfDrawHuClaimed", seatId: seat.seatId },
+    })),
+  );
 
   return {
     ok: true,
     room: finishRoundIfNeeded({
-      ...room,
+      ...settledRoom,
       phase: "draw",
       selfDrawEligible: false,
       round: nextRound,
@@ -1135,6 +1185,7 @@ export function claimQiangGangHu(room: RoomState, playerId: string): ClaimQiangG
     playerId,
     patterns: huCheck.patterns,
     genCount: huCheck.score.genCount,
+    rawPoints: huCheck.score.rawPoints,
     points: huCheck.score.cappedPoints,
   };
   const nextRound: RoundState = {
@@ -1292,7 +1343,13 @@ export function expireClaimWindow(room: RoomState): ExpireClaimWindowResult {
 
   return {
     ok: true,
-    room: closeClaimWindow({ ...room, claimWindow: null }, room.claimWindow, "timeout"),
+    room: finishRoundIfNeeded(
+      closeClaimWindow(
+        settleDiscardClaimWindow({ ...room, claimWindow: null }, room.claimWindow),
+        room.claimWindow,
+        "timeout",
+      ),
+    ),
   };
 }
 
@@ -1355,6 +1412,8 @@ export function toClientVisibleRoomState(room: RoomState, playerId: string): Cli
           },
     roundEnd: room.roundEnd,
     chaJiao: room.chaJiao,
+    scores: room.scores,
+    settlementLedger: room.settlementLedger,
     eventLog: room.eventLog.map((event) => toClientVisibleRoomEvent(event, localSeatId)),
   };
 }
@@ -1655,6 +1714,50 @@ function removeLastTile(tiles: Tile[], tile: Tile): Tile[] {
   return [...tiles.slice(0, index), ...tiles.slice(index + 1)];
 }
 
+function settleDiscardClaimWindow(room: RoomState, claimWindow: ClaimWindow): RoomState {
+  return settleHuClaims(
+    room,
+    claimWindow.discardedBySeatId,
+    claimWindow.discardedByPlayerId,
+    claimWindow.huClaims,
+    "discardHu",
+    "huClaimed",
+  );
+}
+
+function settleHuClaims(
+  room: RoomState,
+  loserSeatId: PlayerId,
+  loserPlayerId: string,
+  huClaims: HuClaim[],
+  reason: HuSettlementReason,
+  relatedEventType: HuSettlementEventType,
+): RoomState {
+  return applyRoomHuSettlement(
+    room,
+    huClaims.map((claim) => ({
+      winnerSeatId: claim.seatId,
+      winnerPlayerId: claim.playerId,
+      loserSeatId,
+      loserPlayerId,
+      reason,
+      rawPoints: claim.rawPoints,
+      finalPoints: claim.points,
+      relatedEvent: { type: relatedEventType, seatId: claim.seatId },
+    })),
+  );
+}
+
+function applyRoomHuSettlement(room: RoomState, transfers: HuSettlementTransfer[]): RoomState {
+  const result = applyHuSettlementBatch(room.scores, room.settlementLedger, transfers);
+
+  return {
+    ...room,
+    scores: result.scores,
+    settlementLedger: result.ledger,
+  };
+}
+
 function settleBaGangClaimWindow(room: RoomState, claimWindow: BaGangClaimWindow): RoomState {
   if (room.round === null) {
     return room;
@@ -1664,6 +1767,14 @@ function settleBaGangClaimWindow(room: RoomState, claimWindow: BaGangClaimWindow
   const nextHand = removeFirstTile(upgrader.hand, claimWindow.tile);
 
   if (claimWindow.huClaims.length > 0) {
+    const settledRoom = settleHuClaims(
+      room,
+      claimWindow.upgradedBySeatId,
+      claimWindow.upgradedByPlayerId,
+      claimWindow.huClaims,
+      "qiangGangHu",
+      "qiangGangHuClaimed",
+    );
     const nextRound: RoundState = {
       ...room.round,
       currentPlayer: findNextActivePlayer(room.round, claimWindow.upgradedBySeatId),
@@ -1673,7 +1784,7 @@ function settleBaGangClaimWindow(room: RoomState, claimWindow: BaGangClaimWindow
     };
 
     return finishRoundIfNeeded({
-      ...room,
+      ...settledRoom,
       phase: "draw",
       selfDrawEligible: false,
       round: nextRound,

@@ -140,6 +140,8 @@ test("broadcasts each session its own redacted view after startRound", () => {
     assert.equal(message.payload.view.localSeatId, index);
     assert.equal(message.payload.view.phase, "dingque");
     assert.deepEqual(message.payload.view.legalActions, ["chooseMissingSuit"]);
+    assert.deepEqual(message.payload.view.scores.map((score) => score.points), [0, 0, 0, 0]);
+    assert.deepEqual(message.payload.view.settlementLedger, []);
 
     const players = message.payload.view.round?.players;
     const visibleRound = message.payload.view.round;

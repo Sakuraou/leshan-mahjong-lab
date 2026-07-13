@@ -109,6 +109,9 @@ server authoritative.
 - [x] Implement provisional ba-gang upgrades, the authoritative `qiangGang`
   response phase, multi-winner rob-kong hu, rollback to the original peng, and
   gang replacement draw after all players pass
+- [x] Add the first server-authoritative zero-sum hu score ledger for self-draw,
+  discard multi-win, and qiang-gang multi-win payments, with public redacted
+  balances and stable batch ordering
 - Wrap `roomSocketAdapter` with a production-ready WebSocket server entry
 - Connect table UI to WebSocket room snapshots
 - Add reconnect with a local session token

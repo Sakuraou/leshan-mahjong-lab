@@ -43,10 +43,15 @@ After dingque:
 ## Win Rules
 
 - Self-draw is allowed.
+- On self-draw, every other player who has not already won pays the winner the
+  capped hu score separately.
 - Discard win is allowed.
 - Multiple players may win from one discard. The discarder pays each winner
   separately, and each winner has their own 64-point hu-score cap.
 - Qiang gang hu is allowed.
+- Multiple players may rob the same ba gang. The ba-gang declarer pays each
+  qiang-gang winner separately, using the ordinary discard-hu score and the
+  per-winner 64-point cap.
 - Gang shang hua is allowed.
 - Gang shang pao is allowed.
 - A 1-point hand cannot win.
@@ -61,6 +66,9 @@ After dingque:
   the hu score.
 - The 64-point cap does not include chicken payments, gang payments, or other
   side payments.
+- The first authoritative score ledger covers only self-draw, discard hu, and
+  qiang gang hu principal payments. Chicken, gang, and cha-jiao payments remain
+  separate future settlement categories.
 
 ## Fan And Multipliers
 

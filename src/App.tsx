@@ -680,6 +680,7 @@ function WebSocketTablePreview({
   const readySeats = snapshot?.seats.filter((seat) => seat.ready).length ?? 0;
   const remainingPlayers = round?.players.filter((player) => !player.hasWon).length ?? 0;
   const chaJiao = snapshot?.chaJiao ?? null;
+  const recentSettlements = snapshot?.settlementLedger.slice(-6).reverse() ?? [];
 
   return (
     <section className="websocket-table-preview" aria-label="真实 WebSocket 桌面预览">
@@ -701,6 +702,21 @@ function WebSocketTablePreview({
         <Stat label="未胡" value={round === null ? "-" : `${remainingPlayers}`} />
         <Stat label="牌墙" value={round?.wallCount?.toString() ?? "-"} />
         <Stat label="查叫" value={chaJiao === null ? "未生成" : "已生成"} />
+      </div>
+
+      <div className="preview-settlement-ledger" aria-label="最近输赢积分">
+        <strong>最近输赢</strong>
+        {recentSettlements.length === 0 ? (
+          <span>暂无主体胡分记录</span>
+        ) : (
+          recentSettlements.map((entry) => (
+            <span key={entry.id}>
+              #{entry.batchId} 玩家 {entry.loserSeatId + 1} → 玩家 {entry.winnerSeatId + 1}：
+              {settlementReasonText(entry.reason)} {entry.finalPoints} 分
+              {entry.rawPoints !== entry.finalPoints ? `（封顶前 ${entry.rawPoints}）` : ""}
+            </span>
+          ))
+        )}
       </div>
 
       {(snapshot?.roundEnd ?? null) !== null && (
@@ -736,6 +752,7 @@ function WebSocketTablePreview({
                 key={seat.seatId}
                 seat={seat}
                 player={round?.players[seat.seatId] ?? null}
+                score={snapshot.scores[seat.seatId]}
               />
             ))}
           </div>
@@ -771,9 +788,11 @@ function WebSocketTablePreview({
 function WebSocketPreviewSeatCard({
   seat,
   player,
+  score,
 }: {
   seat: SeatState;
   player: VisiblePlayerState | null;
+  score: ClientVisibleRoomState["scores"][number];
 }) {
   const handText =
     player === null
@@ -789,6 +808,7 @@ function WebSocketPreviewSeatCard({
         <span>{seat.ready ? "已准备" : "未准备"}</span>
       </div>
       <p>{seat.displayName ?? "空位"}</p>
+      <p>积分：{score.points > 0 ? `+${score.points}` : score.points}</p>
       <p>手牌：{handText}</p>
       <p>定缺：{suitText(player?.missingSuit ?? null)}</p>
       <p>副露：{player?.melds.length ?? 0}</p>
@@ -3258,6 +3278,16 @@ function patternText(pattern: string): string {
     shuangLongQiDui: "双龙七",
   };
   return names[pattern] ?? pattern;
+}
+
+function settlementReasonText(reason: ClientVisibleRoomState["settlementLedger"][number]["reason"]): string {
+  const labels = {
+    selfDrawHu: "自摸",
+    discardHu: "点炮胡",
+    qiangGangHu: "抢杠胡",
+  } as const;
+
+  return labels[reason];
 }
 
 function genText(genCount: number, separator = "，"): string {

@@ -1,4 +1,4 @@
-import type { GangType, PatternScore, ScorePattern, Suit, Tile, WinMethod } from "./types.ts";
+import type { GangType, PatternScore, PlayerId, ScorePattern, Suit, Tile, WinMethod } from "./types.ts";
 import { containsTile, isOrdinaryMissingSuitTile, isYaoJi, tile, tileLabel } from "./tiles.ts";
 
 export type DiscardCheckInput = {
@@ -141,6 +141,41 @@ export type HuScore = {
   canWin: boolean;
 };
 
+export type HuSettlementReason = "selfDrawHu" | "discardHu" | "qiangGangHu";
+
+export type HuSettlementEventType = "selfDrawHuClaimed" | "huClaimed" | "qiangGangHuClaimed";
+
+export type PlayerScoreBalance = {
+  seatId: PlayerId;
+  playerId: string | null;
+  points: number;
+};
+
+export type HuSettlementEntry = {
+  id: number;
+  batchId: number;
+  winnerSeatId: PlayerId;
+  winnerPlayerId: string;
+  loserSeatId: PlayerId;
+  loserPlayerId: string;
+  reason: HuSettlementReason;
+  basePoints: 1;
+  rawPoints: number;
+  finalPoints: number;
+  relatedEvent: {
+    type: HuSettlementEventType;
+    seatId: PlayerId;
+  };
+};
+
+export type HuSettlementTransfer = Omit<HuSettlementEntry, "id" | "batchId" | "basePoints">;
+
+export type HuSettlementBatchResult = {
+  scores: PlayerScoreBalance[];
+  ledger: HuSettlementEntry[];
+  entries: HuSettlementEntry[];
+};
+
 export function calculateHuScore(input: HuScoreInput): HuScore {
   const cap = input.cap ?? 64;
   const genCount = input.genCount ?? 0;
@@ -166,7 +201,49 @@ export function calculateHuScore(input: HuScoreInput): HuScore {
   };
 }
 
+export function createInitialScoreBalances(): PlayerScoreBalance[] {
+  return ([0, 1, 2, 3] as PlayerId[]).map((seatId) => ({ seatId, playerId: null, points: 0 }));
+}
+
+export function applyHuSettlementBatch(
+  scores: PlayerScoreBalance[],
+  ledger: HuSettlementEntry[],
+  transfers: HuSettlementTransfer[],
+): HuSettlementBatchResult {
+  if (transfers.length === 0) {
+    return { scores, ledger, entries: [] };
+  }
+
+  const batchId = (ledger.at(-1)?.batchId ?? 0) + 1;
+  const orderedTransfers = [...transfers].sort(
+    (left, right) =>
+      left.winnerSeatId - right.winnerSeatId ||
+      left.loserSeatId - right.loserSeatId ||
+      left.reason.localeCompare(right.reason),
+  );
+  const entries = orderedTransfers.map((transfer, index): HuSettlementEntry => ({
+    ...transfer,
+    id: ledger.length + index + 1,
+    batchId,
+    basePoints: 1,
+  }));
+  const deltas = new Map<PlayerId, number>();
+
+  for (const entry of entries) {
+    deltas.set(entry.winnerSeatId, (deltas.get(entry.winnerSeatId) ?? 0) + entry.finalPoints);
+    deltas.set(entry.loserSeatId, (deltas.get(entry.loserSeatId) ?? 0) - entry.finalPoints);
+  }
+
+  return {
+    scores: scores.map((score) => ({
+      ...score,
+      points: score.points + (deltas.get(score.seatId) ?? 0),
+    })),
+    ledger: [...ledger, ...entries],
+    entries,
+  };
+}
+
 export function describeChickenPayment(payment: ChickenPayment): string {
   return `${payment.kind} ${tileLabel(payment.tile)}: ${payment.pointsPerOpponent}`;
 }
-

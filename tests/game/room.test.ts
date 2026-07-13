@@ -424,6 +424,7 @@ test("lets a player claim discard hu from the claim window", () => {
 
   assert.equal(claimed.room.round?.players[1].hasWon, true);
   assert.equal(claimed.room.claimWindow?.huClaims[0].seatId, 1);
+  assert.deepEqual(claimed.room.settlementLedger, []);
   assert.deepEqual(claimed.room.eventLog.at(-1), {
     type: "huClaimed",
     seatId: 1,
@@ -470,6 +471,33 @@ test("continues blood battle by skipping a player who claimed discard hu", () =>
   assert.equal(playerFourPassed.room.claimWindow, null);
   assert.equal(playerFourPassed.room.round?.currentPlayer, 2);
   assert.equal(playerFourPassed.room.phase, "draw");
+  assert.deepEqual(playerFourPassed.room.scores.map((score) => score.points), [-16, 16, 0, 0]);
+  assert.deepEqual(
+    playerFourPassed.room.settlementLedger.map((entry) => ({
+      winner: entry.winnerSeatId,
+      loser: entry.loserSeatId,
+      reason: entry.reason,
+      base: entry.basePoints,
+      raw: entry.rawPoints,
+      final: entry.finalPoints,
+      event: entry.relatedEvent,
+    })),
+    [
+      {
+        winner: 1,
+        loser: 0,
+        reason: "discardHu",
+        base: 1,
+        raw: 16,
+        final: 16,
+        event: { type: "huClaimed", seatId: 1 },
+      },
+    ],
+  );
+  const winnerView = toClientVisibleRoomState(playerFourPassed.room, "p2");
+  assert.deepEqual(winnerView.scores, playerFourPassed.room.scores);
+  assert.deepEqual(winnerView.settlementLedger, playerFourPassed.room.settlementLedger);
+  assert.equal(winnerView.round?.players[0].hand, null);
 });
 
 test("keeps hu priority over peng while a hu-capable player is unresolved", () => {
@@ -525,6 +553,8 @@ test("records multiple discard hu claims before closing the claim window", () =>
   assert.equal(playerFourPassed.room.round?.players[1].hasWon, true);
   assert.equal(playerFourPassed.room.round?.players[2].hasWon, true);
   assert.equal(playerFourPassed.room.round?.currentPlayer, 3);
+  assert.deepEqual(playerFourPassed.room.scores.map((score) => score.points), [-32, 16, 16, 0]);
+  assert.equal(new Set(playerFourPassed.room.settlementLedger.map((entry) => entry.batchId)).size, 1);
 });
 
 test("lets the current player claim self-draw hu and keeps the round moving", () => {
@@ -541,6 +571,11 @@ test("lets the current player claim self-draw hu and keeps the round moving", ()
   assert.equal(claimed.room.round?.currentPlayer, 1);
   assert.equal(claimed.room.roundEnd, null);
   assert.equal(claimed.room.phase, "draw");
+  assert.deepEqual(claimed.room.scores.map((score) => score.points), [6, -2, -2, -2]);
+  assert.deepEqual(
+    claimed.room.settlementLedger.map((entry) => [entry.winnerSeatId, entry.loserSeatId, entry.finalPoints]),
+    [[0, 1, 2], [0, 2, 2], [0, 3, 2]],
+  );
   assert.deepEqual(claimed.room.eventLog.at(-1), {
     type: "selfDrawHuClaimed",
     seatId: 0,
@@ -935,6 +970,11 @@ test("keeps the original peng when one player claims qiang gang hu", () => {
   assert.equal(resolved.room.round?.players[0].melds[0].type, "peng");
   assert.equal(resolved.room.round?.players[0].hand.length, room.round!.players[0].hand.length - 1);
   assert.equal(resolved.room.round?.currentPlayer, 2);
+  assert.deepEqual(resolved.room.scores.map((score) => score.points), [-16, 16, 0, 0]);
+  assert.deepEqual(
+    resolved.room.settlementLedger.map((entry) => [entry.reason, entry.winnerSeatId, entry.loserSeatId, entry.finalPoints]),
+    [["qiangGangHu", 1, 0, 16]],
+  );
   assert.deepEqual(
     resolved.room.eventLog.filter((event) => event.type === "qiangGangHuClaimed").map((event) => ({
       seatId: event.seatId,
@@ -965,6 +1005,88 @@ test("records multiple qiang gang hu claims before blood battle continues", () =
   assert.equal(resolved.room.phase, "draw");
   assert.equal(resolved.room.round?.currentPlayer, 3);
   assert.equal(resolved.room.eventLog.filter((event) => event.type === "qiangGangHuClaimed").length, 2);
+  assert.deepEqual(resolved.room.scores.map((score) => score.points), [-32, 16, 16, 0]);
+  assert.equal(new Set(resolved.room.settlementLedger.map((entry) => entry.batchId)).size, 1);
+});
+
+test("settles multi-hu ledger identically regardless of claim response order", () => {
+  function settle(order: Array<"p2" | "p3">): Pick<RoomState, "scores" | "settlementLedger"> {
+    const { room, discard } = readyRoomForMultiHu();
+    const discarded = discardRoomTile(room, "p1", discard);
+    assert.equal(discarded.ok, true);
+    if (!discarded.ok) throw new Error("Expected discard to succeed.");
+
+    const claimed = order.reduce((nextRoom, playerId) => {
+      const result = claimHu(nextRoom, playerId);
+      assert.equal(result.ok, true);
+      if (!result.ok) throw new Error("Expected hu claim to succeed.");
+      return result.room;
+    }, discarded.room);
+    const resolved = passClaim(claimed, "p4");
+    assert.equal(resolved.ok, true);
+    if (!resolved.ok) throw new Error("Expected claim window to resolve.");
+
+    return { scores: resolved.room.scores, settlementLedger: resolved.room.settlementLedger };
+  }
+
+  assert.deepEqual(settle(["p2", "p3"]), settle(["p3", "p2"]));
+});
+
+test("settles multi-winner qiang gang ledger identically regardless of response order", () => {
+  function settle(order: Array<"p2" | "p3">): Pick<RoomState, "scores" | "settlementLedger"> {
+    const { room, gangTile } = readyRoomForQiangGangHu([1, 2]);
+    const declared = claimBaGang(room, "p1", gangTile);
+    assert.equal(declared.ok, true);
+    if (!declared.ok) throw new Error("Expected ba gang declaration to succeed.");
+
+    const claimed = order.reduce((nextRoom, playerId) => {
+      const result = claimQiangGangHu(nextRoom, playerId);
+      assert.equal(result.ok, true);
+      if (!result.ok) throw new Error("Expected qiang gang hu to succeed.");
+      return result.room;
+    }, declared.room);
+    const resolved = passQiangGang(claimed, "p4");
+    assert.equal(resolved.ok, true);
+    if (!resolved.ok) throw new Error("Expected qiang gang window to resolve.");
+
+    return { scores: resolved.room.scores, settlementLedger: resolved.room.settlementLedger };
+  }
+
+  assert.deepEqual(settle(["p2", "p3"]), settle(["p3", "p2"]));
+});
+
+test("caps each self-draw payer at 64 points while retaining raw score", () => {
+  const room = readyRoomForSelfDrawHu();
+  const makePeng = (rank: 2 | 3 | 4 | 5, fromPlayer: PlayerId) => {
+    const pengTile = tile("characters", rank);
+    return { type: "peng" as const, tile: pengTile, tiles: [pengTile, pengTile, pengTile], fromPlayer };
+  };
+  const cappedRoom: RoomState = {
+    ...room,
+    round: {
+      ...room.round!,
+      players: room.round!.players.map((player) =>
+        player.id === 0
+          ? {
+              ...player,
+              hand: [tile("characters", 9), tile("characters", 9)],
+              melds: [makePeng(2, 1), makePeng(3, 2), makePeng(4, 3), makePeng(5, 1)],
+              missingSuit: "dots",
+            }
+          : player,
+      ),
+    },
+  };
+
+  const claimed = claimSelfDrawHu(cappedRoom, "p1");
+  assert.equal(claimed.ok, true);
+  if (!claimed.ok) return;
+
+  assert.deepEqual(claimed.room.scores.map((score) => score.points), [192, -64, -64, -64]);
+  assert.deepEqual(
+    claimed.room.settlementLedger.map((entry) => [entry.basePoints, entry.rawPoints, entry.finalPoints]),
+    [[1, 128, 64], [1, 128, 64], [1, 128, 64]],
+  );
 });
 
 test("ends blood battle when qiang gang hu leaves only one active player", () => {
@@ -987,6 +1109,8 @@ test("ends blood battle when qiang gang hu leaves only one active player", () =>
   assert.deepEqual(resolved.room.roundEnd, { reason: "onePlayerLeft", remainingPlayerIds: [0] });
   assert.equal(resolved.room.baGangClaimWindow, null);
   assert.equal(resolved.room.round?.players[0].melds[0].type, "peng");
+  assert.equal(resolved.room.settlementLedger.length, 3);
+  assert.deepEqual(resolved.room.scores.map((score) => score.points), [-48, 16, 16, 16]);
 });
 
 test("rejects illegal and already-won qiang gang responses", () => {

@@ -447,6 +447,8 @@ type ClientVisibleRoomState = {
     wallCount: number;
     players: VisiblePlayerState[];
   };
+  scores: PlayerScoreBalance[];
+  settlementLedger: HuSettlementEntry[];
   eventLog: RoomEvent[];
 };
 
@@ -470,6 +472,23 @@ Visibility rule:
   for each session so the client never needs to infer turn legality from hand
   counts.
 - The server never sends the full wall to any browser.
+
+### Authoritative Hu Score Ledger
+
+Every client receives the same public score balances and hu-payment ledger.
+Each ledger entry records a stable batch ID, winner and loser seats, reason,
+base score `1`, uncapped `rawPoints`, capped `finalPoints`, and a semantic link
+to the associated hu event. It contains no hands, wall order, shuffle seed, or
+decomposition search data.
+
+Discard and qiang-gang multi-winner payments are written once when their
+response window closes. Entries are sorted by winner and loser seat, so claim
+response order does not change the resulting ledger. Self-draw produces one
+batch containing one payment from each other player who had not already won.
+
+This MVP ledger currently includes only `selfDrawHu`, `discardHu`, and
+`qiangGangHu`. Chicken payments, gang payments, cha jiao, and a final match
+total remain outside this ledger phase.
 
 This matches the frontend client-perspective switcher: changing perspective
 should only change which hand is visible, not the authoritative game state.
