@@ -10,6 +10,8 @@ room service calls, then send the returned redacted room view back to clients.
 The room service owns the authoritative in-memory state for one room:
 
 - Room state, seats, readiness, round status, and event log.
+- External discard/qiang-gang winning-tile source records kept inside the
+  authoritative round state.
 - Session tokens and their player ids.
 - Monotonic `lastEventId` for reconnect and event replay.
 - Redacted client-visible room views through `toClientVisibleRoomState`.
@@ -269,10 +271,15 @@ lookup, event ids, and redacted room views.
 - Session tokens are secure by default and injectable for deterministic tests.
 - The service now covers dingque, draw/discard, claim windows, hu/peng/gang,
   response deadlines, hu-score settlement, idempotent round-end three/four-
-  chicken settlement, and presence recovery.
+  chicken settlement, qiang-gang three-chicken liability, and presence recovery.
 - Chicken settlement counts original physical tiles from concealed hands,
   exposed meld sources, and discard/qiang-gang winning tiles. It writes one
   stable terminal batch and never publishes concealed counts before `ended`.
+- A robbed physical `1 bamboo` or `1 dot` that changes an individual winner's
+  same-suit count from two to three replaces that suit's ordinary three-chicken
+  transfers with one uncapped 48-point payment from the ba-gang declarer. The
+  internal source/window record is omitted from `ClientVisibleRoomState`; only
+  the completed public ledger entry appears after round end.
 - WebSocket heartbeat and stale-connection detection live in the server core;
   the service receives only connected/disconnected transitions.
 - State is in memory only. Restarting the server would lose rooms.

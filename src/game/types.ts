@@ -38,14 +38,23 @@ export type Meld = {
   fromPlayer: PlayerId | null;
 };
 
+export type ClaimedWinningTile = {
+  // Original physical winning tile. A yao ji keeps its source identity here.
+  tile: Tile;
+  source: "discard" | "qiangGang";
+  sourceWindowId: string;
+  responsibleSeatId: PlayerId;
+  responsiblePlayerId: string;
+};
+
 export type PlayerState = {
   id: PlayerId;
   hand: Tile[];
   discards: Tile[];
   melds: Meld[];
   hasWon: boolean;
-  // Physical tile received from discard hu or qiang-gang hu. Self-draw tiles stay in hand.
-  claimedWinningTile: Tile | null;
+  // Server-only source record for a physical tile received from another player.
+  claimedWinningTile: ClaimedWinningTile | null;
   missingSuit: Suit | null;
 };
 

@@ -993,7 +993,17 @@ export function claimHu(room: RoomState, playerId: string): ClaimHuResult {
     ...room.round,
     players: room.round.players.map((player) =>
       player.id === seat.seatId
-        ? { ...player, hasWon: true, claimedWinningTile: room.claimWindow!.tile }
+        ? {
+            ...player,
+            hasWon: true,
+            claimedWinningTile: {
+              tile: room.claimWindow!.tile,
+              source: "discard",
+              sourceWindowId: room.claimWindow!.windowId,
+              responsibleSeatId: room.claimWindow!.discardedBySeatId,
+              responsiblePlayerId: room.claimWindow!.discardedByPlayerId,
+            },
+          }
         : player,
     ),
   };
@@ -1325,7 +1335,17 @@ export function claimQiangGangHu(room: RoomState, playerId: string): ClaimQiangG
     ...room.round,
     players: room.round.players.map((player) =>
       player.id === seat.seatId
-        ? { ...player, hasWon: true, claimedWinningTile: room.baGangClaimWindow!.tile }
+        ? {
+            ...player,
+            hasWon: true,
+            claimedWinningTile: {
+              tile: room.baGangClaimWindow!.tile,
+              source: "qiangGang",
+              sourceWindowId: room.baGangClaimWindow!.windowId,
+              responsibleSeatId: room.baGangClaimWindow!.upgradedBySeatId,
+              responsiblePlayerId: room.baGangClaimWindow!.upgradedByPlayerId,
+            },
+          }
         : player,
     ),
   };
@@ -2224,15 +2244,40 @@ export function settleRoundChickenPayments(room: RoomState): RoomState {
     const finalSettlementTiles = [
       ...player.hand,
       ...player.melds.flatMap((meld) => meld.tiles),
-      ...(player.claimedWinningTile === null ? [] : [player.claimedWinningTile]),
+      ...(player.claimedWinningTile === null ? [] : [player.claimedWinningTile.tile]),
     ];
     const chickenSettlement = calculateChickenSettlement(finalSettlementTiles);
+    const liability = qiangGangSanJiLiability(player);
 
     return chickenSettlement.payments.flatMap((payment): ChickenSettlementTransfer[] => {
       const chickenSuit = chickenSuitFromPayment(payment.tile);
 
       if (chickenSuit === null) {
         return [];
+      }
+
+      if (
+        payment.kind === "threeChicken" &&
+        liability !== null &&
+        liability.chickenSuit === chickenSuit
+      ) {
+        return [{
+          winnerSeatId: player.id,
+          winnerPlayerId,
+          loserSeatId: liability.responsibleSeatId,
+          loserPlayerId: liability.responsiblePlayerId,
+          reason: "qiangGangSanJiLiability",
+          chickenSuit,
+          chickenCount: 3,
+          points: 48,
+          relatedEvent: {
+            type: "qiangGangHuClaimed",
+            windowId: liability.sourceWindowId,
+            seatId: player.id,
+            responsibleSeatId: liability.responsibleSeatId,
+            responsiblePlayerId: liability.responsiblePlayerId,
+          },
+        }];
       }
 
       return seatIds.flatMap((loserSeatId): ChickenSettlementTransfer[] => {
@@ -2277,6 +2322,46 @@ export function settleRoundChickenPayments(room: RoomState): RoomState {
     scores: result.scores,
     settlementLedger: result.ledger,
     resolvedSettlementIds: result.resolvedSettlementIds,
+  };
+}
+
+function qiangGangSanJiLiability(
+  player: RoundState["players"][number],
+): {
+  chickenSuit: ChickenSuit;
+  sourceWindowId: string;
+  responsibleSeatId: PlayerId;
+  responsiblePlayerId: string;
+} | null {
+  const claimed = player.claimedWinningTile;
+
+  if (claimed === null || claimed.source !== "qiangGang" || !isYaoJi(claimed.tile)) {
+    return null;
+  }
+
+  const chickenSuit = chickenSuitFromPayment(claimed.tile);
+
+  if (chickenSuit === null) {
+    return null;
+  }
+
+  const tilesBeforeClaim = [
+    ...player.hand,
+    ...player.melds.flatMap((meld) => meld.tiles),
+  ];
+  const countBeforeClaim = tilesBeforeClaim.filter(
+    (value) => value.suit === chickenSuit && isYaoJi(value),
+  ).length;
+
+  if (countBeforeClaim !== 2) {
+    return null;
+  }
+
+  return {
+    chickenSuit,
+    sourceWindowId: claimed.sourceWindowId,
+    responsibleSeatId: claimed.responsibleSeatId,
+    responsiblePlayerId: claimed.responsiblePlayerId,
   };
 }
 

@@ -122,6 +122,9 @@ server authoritative.
 - [x] Add idempotent server-authoritative three/four-chicken settlement from
   original physical tile sources, including already-won payers and public
   round-end ledger summaries
+- [x] Add robbed-yao-ji three-chicken liability: preserve external winning-tile
+  source, replace same-suit ordinary san-ji with one 48-point declarer payment,
+  support multi-win, and keep candidates hidden until round end
 - Wrap `roomSocketAdapter` with a production-ready WebSocket server entry
 - Connect table UI to WebSocket room snapshots
 - [x] Add reconnect with a local session token

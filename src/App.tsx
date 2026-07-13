@@ -3365,6 +3365,7 @@ function settlementReasonText(reason: ClientVisibleRoomState["settlementLedger"]
     qiangGangHu: "抢杠胡",
     sanJi: "三鸡",
     siJi: "四鸡",
+    qiangGangSanJiLiability: "抢杠三鸡包赔",
   } as const;
 
   return labels[reason];

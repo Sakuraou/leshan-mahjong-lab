@@ -507,15 +507,18 @@ Visibility rule:
 Every client receives the same public score balances and settlement ledger.
 Hu entries record a stable batch ID, winner and loser seats, reason, base score
 `1`, uncapped `rawPoints`, capped `finalPoints`, and a semantic link to the hu
-event. Chicken entries use reason `sanJi` or `siJi`, include only the original
-yao-ji suit, count, payer, recipient, and uncapped 16/32-point amount, and link
-to the public `roundEnded` event. Entries contain no hands, wall order, shuffle
-seed, decomposition search data, or source-tile arrays.
+event. Ordinary chicken entries use reason `sanJi` or `siJi`, include only the
+original yao-ji suit, count, payer, recipient, and uncapped 16/32-point amount,
+and link to the public `roundEnded` event. A `qiangGangSanJiLiability` entry is
+one 48-point transfer from the ba-gang declarer to an eligible robbing winner
+and links to the safe qiang-gang window identity. Entries contain no hands,
+wall order, shuffle seed, decomposition search data, source-tile arrays, or
+pre-claim chicken counts.
 
 ```ts
 type SettlementLedgerEntry = HuSettlementEntry | ChickenSettlementEntry;
 
-type ChickenSettlementEntry = {
+type OrdinaryChickenSettlementEntry = {
   id: number;
   batchId: number;
   sourceSettlementId: string;
@@ -535,6 +538,34 @@ type ChickenSettlementEntry = {
     reason: "onePlayerLeft" | "wallEmpty";
   };
 };
+
+type QiangGangSanJiLiabilityEntry = {
+  id: number;
+  batchId: number;
+  sourceSettlementId: string;
+  sourceWindowId: null;
+  winnerSeatId: 0 | 1 | 2 | 3;
+  winnerPlayerId: string;
+  loserSeatId: 0 | 1 | 2 | 3;
+  loserPlayerId: string;
+  reason: "qiangGangSanJiLiability";
+  chickenSuit: "bamboos" | "dots";
+  chickenCount: 3;
+  basePoints: 16;
+  rawPoints: 48;
+  finalPoints: 48;
+  relatedEvent: {
+    type: "qiangGangHuClaimed";
+    windowId: string;
+    seatId: 0 | 1 | 2 | 3;
+    responsibleSeatId: 0 | 1 | 2 | 3;
+    responsiblePlayerId: string;
+  };
+};
+
+type ChickenSettlementEntry =
+  | OrdinaryChickenSettlementEntry
+  | QiangGangSanJiLiabilityEntry;
 ```
 
 Discard and qiang-gang multi-winner payments are written once when their
@@ -543,14 +574,18 @@ response order does not change the resulting ledger. Self-draw produces one
 batch containing one payment from each other player who had not already won.
 
 The ledger currently includes `selfDrawHu`, `discardHu`, `qiangGangHu`, `sanJi`,
-and `siJi`. Three/four-chicken entries are generated in one deterministic batch
-only after the round reaches `ended`; all three other seats pay even if they
-won earlier, and the 64-point hu cap does not apply. During play, snapshots do
-not expose concealed chicken counts or potential chicken payments.
+`siJi`, and `qiangGangSanJiLiability`. Chicken entries are generated in one
+deterministic batch only after the round reaches `ended`; already-won players
+still participate, and the 64-point hu cap does not apply. When a robbed
+physical yao ji changes an individual winner's same-suit count from two to
+three, one 48-point responsibility entry replaces that winner and suit's three
+ordinary 16-point entries. Other suits settle normally, and each eligible
+winner in a multi-win is handled independently. During play, snapshots do not
+expose concealed chicken counts, external winning-tile source records, or
+potential liability payments.
 
-Gang payments, cha-jiao transfers, the special full-table liability when a
-yao-ji ba-gang is robbed into three chicken, and a final match total remain
-outside this ledger phase.
+Gang payments, cha-jiao transfers, and a final match total remain outside this
+ledger phase.
 
 This matches the frontend client-perspective switcher: changing perspective
 should only change which hand is visible, not the authoritative game state.

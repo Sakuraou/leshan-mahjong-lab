@@ -145,7 +145,7 @@ export type HuSettlementReason = "selfDrawHu" | "discardHu" | "qiangGangHu";
 
 export type HuSettlementEventType = "selfDrawHuClaimed" | "huClaimed" | "qiangGangHuClaimed";
 
-export type ChickenSettlementReason = "sanJi" | "siJi";
+export type ChickenSettlementReason = "sanJi" | "siJi" | "qiangGangSanJiLiability";
 
 export type ChickenSuit = Extract<Suit, "bamboos" | "dots">;
 
@@ -175,18 +175,21 @@ export type HuSettlementEntry = {
   };
 };
 
-export type ChickenSettlementEntry = {
+type ChickenSettlementEntryBase = {
   id: number;
   batchId: number;
   winnerSeatId: PlayerId;
   winnerPlayerId: string;
   loserSeatId: PlayerId;
   loserPlayerId: string;
-  reason: ChickenSettlementReason;
   chickenSuit: ChickenSuit;
-  chickenCount: 3 | 4;
   sourceWindowId: null;
   sourceSettlementId: string;
+};
+
+export type OrdinaryChickenSettlementEntry = ChickenSettlementEntryBase & {
+  reason: "sanJi" | "siJi";
+  chickenCount: 3 | 4;
   basePoints: 16 | 32;
   rawPoints: 16 | 32;
   finalPoints: 16 | 32;
@@ -196,21 +199,56 @@ export type ChickenSettlementEntry = {
   };
 };
 
+export type QiangGangSanJiLiabilityEntry = ChickenSettlementEntryBase & {
+  reason: "qiangGangSanJiLiability";
+  chickenCount: 3;
+  basePoints: 16;
+  rawPoints: 48;
+  finalPoints: 48;
+  relatedEvent: {
+    type: "qiangGangHuClaimed";
+    windowId: string;
+    seatId: PlayerId;
+    responsibleSeatId: PlayerId;
+    responsiblePlayerId: string;
+  };
+};
+
+export type ChickenSettlementEntry =
+  | OrdinaryChickenSettlementEntry
+  | QiangGangSanJiLiabilityEntry;
+
 export type SettlementLedgerEntry = HuSettlementEntry | ChickenSettlementEntry;
 
 export type HuSettlementTransfer = Omit<HuSettlementEntry, "id" | "batchId" | "basePoints">;
 
-export type ChickenSettlementTransfer = {
+export type OrdinaryChickenSettlementTransfer = {
   winnerSeatId: PlayerId;
   winnerPlayerId: string;
   loserSeatId: PlayerId;
   loserPlayerId: string;
-  reason: ChickenSettlementReason;
+  reason: "sanJi" | "siJi";
   chickenSuit: ChickenSuit;
   chickenCount: 3 | 4;
   points: 16 | 32;
-  relatedEvent: ChickenSettlementEntry["relatedEvent"];
+  relatedEvent: OrdinaryChickenSettlementEntry["relatedEvent"];
 };
+
+export type QiangGangSanJiLiabilityTransfer = {
+  winnerSeatId: PlayerId;
+  winnerPlayerId: string;
+  loserSeatId: PlayerId;
+  loserPlayerId: string;
+  reason: "qiangGangSanJiLiability";
+  chickenSuit: ChickenSuit;
+  chickenCount: 3;
+  points: 48;
+  relatedEvent: QiangGangSanJiLiabilityEntry["relatedEvent"];
+};
+
+export type ChickenSettlementTransfer =
+  | OrdinaryChickenSettlementTransfer
+  | QiangGangSanJiLiabilityTransfer;
 
 export type HuSettlementBatchResult = {
   scores: PlayerScoreBalance[];
@@ -325,30 +363,54 @@ export function applyChickenSettlementBatch(
   }
 
   const batchId = (ledger.at(-1)?.batchId ?? 0) + 1;
+  const reasonOrder: Record<ChickenSettlementReason, number> = {
+    sanJi: 0,
+    siJi: 1,
+    qiangGangSanJiLiability: 2,
+  };
   const orderedTransfers = [...transfers].sort(
     (left, right) =>
       left.winnerSeatId - right.winnerSeatId ||
       left.chickenSuit.localeCompare(right.chickenSuit) ||
+      reasonOrder[left.reason] - reasonOrder[right.reason] ||
       left.loserSeatId - right.loserSeatId ||
-      left.reason.localeCompare(right.reason),
+      liabilityWindowId(left).localeCompare(liabilityWindowId(right)),
   );
-  const entries = orderedTransfers.map((transfer, index): ChickenSettlementEntry => ({
-    id: ledger.length + index + 1,
-    batchId,
-    winnerSeatId: transfer.winnerSeatId,
-    winnerPlayerId: transfer.winnerPlayerId,
-    loserSeatId: transfer.loserSeatId,
-    loserPlayerId: transfer.loserPlayerId,
-    reason: transfer.reason,
-    chickenSuit: transfer.chickenSuit,
-    chickenCount: transfer.chickenCount,
-    sourceWindowId: null,
-    sourceSettlementId,
-    basePoints: transfer.points,
-    rawPoints: transfer.points,
-    finalPoints: transfer.points,
-    relatedEvent: transfer.relatedEvent,
-  }));
+  const entries = orderedTransfers.map((transfer, index): ChickenSettlementEntry => {
+    const common = {
+      id: ledger.length + index + 1,
+      batchId,
+      winnerSeatId: transfer.winnerSeatId,
+      winnerPlayerId: transfer.winnerPlayerId,
+      loserSeatId: transfer.loserSeatId,
+      loserPlayerId: transfer.loserPlayerId,
+      chickenSuit: transfer.chickenSuit,
+      sourceWindowId: null,
+      sourceSettlementId,
+    } as const;
+
+    if (transfer.reason === "qiangGangSanJiLiability") {
+      return {
+        ...common,
+        reason: transfer.reason,
+        chickenCount: 3,
+        basePoints: 16,
+        rawPoints: 48,
+        finalPoints: 48,
+        relatedEvent: transfer.relatedEvent,
+      };
+    }
+
+    return {
+      ...common,
+      reason: transfer.reason,
+      chickenCount: transfer.chickenCount,
+      basePoints: transfer.points,
+      rawPoints: transfer.points,
+      finalPoints: transfer.points,
+      relatedEvent: transfer.relatedEvent,
+    };
+  });
   const deltas = new Map<PlayerId, number>();
 
   for (const entry of entries) {
@@ -365,6 +427,10 @@ export function applyChickenSettlementBatch(
     entries,
     resolvedSettlementIds: nextResolvedSettlementIds,
   };
+}
+
+function liabilityWindowId(transfer: ChickenSettlementTransfer): string {
+  return transfer.reason === "qiangGangSanJiLiability" ? transfer.relatedEvent.windowId : "";
 }
 
 export function describeChickenPayment(payment: ChickenPayment): string {

@@ -27,7 +27,9 @@ import {
   toClientVisibleRoomState,
   type RoomState,
   type ChickenSettlementEntry,
+  type ClaimedWinningTile,
   type PlayerId,
+  type QiangGangSanJiLiabilityEntry,
   type Suit,
   type Tile,
 } from "../../src/game/index.ts";
@@ -501,7 +503,13 @@ test("lets a player claim discard hu from the claim window", () => {
   }
 
   assert.equal(claimed.room.round?.players[1].hasWon, true);
-  assert.deepEqual(claimed.room.round?.players[1].claimedWinningTile, discard);
+  assert.deepEqual(claimed.room.round?.players[1].claimedWinningTile, {
+    tile: discard,
+    source: "discard",
+    sourceWindowId: discarded.room.claimWindow?.windowId,
+    responsibleSeatId: 0,
+    responsiblePlayerId: "p1",
+  });
   assert.equal(claimed.room.claimWindow?.huClaims[0].seatId, 1);
   assert.deepEqual(claimed.room.settlementLedger, []);
   assert.deepEqual(claimed.room.eventLog.at(-1), {
@@ -798,7 +806,13 @@ test("counts physical yao ji sources in melds and claimed winning tiles while al
     {
       hand: [dotYaoJi, dotYaoJi],
       hasWon: true,
-      claimedWinningTile: dotYaoJi,
+      claimedWinningTile: {
+        tile: dotYaoJi,
+        source: "discard",
+        sourceWindowId: "discard-chicken-source",
+        responsibleSeatId: 2,
+        responsiblePlayerId: "p3",
+      },
     },
     {},
     { hasWon: true },
@@ -852,6 +866,245 @@ test("does not expose opponents' concealed chicken counts before round end", () 
   assert.equal(serialized.includes("bambooCount"), false);
   assert.equal(serialized.includes("dotCount"), false);
   assert.equal(serialized.includes("resolvedSettlementIds"), false);
+});
+
+test("replaces ordinary san ji with qiang gang liability when either yao ji goes from two to three", () => {
+  for (const chickenSuit of ["bamboos", "dots"] as const) {
+    const yaoJi = tile(chickenSuit, 1);
+    const ended = finishChickenRound([
+      {},
+      {
+        hand: [yaoJi, yaoJi],
+        hasWon: true,
+        claimedWinningTile: qiangGangWinningTile(yaoJi),
+      },
+    ]);
+    const liabilityEntries = ended.settlementLedger.filter(
+      (entry): entry is QiangGangSanJiLiabilityEntry =>
+        entry.reason === "qiangGangSanJiLiability",
+    );
+
+    assert.deepEqual(ended.scores.map((score) => score.points), [-48, 48, 0, 0]);
+    assert.deepEqual(
+      liabilityEntries.map((entry) => [
+        entry.reason,
+        entry.chickenSuit,
+        entry.winnerSeatId,
+        entry.loserSeatId,
+        entry.finalPoints,
+      ]),
+      [["qiangGangSanJiLiability", chickenSuit, 1, 0, 48]],
+    );
+    assert.equal(
+      ended.settlementLedger.some(
+        (entry) =>
+          entry.reason === "sanJi" &&
+          entry.winnerSeatId === 1 &&
+          entry.chickenSuit === chickenSuit,
+      ),
+      false,
+    );
+    assert.deepEqual(liabilityEntries[0].relatedEvent, {
+      type: "qiangGangHuClaimed",
+      windowId: "qiang-gang-chicken-window",
+      seatId: 1,
+      responsibleSeatId: 0,
+      responsiblePlayerId: "p1",
+    });
+  }
+});
+
+test("carries the robbed physical yao ji through the ba gang claim flow", () => {
+  const { room, gangTile } = readyRoomForQiangGangHu([1], [2, 3]);
+  const bambooYaoJi = tile("bamboos", 1);
+  const roomWithYaoJiBaGang: RoomState = {
+    ...room,
+    round: {
+      ...room.round!,
+      players: room.round!.players.map((player) => {
+        if (player.id === 0) {
+          return {
+            ...player,
+            hand: player.hand.map((value) =>
+              value.suit === gangTile.suit && value.rank === gangTile.rank
+                ? bambooYaoJi
+                : value,
+            ),
+          };
+        }
+
+        if (player.id === 1) {
+          return {
+            ...player,
+            hand: [...player.hand.slice(0, -2), bambooYaoJi, bambooYaoJi],
+          };
+        }
+
+        return player;
+      }),
+    },
+  };
+  const declared = claimBaGang(roomWithYaoJiBaGang, "p1", gangTile);
+
+  assert.equal(declared.ok, true);
+  if (!declared.ok) return;
+  assert.deepEqual(declared.room.baGangClaimWindow?.targetTile, gangTile);
+  assert.deepEqual(declared.room.baGangClaimWindow?.tile, bambooYaoJi);
+
+  const claimed = claimQiangGangHu(declared.room, "p2");
+  assert.equal(claimed.ok, true);
+  if (!claimed.ok) return;
+
+  assert.equal(claimed.room.status, "ended");
+  assert.equal(
+    claimed.room.settlementLedger.filter(
+      (entry) => entry.reason === "qiangGangSanJiLiability",
+    ).length,
+    1,
+  );
+  assert.deepEqual(claimed.room.round?.players[1].claimedWinningTile, {
+    tile: bambooYaoJi,
+    source: "qiangGang",
+    sourceWindowId: declared.room.baGangClaimWindow?.windowId,
+    responsibleSeatId: 0,
+    responsiblePlayerId: "p1",
+  });
+});
+
+test("keeps other chicken suits ordinary while one suit uses qiang gang liability", () => {
+  const bambooYaoJi = tile("bamboos", 1);
+  const dotYaoJi = tile("dots", 1);
+  const ended = finishChickenRound([
+    {},
+    {
+      hand: [bambooYaoJi, bambooYaoJi, dotYaoJi, dotYaoJi, dotYaoJi],
+      hasWon: true,
+      claimedWinningTile: qiangGangWinningTile(bambooYaoJi),
+    },
+  ]);
+  const chickenEntries = ended.settlementLedger.filter(
+    (entry): entry is ChickenSettlementEntry =>
+      entry.reason === "sanJi" ||
+      entry.reason === "siJi" ||
+      entry.reason === "qiangGangSanJiLiability",
+  );
+
+  assert.deepEqual(ended.scores.map((score) => score.points), [-64, 96, -16, -16]);
+  assert.deepEqual(
+    chickenEntries.map((entry) => [entry.reason, entry.chickenSuit, entry.loserSeatId, entry.finalPoints]),
+    [
+      ["qiangGangSanJiLiability", "bamboos", 0, 48],
+      ["sanJi", "dots", 0, 16],
+      ["sanJi", "dots", 2, 16],
+      ["sanJi", "dots", 3, 16],
+    ],
+  );
+});
+
+test("does not use qiang gang liability unless the robbed yao ji changes exactly two into three", () => {
+  const bambooYaoJi = tile("bamboos", 1);
+  const cases = [
+    {
+      hand: [bambooYaoJi, bambooYaoJi, bambooYaoJi],
+      expectedReason: "siJi",
+      expectedEntries: 3,
+    },
+    {
+      hand: [bambooYaoJi],
+      expectedReason: null,
+      expectedEntries: 0,
+    },
+  ] as const;
+
+  for (const value of cases) {
+    const ended = finishChickenRound([
+      {},
+      {
+        hand: [...value.hand],
+        hasWon: true,
+        claimedWinningTile: qiangGangWinningTile(bambooYaoJi),
+      },
+    ]);
+    const chickenEntries = ended.settlementLedger.filter(
+      (entry): entry is ChickenSettlementEntry =>
+        entry.reason === "sanJi" ||
+        entry.reason === "siJi" ||
+        entry.reason === "qiangGangSanJiLiability",
+    );
+
+    assert.equal(chickenEntries.some((entry) => entry.reason === "qiangGangSanJiLiability"), false);
+    assert.equal(chickenEntries.length, value.expectedEntries);
+    assert.equal(chickenEntries[0]?.reason ?? null, value.expectedReason);
+  }
+});
+
+test("settles each eligible winner separately when multiple players rob the same yao ji", () => {
+  const bambooYaoJi = tile("bamboos", 1);
+  const claimedWinningTile = qiangGangWinningTile(bambooYaoJi);
+  const ended = finishChickenRound([
+    {},
+    { hand: [bambooYaoJi, bambooYaoJi], hasWon: true, claimedWinningTile },
+    { hand: [bambooYaoJi, bambooYaoJi], hasWon: true, claimedWinningTile },
+  ]);
+  const liabilityEntries = ended.settlementLedger.filter(
+    (entry): entry is QiangGangSanJiLiabilityEntry =>
+      entry.reason === "qiangGangSanJiLiability",
+  );
+
+  assert.deepEqual(ended.scores.map((score) => score.points), [-96, 48, 48, 0]);
+  assert.deepEqual(
+    liabilityEntries.map((entry) => [entry.winnerSeatId, entry.loserSeatId, entry.finalPoints]),
+    [[1, 0, 48], [2, 0, 48]],
+  );
+  assert.equal(
+    ended.settlementLedger.some((entry) => entry.reason === "sanJi" && [1, 2].includes(entry.winnerSeatId)),
+    false,
+  );
+});
+
+test("keeps qiang gang san ji liability idempotent and hidden until round end", () => {
+  const dotYaoJi = tile("dots", 1);
+  const playing = readyRoomForChickenSettlement([
+    {},
+    {
+      hand: [dotYaoJi, dotYaoJi],
+      hasWon: true,
+      claimedWinningTile: qiangGangWinningTile(dotYaoJi),
+    },
+  ]);
+  const playingView = toClientVisibleRoomState(playing, "p1");
+  const serialized = JSON.stringify(playingView);
+
+  assert.equal(playingView.round?.players[1].hand, null);
+  assert.deepEqual(playingView.settlementLedger, []);
+  assert.equal(serialized.includes("claimedWinningTile"), false);
+  assert.equal(serialized.includes("sourceWindowId"), false);
+  assert.equal(serialized.includes("qiangGangSanJiLiability"), false);
+
+  const ended = finishChickenRound([
+    {},
+    {
+      hand: [dotYaoJi, dotYaoJi],
+      hasWon: true,
+      claimedWinningTile: qiangGangWinningTile(dotYaoJi),
+    },
+  ]);
+  const repeated = settleRoundChickenPayments(ended);
+  const ticked = tickRoomStateDeadlines(repeated, 999_999);
+  const endedView = toClientVisibleRoomState(ended, "p1");
+
+  assert.equal(repeated, ended);
+  assert.equal(ticked.changed, false);
+  assert.equal(ticked.room, ended);
+  assert.equal(
+    ended.settlementLedger.filter((entry) => entry.reason === "qiangGangSanJiLiability").length,
+    1,
+  );
+  assert.equal(
+    endedView.settlementLedger.filter((entry) => entry.reason === "qiangGangSanJiLiability").length,
+    1,
+  );
+  assert.equal(JSON.stringify(endedView).includes("claimedWinningTile"), false);
 });
 
 test("lets a player claim peng from the claim window", () => {
@@ -1166,7 +1419,13 @@ test("keeps the original peng when one player claims qiang gang hu", () => {
   assert.equal(resolved.room.gangDraw, null);
   assert.equal(resolved.room.phase, "draw");
   assert.equal(resolved.room.round?.players[1].hasWon, true);
-  assert.deepEqual(resolved.room.round?.players[1].claimedWinningTile, gangTile);
+  assert.deepEqual(resolved.room.round?.players[1].claimedWinningTile, {
+    tile: gangTile,
+    source: "qiangGang",
+    sourceWindowId: declared.room.baGangClaimWindow?.windowId,
+    responsibleSeatId: 0,
+    responsiblePlayerId: "p1",
+  });
   assert.equal(resolved.room.round?.players[0].melds[0].type, "peng");
   assert.equal(resolved.room.round?.players[0].hand.length, room.round!.players[0].hand.length - 1);
   assert.equal(resolved.room.round?.currentPlayer, 2);
@@ -1428,7 +1687,7 @@ type ChickenPlayerFixture = {
   hand?: Tile[];
   melds?: NonNullable<RoomState["round"]>["players"][number]["melds"];
   hasWon?: boolean;
-  claimedWinningTile?: Tile | null;
+  claimedWinningTile?: ClaimedWinningTile | null;
 };
 
 function readyRoomForChickenSettlement(fixtures: ChickenPlayerFixture[]): RoomState {
@@ -1467,6 +1726,16 @@ function finishChickenRound(fixtures: ChickenPlayerFixture[]): RoomState {
   }
 
   return result.room;
+}
+
+function qiangGangWinningTile(yaoJi: Tile): ClaimedWinningTile {
+  return {
+    tile: yaoJi,
+    source: "qiangGang",
+    sourceWindowId: "qiang-gang-chicken-window",
+    responsibleSeatId: 0,
+    responsiblePlayerId: "p1",
+  };
 }
 
 function startReadyRoom(): RoomState {

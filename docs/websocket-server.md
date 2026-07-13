@@ -396,6 +396,24 @@ Heartbeat timestamps, connection ids, timer handles, and session tokens stay
 inside the server process. `roomSnapshot` contains only the redacted player
 view, safe player id, event cursor, server time, and visible events.
 
+## Qiang-Gang Three-Chicken Liability
+
+The WebSocket layer does not calculate chicken counts. `roomService` retains the
+external winning tile's physical source and the responsible ba-gang declarer,
+then the pure room reducer resolves chicken payments when the round reaches
+`ended`.
+
+If a robbed physical `1 bamboo` or `1 dot` changes a winner's same-suit count
+from two to three, the terminal snapshot contains one public
+`qiangGangSanJiLiability` ledger entry: the declarer pays that winner 48 points.
+It replaces the three ordinary `sanJi` payments for only that winner and suit;
+other suits and other eligible winners still settle independently.
+
+Before `ended`, per-session snapshots omit the server-only external winning-tile
+source, pre-claim counts, and liability candidate. Repeated deadline ticks or
+terminal settlement calls reuse the round settlement ID and cannot duplicate
+the 48-point entry.
+
 ## Screenshot Plan
 
 Portfolio screenshots to capture next:

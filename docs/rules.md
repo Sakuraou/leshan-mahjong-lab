@@ -195,15 +195,24 @@ still depends on the final yao ji count at settlement.
 ## Qiang Gang And Chicken Liability
 
 If a player robs a gang where the robbed tile is yao ji (`1 bamboo` or `1 dot`),
-and that tile changes the winner from no three-chicken state to a three-chicken
-state, the robbed-gang player pays the whole table's three-chicken payment.
+and the winner had exactly two original yao ji of that same suit before the rob,
+the robbed tile changes the count from two to three. The ba-gang declarer alone
+pays the winner the whole table's three-chicken amount:
 
-This special full-table liability is not part of the first ordinary round-end
-chicken ledger and remains a dedicated follow-up settlement rule.
+- `16 * 3 = 48`.
+- The other two players do not also pay ordinary three-chicken for that winner
+  and suit.
+- Three/four-chicken in the winner's other yao-ji suit still settles normally.
+- A winner who already had three of that suit and reaches four receives normal
+  four-chicken instead; the liability replacement does not apply.
+- Multiple winners can each receive one 48-point liability payment from the
+  same ba-gang declarer when each independently changes from two to three.
 
-Current confirmed amount:
-
-- `16 * 3 = 48`
+The server records the robbed physical tile, qiang-gang window, and responsible
+player internally when the hu is claimed. It applies the liability once in the
+same idempotent round-end chicken batch. The 64-point hu cap does not apply.
+Clients receive only the completed ledger summary after the round reaches
+`ended`; no in-progress chicken count or liability candidate is exposed.
 
 ## Cha Jiao
 
