@@ -468,13 +468,15 @@ wrapper against a real local WebSocket server:
   the same seat and readiness state with the original session token.
 
 The React WebSocket preview now consumes server-authoritative dingque, draw,
-discard, claim, gang, hu, score-ledger, and response-deadline snapshots while
-the mock table remains available as the default portfolio-safe path.
+discard, claim, gang, hu, score-ledger, round-end three/four-chicken, and
+response-deadline snapshots while the mock table remains available as the
+default portfolio-safe path. Chicken entries appear only after `ended`; no
+in-progress snapshot publishes another player's concealed chicken count.
 
 ## Next Milestone
 
-The next milestone is round settlement expansion: gang payments, three/four
-chicken payments, and cha-jiao, followed by persistent room recovery and
-deployment configuration for the WebSocket process. Offline kicking, bot
-takeover, room dissolution, and database persistence are not part of the
-current implementation.
+The next milestone is round settlement expansion for gang payments, cha-jiao,
+and the dedicated robbed-yao-ji chicken-liability rule, followed by persistent
+room recovery and deployment configuration for the WebSocket process. Offline
+kicking, bot takeover, room dissolution, and database persistence are not part
+of the current implementation.

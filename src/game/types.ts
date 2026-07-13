@@ -44,6 +44,8 @@ export type PlayerState = {
   discards: Tile[];
   melds: Meld[];
   hasWon: boolean;
+  // Physical tile received from discard hu or qiang-gang hu. Self-draw tiles stay in hand.
+  claimedWinningTile: Tile | null;
   missingSuit: Suit | null;
 };
 

@@ -470,7 +470,7 @@ type ClientVisibleRoomState = {
     players: VisiblePlayerState[];
   };
   scores: PlayerScoreBalance[];
-  settlementLedger: HuSettlementEntry[];
+  settlementLedger: SettlementLedgerEntry[];
   responseWindow: null | {
     windowId: string;
     kind: "discardClaim" | "qiangGang";
@@ -502,22 +502,55 @@ Visibility rule:
   counts.
 - The server never sends the full wall to any browser.
 
-### Authoritative Hu Score Ledger
+### Authoritative Score Ledger
 
-Every client receives the same public score balances and hu-payment ledger.
-Each ledger entry records a stable batch ID, winner and loser seats, reason,
-base score `1`, uncapped `rawPoints`, capped `finalPoints`, and a semantic link
-to the associated hu event. It contains no hands, wall order, shuffle seed, or
-decomposition search data.
+Every client receives the same public score balances and settlement ledger.
+Hu entries record a stable batch ID, winner and loser seats, reason, base score
+`1`, uncapped `rawPoints`, capped `finalPoints`, and a semantic link to the hu
+event. Chicken entries use reason `sanJi` or `siJi`, include only the original
+yao-ji suit, count, payer, recipient, and uncapped 16/32-point amount, and link
+to the public `roundEnded` event. Entries contain no hands, wall order, shuffle
+seed, decomposition search data, or source-tile arrays.
+
+```ts
+type SettlementLedgerEntry = HuSettlementEntry | ChickenSettlementEntry;
+
+type ChickenSettlementEntry = {
+  id: number;
+  batchId: number;
+  sourceSettlementId: string;
+  sourceWindowId: null;
+  winnerSeatId: 0 | 1 | 2 | 3;
+  winnerPlayerId: string;
+  loserSeatId: 0 | 1 | 2 | 3;
+  loserPlayerId: string;
+  reason: "sanJi" | "siJi";
+  chickenSuit: "bamboos" | "dots";
+  chickenCount: 3 | 4;
+  basePoints: 16 | 32;
+  rawPoints: 16 | 32;
+  finalPoints: 16 | 32;
+  relatedEvent: {
+    type: "roundEnded";
+    reason: "onePlayerLeft" | "wallEmpty";
+  };
+};
+```
 
 Discard and qiang-gang multi-winner payments are written once when their
 response window closes. Entries are sorted by winner and loser seat, so claim
 response order does not change the resulting ledger. Self-draw produces one
 batch containing one payment from each other player who had not already won.
 
-This MVP ledger currently includes only `selfDrawHu`, `discardHu`, and
-`qiangGangHu`. Chicken payments, gang payments, cha jiao, and a final match
-total remain outside this ledger phase.
+The ledger currently includes `selfDrawHu`, `discardHu`, `qiangGangHu`, `sanJi`,
+and `siJi`. Three/four-chicken entries are generated in one deterministic batch
+only after the round reaches `ended`; all three other seats pay even if they
+won earlier, and the 64-point hu cap does not apply. During play, snapshots do
+not expose concealed chicken counts or potential chicken payments.
+
+Gang payments, cha-jiao transfers, the special full-table liability when a
+yao-ji ba-gang is robbed into three chicken, and a final match total remain
+outside this ledger phase.
 
 This matches the frontend client-perspective switcher: changing perspective
 should only change which hand is visible, not the authoritative game state.

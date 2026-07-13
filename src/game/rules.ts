@@ -145,6 +145,12 @@ export type HuSettlementReason = "selfDrawHu" | "discardHu" | "qiangGangHu";
 
 export type HuSettlementEventType = "selfDrawHuClaimed" | "huClaimed" | "qiangGangHuClaimed";
 
+export type ChickenSettlementReason = "sanJi" | "siJi";
+
+export type ChickenSuit = Extract<Suit, "bamboos" | "dots">;
+
+export type RoundEndReason = "onePlayerLeft" | "wallEmpty";
+
 export type PlayerScoreBalance = {
   seatId: PlayerId;
   playerId: string | null;
@@ -169,12 +175,54 @@ export type HuSettlementEntry = {
   };
 };
 
+export type ChickenSettlementEntry = {
+  id: number;
+  batchId: number;
+  winnerSeatId: PlayerId;
+  winnerPlayerId: string;
+  loserSeatId: PlayerId;
+  loserPlayerId: string;
+  reason: ChickenSettlementReason;
+  chickenSuit: ChickenSuit;
+  chickenCount: 3 | 4;
+  sourceWindowId: null;
+  sourceSettlementId: string;
+  basePoints: 16 | 32;
+  rawPoints: 16 | 32;
+  finalPoints: 16 | 32;
+  relatedEvent: {
+    type: "roundEnded";
+    reason: RoundEndReason;
+  };
+};
+
+export type SettlementLedgerEntry = HuSettlementEntry | ChickenSettlementEntry;
+
 export type HuSettlementTransfer = Omit<HuSettlementEntry, "id" | "batchId" | "basePoints">;
+
+export type ChickenSettlementTransfer = {
+  winnerSeatId: PlayerId;
+  winnerPlayerId: string;
+  loserSeatId: PlayerId;
+  loserPlayerId: string;
+  reason: ChickenSettlementReason;
+  chickenSuit: ChickenSuit;
+  chickenCount: 3 | 4;
+  points: 16 | 32;
+  relatedEvent: ChickenSettlementEntry["relatedEvent"];
+};
 
 export type HuSettlementBatchResult = {
   scores: PlayerScoreBalance[];
-  ledger: HuSettlementEntry[];
+  ledger: SettlementLedgerEntry[];
   entries: HuSettlementEntry[];
+};
+
+export type ChickenSettlementBatchResult = {
+  scores: PlayerScoreBalance[];
+  ledger: SettlementLedgerEntry[];
+  entries: ChickenSettlementEntry[];
+  resolvedSettlementIds: string[];
 };
 
 export function calculateHuScore(input: HuScoreInput): HuScore {
@@ -208,7 +256,7 @@ export function createInitialScoreBalances(): PlayerScoreBalance[] {
 
 export function applyHuSettlementBatch(
   scores: PlayerScoreBalance[],
-  ledger: HuSettlementEntry[],
+  ledger: SettlementLedgerEntry[],
   transfers: HuSettlementTransfer[],
 ): HuSettlementBatchResult {
   if (transfers.length === 0) {
@@ -251,6 +299,71 @@ export function applyHuSettlementBatch(
     })),
     ledger: [...ledger, ...entries],
     entries,
+  };
+}
+
+export function applyChickenSettlementBatch(
+  scores: PlayerScoreBalance[],
+  ledger: SettlementLedgerEntry[],
+  resolvedSettlementIds: string[],
+  sourceSettlementId: string,
+  transfers: ChickenSettlementTransfer[],
+): ChickenSettlementBatchResult {
+  if (resolvedSettlementIds.includes(sourceSettlementId)) {
+    return { scores, ledger, entries: [], resolvedSettlementIds };
+  }
+
+  const nextResolvedSettlementIds = [...resolvedSettlementIds, sourceSettlementId];
+
+  if (transfers.length === 0) {
+    return {
+      scores,
+      ledger,
+      entries: [],
+      resolvedSettlementIds: nextResolvedSettlementIds,
+    };
+  }
+
+  const batchId = (ledger.at(-1)?.batchId ?? 0) + 1;
+  const orderedTransfers = [...transfers].sort(
+    (left, right) =>
+      left.winnerSeatId - right.winnerSeatId ||
+      left.chickenSuit.localeCompare(right.chickenSuit) ||
+      left.loserSeatId - right.loserSeatId ||
+      left.reason.localeCompare(right.reason),
+  );
+  const entries = orderedTransfers.map((transfer, index): ChickenSettlementEntry => ({
+    id: ledger.length + index + 1,
+    batchId,
+    winnerSeatId: transfer.winnerSeatId,
+    winnerPlayerId: transfer.winnerPlayerId,
+    loserSeatId: transfer.loserSeatId,
+    loserPlayerId: transfer.loserPlayerId,
+    reason: transfer.reason,
+    chickenSuit: transfer.chickenSuit,
+    chickenCount: transfer.chickenCount,
+    sourceWindowId: null,
+    sourceSettlementId,
+    basePoints: transfer.points,
+    rawPoints: transfer.points,
+    finalPoints: transfer.points,
+    relatedEvent: transfer.relatedEvent,
+  }));
+  const deltas = new Map<PlayerId, number>();
+
+  for (const entry of entries) {
+    deltas.set(entry.winnerSeatId, (deltas.get(entry.winnerSeatId) ?? 0) + entry.finalPoints);
+    deltas.set(entry.loserSeatId, (deltas.get(entry.loserSeatId) ?? 0) - entry.finalPoints);
+  }
+
+  return {
+    scores: scores.map((score) => ({
+      ...score,
+      points: score.points + (deltas.get(score.seatId) ?? 0),
+    })),
+    ledger: [...ledger, ...entries],
+    entries,
+    resolvedSettlementIds: nextResolvedSettlementIds,
   };
 }
 

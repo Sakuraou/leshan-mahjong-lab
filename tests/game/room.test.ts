@@ -18,6 +18,7 @@ import {
   passClaim,
   passQiangGang,
   joinRoom,
+  settleRoundChickenPayments,
   startRoomRound,
   takeSeat,
   tile,
@@ -25,6 +26,7 @@ import {
   toggleReady,
   toClientVisibleRoomState,
   type RoomState,
+  type ChickenSettlementEntry,
   type PlayerId,
   type Suit,
   type Tile,
@@ -499,6 +501,7 @@ test("lets a player claim discard hu from the claim window", () => {
   }
 
   assert.equal(claimed.room.round?.players[1].hasWon, true);
+  assert.deepEqual(claimed.room.round?.players[1].claimedWinningTile, discard);
   assert.equal(claimed.room.claimWindow?.huClaims[0].seatId, 1);
   assert.deepEqual(claimed.room.settlementLedger, []);
   assert.deepEqual(claimed.room.eventLog.at(-1), {
@@ -732,6 +735,123 @@ test("marks wall-empty round end with cha jiao placeholder results", () => {
   assert.deepEqual(claimed.room.chaJiao?.players.map((player) => player.seatId), [1, 2, 3]);
   assert.equal(claimed.room.chaJiao?.players.every((player) => typeof player.isListening === "boolean"), true);
   assert.deepEqual(toClientVisibleRoomState(claimed.room, "p2").legalActions, []);
+});
+
+test("settles san ji, si ji, stacked suits, and mixed two-plus-two at round end", () => {
+  const bambooYaoJi = tile("bamboos", 1);
+  const dotYaoJi = tile("dots", 1);
+  const cases = [
+    {
+      hand: [bambooYaoJi, bambooYaoJi, bambooYaoJi],
+      scores: [48, -16, -16, -16],
+      reasons: [["sanJi", "bamboos", 16]],
+      entryCount: 3,
+    },
+    {
+      hand: [dotYaoJi, dotYaoJi, dotYaoJi, dotYaoJi],
+      scores: [96, -32, -32, -32],
+      reasons: [["siJi", "dots", 32]],
+      entryCount: 3,
+    },
+    {
+      hand: [bambooYaoJi, bambooYaoJi, bambooYaoJi, dotYaoJi, dotYaoJi, dotYaoJi],
+      scores: [96, -32, -32, -32],
+      reasons: [["sanJi", "bamboos", 16], ["sanJi", "dots", 16]],
+      entryCount: 6,
+    },
+    {
+      hand: [bambooYaoJi, bambooYaoJi, dotYaoJi, dotYaoJi],
+      scores: [0, 0, 0, 0],
+      reasons: [],
+      entryCount: 0,
+    },
+  ] as const;
+
+  for (const value of cases) {
+    const ended = finishChickenRound([{ hand: [...value.hand] }]);
+    const chickenEntries = ended.settlementLedger.filter(
+      (entry): entry is ChickenSettlementEntry => entry.reason === "sanJi" || entry.reason === "siJi",
+    );
+    const distinctPayments = [...new Set(chickenEntries.map((entry) =>
+      `${entry.reason}:${entry.chickenSuit}:${entry.finalPoints}`,
+    ))].map((value) => {
+      const [reason, suit, points] = value.split(":");
+      return [reason, suit, Number(points)];
+    });
+
+    assert.deepEqual(ended.scores.map((score) => score.points), value.scores);
+    assert.equal(chickenEntries.length, value.entryCount);
+    assert.deepEqual(distinctPayments, value.reasons);
+    assert.equal(new Set(chickenEntries.map((entry) => entry.batchId)).size, value.entryCount === 0 ? 0 : 1);
+  }
+});
+
+test("counts physical yao ji sources in melds and claimed winning tiles while already-won players still pay", () => {
+  const bambooYaoJi = tile("bamboos", 1);
+  const dotYaoJi = tile("dots", 1);
+  const target = tile("characters", 5);
+  const ended = finishChickenRound([
+    {
+      hand: [bambooYaoJi, bambooYaoJi],
+      melds: [{ type: "peng", tile: target, tiles: [target, target, bambooYaoJi], fromPlayer: 1 }],
+    },
+    {
+      hand: [dotYaoJi, dotYaoJi],
+      hasWon: true,
+      claimedWinningTile: dotYaoJi,
+    },
+    {},
+    { hasWon: true },
+  ]);
+  const chickenEntries = ended.settlementLedger.filter(
+    (entry): entry is ChickenSettlementEntry => entry.reason === "sanJi" || entry.reason === "siJi",
+  );
+
+  assert.deepEqual(ended.scores.map((score) => score.points), [32, 32, -32, -32]);
+  assert.equal(chickenEntries.length, 6);
+  assert.deepEqual(
+    chickenEntries.map((entry) => [entry.winnerSeatId, entry.chickenSuit, entry.loserSeatId, entry.finalPoints]),
+    [
+      [0, "bamboos", 1, 16],
+      [0, "bamboos", 2, 16],
+      [0, "bamboos", 3, 16],
+      [1, "dots", 0, 16],
+      [1, "dots", 2, 16],
+      [1, "dots", 3, 16],
+    ],
+  );
+});
+
+test("keeps round-end chicken settlement idempotent across repeated settlement and deadline ticks", () => {
+  const bambooYaoJi = tile("bamboos", 1);
+  const ended = finishChickenRound([{ hand: [bambooYaoJi, bambooYaoJi, bambooYaoJi] }]);
+  const repeated = settleRoundChickenPayments(ended);
+  const ticked = tickRoomStateDeadlines(repeated, 999_999);
+
+  assert.equal(repeated, ended);
+  assert.equal(ticked.changed, false);
+  assert.equal(ticked.room, ended);
+  assert.deepEqual(ticked.room.scores, ended.scores);
+  assert.deepEqual(ticked.room.settlementLedger, ended.settlementLedger);
+  assert.equal(ended.resolvedSettlementIds.length, 1);
+});
+
+test("does not expose opponents' concealed chicken counts before round end", () => {
+  const dotYaoJi = tile("dots", 1);
+  const room = readyRoomForChickenSettlement([
+    {},
+    { hand: [dotYaoJi, dotYaoJi, dotYaoJi] },
+  ]);
+  const view = toClientVisibleRoomState(room, "p1");
+  const serialized = JSON.stringify(view);
+
+  assert.equal(view.round?.players[1].hand, null);
+  assert.deepEqual(view.settlementLedger, []);
+  assert.equal(serialized.includes("claimedWinningTile"), false);
+  assert.equal(serialized.includes("chickenCount"), false);
+  assert.equal(serialized.includes("bambooCount"), false);
+  assert.equal(serialized.includes("dotCount"), false);
+  assert.equal(serialized.includes("resolvedSettlementIds"), false);
 });
 
 test("lets a player claim peng from the claim window", () => {
@@ -1046,6 +1166,7 @@ test("keeps the original peng when one player claims qiang gang hu", () => {
   assert.equal(resolved.room.gangDraw, null);
   assert.equal(resolved.room.phase, "draw");
   assert.equal(resolved.room.round?.players[1].hasWon, true);
+  assert.deepEqual(resolved.room.round?.players[1].claimedWinningTile, gangTile);
   assert.equal(resolved.room.round?.players[0].melds[0].type, "peng");
   assert.equal(resolved.room.round?.players[0].hand.length, room.round!.players[0].hand.length - 1);
   assert.equal(resolved.room.round?.currentPlayer, 2);
@@ -1302,6 +1423,51 @@ test("rejects room mutations after the round has started", () => {
     reason: "roomAlreadyStarted",
   });
 });
+
+type ChickenPlayerFixture = {
+  hand?: Tile[];
+  melds?: NonNullable<RoomState["round"]>["players"][number]["melds"];
+  hasWon?: boolean;
+  claimedWinningTile?: Tile | null;
+};
+
+function readyRoomForChickenSettlement(fixtures: ChickenPlayerFixture[]): RoomState {
+  const started = startReadyRoom();
+
+  return {
+    ...started,
+    status: "playing",
+    phase: "draw",
+    selfDrawEligible: false,
+    round: {
+      ...started.round!,
+      currentPlayer: 0,
+      wall: [tile("characters", 9)],
+      players: started.round!.players.map((player) => {
+        const fixture = fixtures[player.id] ?? {};
+
+        return {
+          ...player,
+          hand: fixture.hand ?? [],
+          melds: fixture.melds ?? [],
+          hasWon: fixture.hasWon ?? false,
+          claimedWinningTile: fixture.claimedWinningTile ?? null,
+          missingSuit: "bamboos",
+        };
+      }),
+    },
+  };
+}
+
+function finishChickenRound(fixtures: ChickenPlayerFixture[]): RoomState {
+  const result = drawRoomTile(readyRoomForChickenSettlement(fixtures), "p1");
+
+  if (!result.ok) {
+    throw new Error(result.reason);
+  }
+
+  return result.room;
+}
 
 function startReadyRoom(): RoomState {
   const room = ["p1", "p2", "p3", "p4"].reduce(

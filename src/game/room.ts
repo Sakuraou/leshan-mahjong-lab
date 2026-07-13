@@ -8,13 +8,18 @@ import {
 import { isYaoJi, sameTile, tile } from "./tiles.ts";
 import { checkCurrentPlayerHu, checkDiscardHu } from "./win.ts";
 import {
+  applyChickenSettlementBatch,
   applyHuSettlementBatch,
+  calculateChickenSettlement,
   createInitialScoreBalances,
-  type HuSettlementEntry,
+  type ChickenSettlementTransfer,
+  type ChickenSuit,
   type HuSettlementEventType,
   type HuSettlementReason,
   type HuSettlementTransfer,
   type PlayerScoreBalance,
+  type RoundEndReason,
+  type SettlementLedgerEntry,
 } from "./rules.ts";
 import type { Meld, PlayerId, Rank, RoundState, ScorePattern, Suit, Tile } from "./types.ts";
 
@@ -98,7 +103,7 @@ export type GangDrawState = {
 };
 
 export type RoundEndState = {
-  reason: "onePlayerLeft" | "wallEmpty";
+  reason: RoundEndReason;
   remainingPlayerIds: PlayerId[];
 };
 
@@ -212,6 +217,7 @@ export type ClientVisibleMeld =
 export type RoomState = {
   id: string;
   seed: string;
+  roundNumber: number;
   status: RoomStatus;
   phase: RoundPhase | null;
   selfDrawEligible: boolean;
@@ -224,7 +230,8 @@ export type RoomState = {
   roundEnd: RoundEndState | null;
   chaJiao: ChaJiaoResult | null;
   scores: PlayerScoreBalance[];
-  settlementLedger: HuSettlementEntry[];
+  settlementLedger: SettlementLedgerEntry[];
+  resolvedSettlementIds: string[];
   resolvedWindowIds: string[];
   eventLog: RoomEvent[];
 };
@@ -261,7 +268,7 @@ export type ClientVisibleRoomState = {
   roundEnd: RoundEndState | null;
   chaJiao: ChaJiaoResult | null;
   scores: PlayerScoreBalance[];
-  settlementLedger: HuSettlementEntry[];
+  settlementLedger: SettlementLedgerEntry[];
   responseWindow: ClientVisibleResponseWindow | null;
   eventLog: ClientRoomEvent[];
 };
@@ -481,6 +488,7 @@ export function createRoom(input: CreateRoomInput): RoomState {
   return {
     id: input.id,
     seed: input.seed,
+    roundNumber: 0,
     status: "waiting",
     phase: null,
     selfDrawEligible: false,
@@ -500,6 +508,7 @@ export function createRoom(input: CreateRoomInput): RoomState {
     chaJiao: null,
     scores: createInitialScoreBalances(),
     settlementLedger: [],
+    resolvedSettlementIds: [],
     resolvedWindowIds: [],
     eventLog: [{ type: "roomCreated", roomId: input.id }],
   };
@@ -655,6 +664,7 @@ export function startRoomRound(room: RoomState, dealer: PlayerId = 0): StartRoom
     ok: true,
     room: {
       ...room,
+      roundNumber: room.roundNumber + 1,
       status: "dingque",
       phase: "dingque",
       selfDrawEligible: true,
@@ -927,10 +937,12 @@ export function passClaim(room: RoomState, playerId: string): PassClaimResult {
   return {
     ok: true,
     room: allResponded
-      ? closeClaimWindow(
-          settleDiscardClaimWindow(nextRoom, nextClaimWindow),
-          room.claimWindow,
-          nextClaimWindow.huClaims.length > 0 ? "claimed" : "allPassed",
+      ? finishRoundIfNeeded(
+          closeClaimWindow(
+            settleDiscardClaimWindow(nextRoom, nextClaimWindow),
+            room.claimWindow,
+            nextClaimWindow.huClaims.length > 0 ? "claimed" : "allPassed",
+          ),
         )
       : nextRoom,
   };
@@ -980,7 +992,9 @@ export function claimHu(room: RoomState, playerId: string): ClaimHuResult {
   const nextRound: RoundState = {
     ...room.round,
     players: room.round.players.map((player) =>
-      player.id === seat.seatId ? { ...player, hasWon: true } : player,
+      player.id === seat.seatId
+        ? { ...player, hasWon: true, claimedWinningTile: room.claimWindow!.tile }
+        : player,
     ),
   };
   const nextClaimWindow = { ...room.claimWindow, huClaims: [...room.claimWindow.huClaims, huClaim] };
@@ -1310,7 +1324,9 @@ export function claimQiangGangHu(room: RoomState, playerId: string): ClaimQiangG
   const nextRound: RoundState = {
     ...room.round,
     players: room.round.players.map((player) =>
-      player.id === seat.seatId ? { ...player, hasWon: true } : player,
+      player.id === seat.seatId
+        ? { ...player, hasWon: true, claimedWinningTile: room.baGangClaimWindow!.tile }
+        : player,
     ),
   };
   const nextWindow: BaGangClaimWindow = {
@@ -2165,10 +2181,10 @@ function finishRoundIfNeeded(room: RoomState): RoomState {
 
   if (room.roundEnd !== null) {
     if (room.roundEnd.reason === "wallEmpty" && room.chaJiao === null) {
-      return { ...room, chaJiao: buildChaJiaoResult(room) };
+      return settleRoundChickenPayments({ ...room, chaJiao: buildChaJiaoResult(room) });
     }
 
-    return room;
+    return settleRoundChickenPayments(room);
   }
 
   if (reason === null) {
@@ -2177,7 +2193,7 @@ function finishRoundIfNeeded(room: RoomState): RoomState {
 
   const roundEnd: RoundEndState = { reason, remainingPlayerIds };
 
-  return {
+  return settleRoundChickenPayments({
     ...room,
     status: "ended",
     phase: "ended",
@@ -2188,7 +2204,84 @@ function finishRoundIfNeeded(room: RoomState): RoomState {
     baGangClaimWindow: null,
     gangDraw: null,
     eventLog: [...room.eventLog, { type: "roundEnded", ...roundEnd }],
+  });
+}
+
+export function settleRoundChickenPayments(room: RoomState): RoomState {
+  if (room.round === null || room.roundEnd === null || room.status !== "ended") {
+    return room;
+  }
+
+  const sourceSettlementId = `${room.id}:round:${room.roundNumber}:chicken`;
+  const roundEndReason = room.roundEnd.reason;
+  const transfers = room.round.players.flatMap((player): ChickenSettlementTransfer[] => {
+    const winnerPlayerId = room.seats[player.id]?.playerId;
+
+    if (winnerPlayerId === null || winnerPlayerId === undefined) {
+      return [];
+    }
+
+    const finalSettlementTiles = [
+      ...player.hand,
+      ...player.melds.flatMap((meld) => meld.tiles),
+      ...(player.claimedWinningTile === null ? [] : [player.claimedWinningTile]),
+    ];
+    const chickenSettlement = calculateChickenSettlement(finalSettlementTiles);
+
+    return chickenSettlement.payments.flatMap((payment): ChickenSettlementTransfer[] => {
+      const chickenSuit = chickenSuitFromPayment(payment.tile);
+
+      if (chickenSuit === null) {
+        return [];
+      }
+
+      return seatIds.flatMap((loserSeatId): ChickenSettlementTransfer[] => {
+        if (loserSeatId === player.id) {
+          return [];
+        }
+
+        const loserPlayerId = room.seats[loserSeatId]?.playerId;
+
+        if (loserPlayerId === null || loserPlayerId === undefined) {
+          return [];
+        }
+
+        return [{
+          winnerSeatId: player.id,
+          winnerPlayerId,
+          loserSeatId,
+          loserPlayerId,
+          reason: payment.kind === "threeChicken" ? "sanJi" : "siJi",
+          chickenSuit,
+          chickenCount: payment.count,
+          points: payment.pointsPerOpponent,
+          relatedEvent: { type: "roundEnded", reason: roundEndReason },
+        }];
+      });
+    });
+  });
+  const result = applyChickenSettlementBatch(
+    room.scores,
+    room.settlementLedger,
+    room.resolvedSettlementIds,
+    sourceSettlementId,
+    transfers,
+  );
+
+  if (result.resolvedSettlementIds === room.resolvedSettlementIds) {
+    return room;
+  }
+
+  return {
+    ...room,
+    scores: result.scores,
+    settlementLedger: result.ledger,
+    resolvedSettlementIds: result.resolvedSettlementIds,
   };
+}
+
+function chickenSuitFromPayment(tileValue: Tile): ChickenSuit | null {
+  return tileValue.suit === "bamboos" || tileValue.suit === "dots" ? tileValue.suit : null;
 }
 
 function buildChaJiaoResult(room: RoomState): ChaJiaoResult {

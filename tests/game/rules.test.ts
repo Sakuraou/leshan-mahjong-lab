@@ -85,45 +85,25 @@ test("detects wu ji from original yao ji tiles", () => {
   assert.equal(hasWuJi([tile("characters", 2), tile("dots", 1)]), false);
 });
 
-test("settles three chicken and four chicken by original yao ji suit", () => {
-  assert.deepEqual(
-    calculateChickenSettlement([tile("bamboos", 1), tile("bamboos", 1), tile("bamboos", 1)]),
-    {
-      bambooCount: 3,
-      dotCount: 0,
-      payments: [
-        {
-          kind: "threeChicken",
-          tile: tile("bamboos", 1),
-          count: 3,
-          pointsPerOpponent: 16,
-        },
-      ],
-      totalPerOpponent: 16,
-    },
-  );
+test("settles three chicken and four chicken independently by original yao ji suit", () => {
+  const cases = [
+    { bambooCount: 3, dotCount: 0, kinds: ["threeChicken"], totalPerOpponent: 16 },
+    { bambooCount: 0, dotCount: 4, kinds: ["fourChicken"], totalPerOpponent: 32 },
+    { bambooCount: 3, dotCount: 3, kinds: ["threeChicken", "threeChicken"], totalPerOpponent: 32 },
+    { bambooCount: 2, dotCount: 2, kinds: [], totalPerOpponent: 0 },
+  ] as const;
 
-  assert.equal(
-    calculateChickenSettlement([
-      tile("bamboos", 1),
-      tile("bamboos", 1),
-      tile("dots", 1),
-      tile("dots", 1),
-    ]).totalPerOpponent,
-    0,
-  );
+  for (const value of cases) {
+    const result = calculateChickenSettlement([
+      ...Array.from({ length: value.bambooCount }, () => tile("bamboos", 1)),
+      ...Array.from({ length: value.dotCount }, () => tile("dots", 1)),
+    ]);
 
-  assert.equal(
-    calculateChickenSettlement([
-      tile("bamboos", 1),
-      tile("bamboos", 1),
-      tile("bamboos", 1),
-      tile("dots", 1),
-      tile("dots", 1),
-      tile("dots", 1),
-    ]).totalPerOpponent,
-    32,
-  );
+    assert.equal(result.bambooCount, value.bambooCount);
+    assert.equal(result.dotCount, value.dotCount);
+    assert.deepEqual(result.payments.map((payment) => payment.kind), value.kinds);
+    assert.equal(result.totalPerOpponent, value.totalPerOpponent);
+  }
 });
 
 test("calculates gang points with laizi reduction", () => {
@@ -172,4 +152,3 @@ test("calculates minimum win score, stacking, self-draw, and cap", () => {
     64,
   );
 });
-

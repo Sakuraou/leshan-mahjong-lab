@@ -119,6 +119,9 @@ server authoritative.
   session binding, reconnect broadcasts, and idempotent presence events
 - [x] Add native WebSocket ping/pong health checks, injectable-clock stale
   connection expiry, latest-connection race protection, and safe status UI
+- [x] Add idempotent server-authoritative three/four-chicken settlement from
+  original physical tile sources, including already-won payers and public
+  round-end ledger summaries
 - Wrap `roomSocketAdapter` with a production-ready WebSocket server entry
 - Connect table UI to WebSocket room snapshots
 - [x] Add reconnect with a local session token

@@ -65,6 +65,7 @@ function createPlayers(): PlayerState[] {
     discards: [],
     melds: [],
     hasWon: false,
+    claimedWinningTile: null,
     missingSuit: null,
   }));
 }

@@ -759,12 +759,13 @@ function WebSocketTablePreview({
       <div className="preview-settlement-ledger" aria-label="最近输赢积分">
         <strong>最近输赢</strong>
         {recentSettlements.length === 0 ? (
-          <span>暂无主体胡分记录</span>
+          <span>暂无胡牌或鸡钱记录</span>
         ) : (
           recentSettlements.map((entry) => (
             <span key={entry.id}>
               #{entry.batchId} 玩家 {entry.loserSeatId + 1} → 玩家 {entry.winnerSeatId + 1}：
               {settlementReasonText(entry.reason)} {entry.finalPoints} 分
+              {"chickenSuit" in entry ? `（${entry.chickenSuit === "bamboos" ? "一条" : "一筒"}）` : ""}
               {entry.rawPoints !== entry.finalPoints ? `（封顶前 ${entry.rawPoints}）` : ""}
             </span>
           ))
@@ -786,7 +787,7 @@ function WebSocketTablePreview({
                   </span>
                 ))
               )}
-              <span>下一步会接入完整赔付结算，这里先展示服务端权威结果骨架。</span>
+              <span>鸡钱已由服务端统一结算；杠分和查叫赔付仍待接入。</span>
             </div>
           )}
         </div>
@@ -1231,6 +1232,7 @@ function getLocalClaimHuCheck(
         discards: player.discards,
         melds: visibleMeldsToInternal(player.melds),
         hasWon: player.hasWon,
+        claimedWinningTile: null,
         missingSuit: player.missingSuit,
       })),
     },
@@ -1270,6 +1272,7 @@ function getLocalSelfDrawHuCheck(
       discards: player.discards,
       melds: visibleMeldsToInternal(player.melds),
       hasWon: player.hasWon,
+      claimedWinningTile: null,
       missingSuit: player.missingSuit,
     })),
   });
@@ -3360,6 +3363,8 @@ function settlementReasonText(reason: ClientVisibleRoomState["settlementLedger"]
     selfDrawHu: "自摸",
     discardHu: "点炮胡",
     qiangGangHu: "抢杠胡",
+    sanJi: "三鸡",
+    siJi: "四鸡",
   } as const;
 
   return labels[reason];

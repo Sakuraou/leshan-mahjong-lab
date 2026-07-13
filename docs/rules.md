@@ -76,8 +76,8 @@ After dingque:
   the hu score.
 - The 64-point cap does not include chicken payments, gang payments, or other
   side payments.
-- The first authoritative score ledger covers only self-draw, discard hu, and
-  qiang gang hu principal payments. Chicken, gang, and cha-jiao payments remain
+- The authoritative score ledger covers self-draw, discard hu, qiang gang hu,
+  and round-end three/four-chicken payments. Gang and cha-jiao payments remain
   separate future settlement categories.
 
 ## Fan And Multipliers
@@ -147,7 +147,13 @@ In eight-chicken mode:
 - The app MVP should forbid actively discarding yao ji, because normal play does
   not discard these laizi tiles.
 
-Chicken payments are settled at hu or draw settlement, not immediately.
+Chicken payments are settled once when the blood-battle round ends, not when a
+player first reaches three or four yao ji.
+
+The server counts each player's original physical settlement tiles: concealed
+hand tiles, `Meld.tiles`, and an external winning tile received through discard
+hu or qiang-gang hu. A yao ji used as another logical tile still counts by its
+printed `1 bamboo` or `1 dot` source.
 
 ### Three Chicken
 
@@ -191,6 +197,9 @@ still depends on the final yao ji count at settlement.
 If a player robs a gang where the robbed tile is yao ji (`1 bamboo` or `1 dot`),
 and that tile changes the winner from no three-chicken state to a three-chicken
 state, the robbed-gang player pays the whole table's three-chicken payment.
+
+This special full-table liability is not part of the first ordinary round-end
+chicken ledger and remains a dedicated follow-up settlement rule.
 
 Current confirmed amount:
 

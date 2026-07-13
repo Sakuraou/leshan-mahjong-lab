@@ -190,6 +190,7 @@ function makePlayer(
     discards: [],
     melds: [],
     hasWon,
+    claimedWinningTile: null,
     missingSuit,
   };
 }

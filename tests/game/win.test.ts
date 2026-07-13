@@ -490,6 +490,7 @@ function makePlayer(id: PlayerState["id"], hand: Tile[] = [], melds: Meld[] = []
     discards: [],
     melds,
     hasWon: false,
+    claimedWinningTile: null,
     missingSuit: "bamboos",
   };
 }
