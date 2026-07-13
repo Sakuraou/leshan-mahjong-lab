@@ -470,7 +470,8 @@ type ClientVisibleRoomState = {
     players: VisiblePlayerState[];
   };
   scores: PlayerScoreBalance[];
-  settlementLedger: SettlementLedgerEntry[];
+  settlementLedger: ClientVisibleSettlementLedgerEntry[];
+  gangSettlements: ClientVisibleGangSettlementFact[];
   responseWindow: null | {
     windowId: string;
     kind: "discardClaim" | "qiangGang";
@@ -516,7 +517,10 @@ wall order, shuffle seed, decomposition search data, source-tile arrays, or
 pre-claim chicken counts.
 
 ```ts
-type SettlementLedgerEntry = HuSettlementEntry | ChickenSettlementEntry;
+type ClientVisibleSettlementLedgerEntry =
+  | HuSettlementEntry
+  | ChickenSettlementEntry
+  | ClientVisibleGangSettlementEntry;
 
 type OrdinaryChickenSettlementEntry = {
   id: number;
@@ -566,6 +570,33 @@ type QiangGangSanJiLiabilityEntry = {
 type ChickenSettlementEntry =
   | OrdinaryChickenSettlementEntry
   | QiangGangSanJiLiabilityEntry;
+
+type ClientVisibleGangSettlementFact = {
+  gangType: "mingGang" | "anGang" | "baGang";
+  gangSeatId: 0 | 1 | 2 | 3;
+  gangPlayerId: string;
+  targetTile: Tile | null;
+  usesLaizi: boolean;
+  payerSeatIds: Array<0 | 1 | 2 | 3>;
+  pointsPerPayer: 1 | 2 | 4;
+};
+
+type ClientVisibleGangSettlementEntry = {
+  id: number;
+  batchId: number;
+  sourceSettlementId: string;
+  sourceWindowId: string | null;
+  winnerSeatId: 0 | 1 | 2 | 3;
+  winnerPlayerId: string;
+  loserSeatId: 0 | 1 | 2 | 3;
+  loserPlayerId: string;
+  reason: "mingGang" | "anGang" | "baGang";
+  targetTile: Tile | null;
+  usesLaizi: boolean;
+  basePoints: 2 | 4;
+  rawPoints: 1 | 2 | 4;
+  finalPoints: 1 | 2 | 4;
+};
 ```
 
 Discard and qiang-gang multi-winner payments are written once when their
@@ -573,10 +604,11 @@ response window closes. Entries are sorted by winner and loser seat, so claim
 response order does not change the resulting ledger. Self-draw produces one
 batch containing one payment from each other player who had not already won.
 
-The ledger currently includes `selfDrawHu`, `discardHu`, `qiangGangHu`, `sanJi`,
-`siJi`, and `qiangGangSanJiLiability`. Chicken entries are generated in one
-deterministic batch only after the round reaches `ended`; already-won players
-still participate, and the 64-point hu cap does not apply. When a robbed
+The ledger currently includes `selfDrawHu`, `discardHu`, `qiangGangHu`,
+`sanJi`, `siJi`, `qiangGangSanJiLiability`, `mingGang`, `anGang`, and `baGang`.
+Chicken entries are generated in one deterministic batch only after the round
+reaches `ended`; already-won players still participate, and the 64-point hu cap
+does not apply. When a robbed
 physical yao ji changes an individual winner's same-suit count from two to
 three, one 48-point responsibility entry replaces that winner and suit's three
 ordinary 16-point entries. Other suits settle normally, and each eligible
@@ -584,8 +616,19 @@ winner in a multi-win is handled independently. During play, snapshots do not
 expose concealed chicken counts, external winning-tile source records, or
 potential liability payments.
 
-Gang payments, cha-jiao transfers, and a final match total remain outside this
-ledger phase.
+Gang facts freeze the payer set and amount when the gang formally becomes
+valid. Ming gang freezes the discarder; an gang and committed ba gang freeze
+the other players who have not already won. The terminal gang batch expands
+each fact into one uncapped transfer per frozen payer. A provisional ba gang
+creates no fact until the qiang-gang window closes without hu; a robbed ba gang
+therefore creates no gang ledger entry. Stable gang and round settlement IDs
+make repeated deadline ticks and terminal settlement idempotent.
+
+The client receives `gangSettlements` as a safe in-progress summary. An-gang
+target tiles are `null`, and client snapshots never include internal `gangId`
+values or any gang's physical source-tile array. Completed an-gang ledger rows
+also keep the target hidden. Cha-jiao transfers and a final match total remain
+outside this ledger phase.
 
 This matches the frontend client-perspective switcher: changing perspective
 should only change which hand is visible, not the authoritative game state.

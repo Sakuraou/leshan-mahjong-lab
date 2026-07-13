@@ -678,6 +678,7 @@ function WebSocketTablePreview({
   const remainingPlayers = round?.players.filter((player) => !player.hasWon).length ?? 0;
   const chaJiao = snapshot?.chaJiao ?? null;
   const recentSettlements = snapshot?.settlementLedger.slice(-6).reverse() ?? [];
+  const recentGangSettlements = snapshot?.gangSettlements.slice(-4).reverse() ?? [];
   const responseWindow = snapshot?.responseWindow ?? null;
   const latestPresence = snapshot?.eventLog.findLast((event) => event.type === "presenceChanged") ?? null;
   const [deadlineNow, setDeadlineNow] = useState(Date.now());
@@ -756,10 +757,26 @@ function WebSocketTablePreview({
         </div>
       )}
 
+      <div className="preview-settlement-ledger" aria-label="已成立杠分">
+        <strong>已成立杠分</strong>
+        {recentGangSettlements.length === 0 ? (
+          <span>暂无已成立杠分</span>
+        ) : (
+          recentGangSettlements.map((fact, index) => (
+            <span key={`${fact.gangType}-${fact.gangSeatId}-${index}`}>
+              玩家 {fact.gangSeatId + 1} {settlementReasonText(fact.gangType)}：
+              {fact.payerSeatIds.length} 位付款人，每人 {fact.pointsPerPayer} 分
+              {fact.usesLaizi ? "（使用赖子）" : "（未使用赖子）"}
+              {fact.targetTile === null ? "（牌面隐藏）" : `（${tileText(fact.targetTile)}）`}
+            </span>
+          ))
+        )}
+      </div>
+
       <div className="preview-settlement-ledger" aria-label="最近输赢积分">
         <strong>最近输赢</strong>
         {recentSettlements.length === 0 ? (
-          <span>暂无胡牌或鸡钱记录</span>
+          <span>暂无胡牌、鸡钱或杠分记录</span>
         ) : (
           recentSettlements.map((entry) => (
             <span key={entry.id}>
@@ -787,7 +804,7 @@ function WebSocketTablePreview({
                   </span>
                 ))
               )}
-              <span>鸡钱已由服务端统一结算；杠分和查叫赔付仍待接入。</span>
+              <span>鸡钱和已成立杠分已由服务端统一结算；查叫赔付仍待接入。</span>
             </div>
           )}
         </div>
@@ -3366,6 +3383,9 @@ function settlementReasonText(reason: ClientVisibleRoomState["settlementLedger"]
     sanJi: "三鸡",
     siJi: "四鸡",
     qiangGangSanJiLiability: "抢杠三鸡包赔",
+    mingGang: "明杠",
+    anGang: "暗杠",
+    baGang: "巴杠",
   } as const;
 
   return labels[reason];

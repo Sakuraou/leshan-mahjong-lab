@@ -414,6 +414,24 @@ source, pre-claim counts, and liability candidate. Repeated deadline ticks or
 terminal settlement calls reuse the round settlement ID and cannot duplicate
 the 48-point entry.
 
+## Authoritative Gang Settlement
+
+The WebSocket server does not calculate gang points. The room reducer records a
+server-only gang fact when a ming gang or an gang succeeds, or when a ba gang is
+formally committed after its qiang-gang window closes without hu. Each fact
+freezes the payers, per-payer amount, logical target, and original physical
+tiles at that moment.
+
+At `ended`, the reducer writes one uncapped zero-sum ledger transfer per frozen
+payer. The round gang settlement ID and each stable gang ID make repeated
+deadline ticks and terminal calls idempotent. Qiang-gang hu leaves the peng in
+place and never creates a ba-gang fact or payment.
+
+Snapshots may show safe established summaries and completed transfers. An gang
+shows only the player, laizi usage, payer seats, and points; its target tile is
+`null`. Internal gang IDs and every physical source-tile array remain inside the
+server process.
+
 ## Screenshot Plan
 
 Portfolio screenshots to capture next:
@@ -488,13 +506,15 @@ wrapper against a real local WebSocket server:
 The React WebSocket preview now consumes server-authoritative dingque, draw,
 discard, claim, gang, hu, score-ledger, round-end three/four-chicken, and
 response-deadline snapshots while the mock table remains available as the
-default portfolio-safe path. Chicken entries appear only after `ended`; no
-in-progress snapshot publishes another player's concealed chicken count.
+default portfolio-safe path. It displays established gang summaries and the
+terminal gang ledger without exposing concealed an-gang tiles. Chicken entries
+appear only after `ended`; no in-progress snapshot publishes another player's
+concealed chicken count.
 
 ## Next Milestone
 
-The next milestone is round settlement expansion for gang payments, cha-jiao,
-and the dedicated robbed-yao-ji chicken-liability rule, followed by persistent
-room recovery and deployment configuration for the WebSocket process. Offline
+The next settlement milestone is authoritative cha-jiao payment, followed by
+persistent room recovery and deployment configuration for the WebSocket
+process. Offline
 kicking, bot takeover, room dissolution, and database persistence are not part
 of the current implementation.

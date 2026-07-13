@@ -19,6 +19,7 @@ import {
   passQiangGang,
   joinRoom,
   settleRoundChickenPayments,
+  settleRoundGangPayments,
   startRoomRound,
   takeSeat,
   tile,
@@ -28,6 +29,7 @@ import {
   type RoomState,
   type ChickenSettlementEntry,
   type ClaimedWinningTile,
+  type GangSettlementEntry,
   type PlayerId,
   type QiangGangSanJiLiabilityEntry,
   type Suit,
@@ -1193,6 +1195,62 @@ test("lets a player claim ming gang from the claim window", () => {
     reason: "claimed",
     nextPlayer: 1,
   });
+  assert.deepEqual(
+    claimed.room.gangSettlementFacts.map((fact) => ({
+      gangType: fact.gangType,
+      winner: fact.gangSeatId,
+      payers: fact.payers.map((payer) => payer.seatId),
+      points: fact.pointsPerPayer,
+      usesLaizi: fact.usesLaizi,
+    })),
+    [{ gangType: "mingGang", winner: 1, payers: [0], points: 4, usesLaizi: false }],
+  );
+
+  const ended = finishGangSettlement(claimed.room);
+  assert.deepEqual(ended.scores.map((score) => score.points), [-4, 4, 0, 0]);
+  assert.deepEqual(
+    ended.settlementLedger.map((entry) => [entry.reason, entry.winnerSeatId, entry.loserSeatId, entry.finalPoints]),
+    [["mingGang", 1, 0, 4]],
+  );
+});
+
+test("uses physical yao ji sources to reduce ming gang payment", () => {
+  const prepared = readyRoomForPengOnly();
+  const yaoJi = tile("bamboos", 1);
+  let replaced = false;
+  const room: RoomState = {
+    ...prepared.room,
+    round: {
+      ...prepared.room.round!,
+      players: prepared.room.round!.players.map((player) =>
+        player.id === 1
+          ? {
+              ...player,
+              hand: player.hand.map((value) => {
+                if (!replaced && value.suit === "characters" && value.rank === 2) {
+                  replaced = true;
+                  return yaoJi;
+                }
+
+                return value;
+              }),
+            }
+          : player,
+      ),
+    },
+  };
+  const discarded = discardRoomTile(room, "p1", prepared.discard);
+  assert.equal(discarded.ok, true);
+  if (!discarded.ok) return;
+  const claimed = claimMingGang(discarded.room, "p2");
+  assert.equal(claimed.ok, true);
+  if (!claimed.ok) return;
+
+  const fact = claimed.room.gangSettlementFacts[0];
+  assert.equal(fact.usesLaizi, true);
+  assert.equal(fact.pointsPerPayer, 2);
+  assert.equal(fact.physicalTiles.some((value) => value.suit === "bamboos" && value.rank === 1), true);
+  assert.deepEqual(finishGangSettlement(claimed.room).scores.map((score) => score.points), [-2, 2, 0, 0]);
 });
 
 test("lets the current player claim an gang after drawing", () => {
@@ -1255,6 +1313,76 @@ test("lets the current player claim an gang after drawing", () => {
     seatId: 0,
     playerId: "p1",
   });
+  assert.equal(opponentView.gangSettlements[0].targetTile, null);
+  assert.equal(JSON.stringify(opponentView).includes("gangId"), false);
+  assert.equal(JSON.stringify(opponentView).includes("physicalTiles"), false);
+});
+
+test("freezes active an gang payers and settles ordinary or laizi points at round end", () => {
+  for (const usesLaizi of [false, true]) {
+    const gangTile = tile("characters", 9);
+    const yaoJi = tile("dots", 1);
+    const room = readyRoomForActiveGang({
+      hand: [gangTile, gangTile, gangTile, usesLaizi ? yaoJi : gangTile],
+      melds: [],
+    });
+    const claimed = claimAnGang(room, "p1", gangTile);
+    assert.equal(claimed.ok, true);
+    if (!claimed.ok) continue;
+
+    const fact = claimed.room.gangSettlementFacts[0];
+    assert.equal(fact.usesLaizi, usesLaizi);
+    assert.equal(fact.pointsPerPayer, usesLaizi ? 2 : 4);
+    assert.deepEqual(fact.payers.map((payer) => payer.seatId), [1, 2, 3]);
+
+    const roomAfterLaterHu: RoomState = {
+      ...claimed.room,
+      round: {
+        ...claimed.room.round!,
+        players: claimed.room.round!.players.map((player) =>
+          player.id === 0 || player.id === 1 ? { ...player, hasWon: true } : player,
+        ),
+      },
+    };
+    const ended = finishGangSettlement(roomAfterLaterHu);
+    const points = usesLaizi ? 2 : 4;
+    const gangEntries = ended.settlementLedger.filter(
+      (entry): entry is GangSettlementEntry => entry.reason === "anGang",
+    );
+    const opponentView = toClientVisibleRoomState(ended, "p3");
+    const visibleGangEntries = opponentView.settlementLedger.filter(
+      (entry) => "targetTile" in entry && entry.reason === "anGang",
+    );
+
+    assert.deepEqual(ended.scores.map((score) => score.points), [points * 3, -points, -points, -points]);
+    assert.equal(gangEntries.length, 3);
+    assert.equal(gangEntries.every((entry) => entry.physicalTiles.length === 4), true);
+    assert.equal(visibleGangEntries.length, 3);
+    assert.equal(
+      visibleGangEntries.every((entry) => "targetTile" in entry && entry.targetTile === null),
+      true,
+    );
+    assert.equal(JSON.stringify(opponentView).includes("physicalTiles"), false);
+    assert.equal(JSON.stringify(opponentView).includes("gangId"), false);
+  }
+});
+
+test("excludes already-won players from a newly established an gang", () => {
+  const gangTile = tile("characters", 9);
+  const base = readyRoomForActiveGang({ hand: [gangTile, gangTile, gangTile, gangTile], melds: [] });
+  const room: RoomState = {
+    ...base,
+    round: {
+      ...base.round!,
+      players: base.round!.players.map((player) => (player.id === 3 ? { ...player, hasWon: true } : player)),
+    },
+  };
+  const claimed = claimAnGang(room, "p1", gangTile);
+  assert.equal(claimed.ok, true);
+  if (!claimed.ok) return;
+
+  assert.deepEqual(claimed.room.gangSettlementFacts[0].payers.map((payer) => payer.seatId), [1, 2]);
+  assert.deepEqual(finishGangSettlement(claimed.room).scores.map((score) => score.points), [8, -4, -4, 0]);
 });
 
 test("lets the current gang player draw a replacement tile", () => {
@@ -1385,6 +1513,14 @@ test("declares ba gang, keeps peng pending, and commits after every player passe
     gangType: "baGang",
     tile: gangTile,
   });
+  assert.deepEqual(
+    p4Passed.room.gangSettlementFacts.map((fact) => ({
+      gangType: fact.gangType,
+      payers: fact.payers.map((payer) => payer.seatId),
+      points: fact.pointsPerPayer,
+    })),
+    [{ gangType: "baGang", payers: [1, 2, 3], points: 2 }],
+  );
 
   const beforeWallCount = p4Passed.room.round?.wall.length ?? 0;
   const drawn = drawGangTile(p4Passed.room, "p1");
@@ -1427,6 +1563,8 @@ test("keeps the original peng when one player claims qiang gang hu", () => {
     responsiblePlayerId: "p1",
   });
   assert.equal(resolved.room.round?.players[0].melds[0].type, "peng");
+  assert.deepEqual(resolved.room.gangSettlementFacts, []);
+  assert.equal(resolved.room.settlementLedger.some((entry) => entry.reason === "baGang"), false);
   assert.equal(resolved.room.round?.players[0].hand.length, room.round!.players[0].hand.length - 1);
   assert.equal(resolved.room.round?.currentPlayer, 2);
   assert.deepEqual(resolved.room.scores.map((score) => score.points), [-16, 16, 0, 0]);
@@ -1483,11 +1621,50 @@ test("commits ba gang when every unanswered qiang gang response times out", () =
   assert.equal(expired.room.phase, "gangDraw");
   assert.equal(expired.room.round?.players[0].melds[0].type, "baGang");
   assert.deepEqual(expired.room.settlementLedger, []);
+  assert.equal(expired.room.gangSettlementFacts.length, 1);
   assert.equal(expired.room.eventLog.at(-1)?.type, "qiangGangWindowClosed");
   assert.deepEqual(expired.room.eventLog.at(-1), {
     type: "qiangGangWindowClosed",
     reason: "timeoutAllPassed",
   });
+  const repeated = tickRoomStateDeadlines(expired.room, 99_999);
+  assert.equal(repeated.changed, false);
+  assert.equal(repeated.room.gangSettlementFacts.length, 1);
+});
+
+test("commits a laizi ba gang once and freezes only players still active", () => {
+  const { room, gangTile } = readyRoomForQiangGangHu([], [3]);
+  const yaoJi = tile("bamboos", 1);
+  const roomWithLaizi: RoomState = {
+    ...room,
+    round: {
+      ...room.round!,
+      players: room.round!.players.map((player) =>
+        player.id === 0 ? { ...player, hand: player.hand.map((value, index) => (index === 0 ? yaoJi : value)) } : player,
+      ),
+    },
+  };
+  const declared = claimBaGang(roomWithLaizi, "p1", gangTile);
+  assert.equal(declared.ok, true);
+  if (!declared.ok) return;
+  const p2Passed = passQiangGang(declared.room, "p2");
+  assert.equal(p2Passed.ok, true);
+  if (!p2Passed.ok) return;
+  const committed = passQiangGang(p2Passed.room, "p3");
+  assert.equal(committed.ok, true);
+  if (!committed.ok) return;
+
+  const fact = committed.room.gangSettlementFacts[0];
+  assert.equal(fact.gangType, "baGang");
+  assert.equal(fact.usesLaizi, true);
+  assert.equal(fact.pointsPerPayer, 1);
+  assert.deepEqual(fact.payers.map((payer) => payer.seatId), [1, 2]);
+
+  const ended = finishGangSettlement(committed.room);
+  assert.deepEqual(ended.scores.map((score) => score.points), [2, -1, -1, 0]);
+  const repeated = settleRoundGangPayments(ended);
+  assert.equal(repeated, ended);
+  assert.equal(ended.settlementLedger.filter((entry) => entry.reason === "baGang").length, 2);
 });
 
 test("keeps qiang gang hu claims when remaining responders time out", () => {
@@ -1726,6 +1903,21 @@ function finishChickenRound(fixtures: ChickenPlayerFixture[]): RoomState {
   }
 
   return result.room;
+}
+
+function finishGangSettlement(room: RoomState): RoomState {
+  const remainingPlayerIds = room.round?.players.filter((player) => !player.hasWon).map((player) => player.id) ?? [];
+
+  return settleRoundGangPayments({
+    ...room,
+    status: "ended",
+    phase: "ended",
+    selfDrawEligible: false,
+    roundEnd: { reason: "onePlayerLeft", remainingPlayerIds },
+    claimWindow: null,
+    baGangClaimWindow: null,
+    gangDraw: null,
+  });
 }
 
 function qiangGangWinningTile(yaoJi: Tile): ClaimedWinningTile {

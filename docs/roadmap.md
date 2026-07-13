@@ -125,6 +125,10 @@ server authoritative.
 - [x] Add robbed-yao-ji three-chicken liability: preserve external winning-tile
   source, replace same-suit ordinary san-ji with one 48-point declarer payment,
   support multi-win, and keep candidates hidden until round end
+- [x] Add server-authoritative gang settlement facts with establishment-time
+  payer freezing, physical laizi-source scoring, qiang-gang rollback, terminal
+  zero-sum ledger transfers, idempotent settlement, and concealed an-gang
+  redaction
 - Wrap `roomSocketAdapter` with a production-ready WebSocket server entry
 - Connect table UI to WebSocket room snapshots
 - [x] Add reconnect with a local session token

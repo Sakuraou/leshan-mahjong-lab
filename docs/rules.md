@@ -77,8 +77,8 @@ After dingque:
 - The 64-point cap does not include chicken payments, gang payments, or other
   side payments.
 - The authoritative score ledger covers self-draw, discard hu, qiang gang hu,
-  and round-end three/four-chicken payments. Gang and cha-jiao payments remain
-  separate future settlement categories.
+  round-end three/four-chicken payments, and established gang payments.
+  Cha-jiao payments remain a future settlement category.
 
 ## Fan And Multipliers
 
@@ -181,13 +181,38 @@ chicken payments.
 ## Gang Score
 
 Gang payments are separate from the hu score cap.
-Gang payments are recorded and settled together at final settlement.
+Each gang freezes an authoritative payment fact when it formally becomes valid.
+Those frozen facts are written to the score ledger together at final settlement.
+Later hu results never cancel or recalculate an already-established gang.
 
-| Gang Type | Without laizi | With laizi |
-| --- | ---: | ---: |
-| Ming gang | 4 | 2 |
-| An gang | 4 | 2 |
-| Ba gang | 2 | 1 |
+| Gang Type | Payers frozen when established | Without laizi, per payer | With laizi, per payer |
+| --- | --- | ---: | ---: |
+| Ming gang | The player who discarded the claimed tile | 4 | 2 |
+| An gang | Every other player who has not already won | 4 | 2 |
+| Ba gang | Every other player who has not already won when the upgrade commits | 2 | 1 |
+
+Confirmed local behavior:
+
+- With three active opponents, an gang pays `4 * 3 = 12` without laizi or
+  `2 * 3 = 6` with laizi.
+- A player who has already won does not pay a later an gang or ba gang.
+- A payer who wins after a gang was established still pays that frozen gang
+  transfer at final settlement. The gang player likewise keeps gang income
+  established before later winning.
+- Gang replacement draw followed by self-draw or discard hu does not transfer,
+  cancel, or refund an established gang payment.
+- Every payer produces one real zero-sum ledger transfer. Gang payments are
+  uncapped and do not consume the 64-point hu cap.
+
+`usesLaizi` is determined from the four original physical tiles in
+`Meld.tiles`. If any physical tile is an original `1 bamboo` or `1 dot`, the
+whole gang uses the reduced laizi amount even when that tile resolves to the
+logical gang target.
+
+A ba gang declaration first opens the qiang-gang response window. It does not
+establish a gang payment yet. If every eligible player passes or times out, the
+peng is upgraded and the payer set is frozen at that moment. If anyone wins by
+qiang gang hu, the original peng remains and no ba-gang payment exists.
 
 If a discarded yao ji is used in a gang, it remains a laizi. Chicken settlement
 still depends on the final yao ji count at settlement.
@@ -250,6 +275,8 @@ engine for legal actions and settlement results.
 - Dan diao is 1 fan and cannot overlap with seven pairs.
 - One-discard multiple wins are paid separately by the discarder.
 - Gang payments are settled together at the final settlement screen.
+- Gang payer sets are frozen when each gang formally becomes valid, rather than
+  recomputed from terminal `hasWon` state.
 - Wu ji is 2 fan, can stack with other patterns, and is broken by any original
   `1 bamboo` or `1 dot` in the player's own final settlement tiles.
 - The MVP should enforce a no-active-yao-ji-discard rule.

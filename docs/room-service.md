@@ -271,7 +271,8 @@ lookup, event ids, and redacted room views.
 - Session tokens are secure by default and injectable for deterministic tests.
 - The service now covers dingque, draw/discard, claim windows, hu/peng/gang,
   response deadlines, hu-score settlement, idempotent round-end three/four-
-  chicken settlement, qiang-gang three-chicken liability, and presence recovery.
+  chicken settlement, qiang-gang three-chicken liability, established gang
+  facts, terminal gang settlement, and presence recovery.
 - Chicken settlement counts original physical tiles from concealed hands,
   exposed meld sources, and discard/qiang-gang winning tiles. It writes one
   stable terminal batch and never publishes concealed counts before `ended`.
@@ -280,6 +281,13 @@ lookup, event ids, and redacted room views.
   transfers with one uncapped 48-point payment from the ba-gang declarer. The
   internal source/window record is omitted from `ClientVisibleRoomState`; only
   the completed public ledger entry appears after round end.
+- Ming gang, an gang, and committed ba gang create immutable server-side facts
+  containing their physical tile sources and payer set at establishment time.
+  The terminal gang batch expands each fact into one uncapped zero-sum transfer
+  per payer. Stable gang and round settlement IDs make retries idempotent.
+- A ba gang fact is created only after the qiang-gang window closes without hu.
+  Client views expose safe established summaries, hide every physical source
+  array and internal gang ID, and replace an-gang target tiles with `null`.
 - WebSocket heartbeat and stale-connection detection live in the server core;
   the service receives only connected/disconnected transitions.
 - State is in memory only. Restarting the server would lose rooms.
@@ -289,8 +297,9 @@ lookup, event ids, and redacted room views.
 ## Next Adapter Step
 
 The pure-function adapter, real `ws` development wrapper, and frontend preview
-are already in place. The next settlement milestone is to add gang transfers
-and cha-jiao payments while preserving the same authoritative ledger boundary.
+are already in place. Authoritative hu, chicken, and gang transfers now share
+the ledger boundary. The next settlement milestone is cha-jiao payment while
+preserving the same terminal idempotency model.
 The production runtime still needs to:
 
 1. Maintains a `Map<roomId, RoomServiceState>`.

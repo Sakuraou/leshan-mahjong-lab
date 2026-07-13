@@ -9,11 +9,15 @@ import { isYaoJi, sameTile, tile } from "./tiles.ts";
 import { checkCurrentPlayerHu, checkDiscardHu } from "./win.ts";
 import {
   applyChickenSettlementBatch,
+  applyGangSettlementBatch,
   applyHuSettlementBatch,
   calculateChickenSettlement,
+  calculateGangPoints,
   createInitialScoreBalances,
   type ChickenSettlementTransfer,
   type ChickenSuit,
+  type GangSettlementEntry,
+  type GangSettlementTransfer,
   type HuSettlementEventType,
   type HuSettlementReason,
   type HuSettlementTransfer,
@@ -21,7 +25,7 @@ import {
   type RoundEndReason,
   type SettlementLedgerEntry,
 } from "./rules.ts";
-import type { Meld, PlayerId, Rank, RoundState, ScorePattern, Suit, Tile } from "./types.ts";
+import type { GangType, Meld, PlayerId, Rank, RoundState, ScorePattern, Suit, Tile } from "./types.ts";
 
 const seatIds: PlayerId[] = [0, 1, 2, 3];
 export const DEFAULT_RESPONSE_WINDOW_TIMEOUT_MS = 15_000;
@@ -100,6 +104,35 @@ export type GangDrawState = {
   playerId: string;
   gangType: "mingGang" | "anGang" | "baGang";
   tile: Tile;
+};
+
+export type GangSettlementPayer = {
+  readonly seatId: PlayerId;
+  readonly playerId: string;
+};
+
+export type GangSettlementFact = {
+  readonly gangId: string;
+  readonly gangType: GangType;
+  readonly gangSeatId: PlayerId;
+  readonly gangPlayerId: string;
+  readonly targetTile: Tile;
+  readonly physicalTiles: readonly Tile[];
+  readonly usesLaizi: boolean;
+  readonly payers: readonly GangSettlementPayer[];
+  readonly pointsPerPayer: 1 | 2 | 4;
+  readonly sourceWindowId: string | null;
+  readonly relatedEventType: "mingGangClaimed" | "anGangClaimed" | "baGangClaimed";
+};
+
+export type ClientVisibleGangSettlementFact = {
+  gangType: GangType;
+  gangSeatId: PlayerId;
+  gangPlayerId: string;
+  targetTile: Tile | null;
+  usesLaizi: boolean;
+  payerSeatIds: PlayerId[];
+  pointsPerPayer: 1 | 2 | 4;
 };
 
 export type RoundEndState = {
@@ -203,7 +236,7 @@ export type RoomEvent =
   | { type: "claimWindowClosed"; reason: "allPassed" | "timeout" | "claimed"; nextPlayer: PlayerId };
 
 export type ClientRoomEvent =
-  | RoomEvent
+  | Exclude<RoomEvent, { type: "anGangClaimed" }>
   | { type: "anGangClaimed"; seatId: PlayerId; playerId: string };
 
 export type ClientVisibleGangDrawState = Omit<GangDrawState, "tile"> & {
@@ -231,10 +264,22 @@ export type RoomState = {
   chaJiao: ChaJiaoResult | null;
   scores: PlayerScoreBalance[];
   settlementLedger: SettlementLedgerEntry[];
+  gangSettlementFacts: GangSettlementFact[];
   resolvedSettlementIds: string[];
   resolvedWindowIds: string[];
   eventLog: RoomEvent[];
 };
+
+export type ClientVisibleGangSettlementEntry = Omit<
+  GangSettlementEntry,
+  "gangId" | "physicalTiles" | "targetTile"
+> & {
+  targetTile: Tile | null;
+};
+
+export type ClientVisibleSettlementLedgerEntry =
+  | Exclude<SettlementLedgerEntry, GangSettlementEntry>
+  | ClientVisibleGangSettlementEntry;
 
 export type VisiblePlayerState = {
   id: PlayerId;
@@ -268,7 +313,8 @@ export type ClientVisibleRoomState = {
   roundEnd: RoundEndState | null;
   chaJiao: ChaJiaoResult | null;
   scores: PlayerScoreBalance[];
-  settlementLedger: SettlementLedgerEntry[];
+  settlementLedger: ClientVisibleSettlementLedgerEntry[];
+  gangSettlements: ClientVisibleGangSettlementFact[];
   responseWindow: ClientVisibleResponseWindow | null;
   eventLog: ClientRoomEvent[];
 };
@@ -508,6 +554,7 @@ export function createRoom(input: CreateRoomInput): RoomState {
     chaJiao: null,
     scores: createInitialScoreBalances(),
     settlementLedger: [],
+    gangSettlementFacts: [],
     resolvedSettlementIds: [],
     resolvedWindowIds: [],
     eventLog: [{ type: "roomCreated", roomId: input.id }],
@@ -674,6 +721,7 @@ export function startRoomRound(room: RoomState, dealer: PlayerId = 0): StartRoom
       gangDraw: null,
       roundEnd: null,
       chaJiao: null,
+      gangSettlementFacts: [],
       eventLog: [...room.eventLog, { type: "roundStarted", dealer }],
     },
   };
@@ -1177,6 +1225,16 @@ export function claimAnGang(room: RoomState, playerId: string, tile: Tile): Clai
     ...ready.round,
     players: ready.round.players.map((player) => (player.id === ready.seat.seatId ? nextPlayer : player)),
   };
+  const gangSettlementFact = createGangSettlementFact(room, {
+    gangType: "anGang",
+    gangSeatId: ready.seat.seatId,
+    gangPlayerId: playerId,
+    targetTile: tile,
+    physicalTiles: usedTiles,
+    payerSeatIds: activeGangPayerSeatIds(ready.round, ready.seat.seatId),
+    sourceWindowId: null,
+    relatedEventType: "anGangClaimed",
+  });
 
   return {
     ok: true,
@@ -1185,6 +1243,7 @@ export function claimAnGang(room: RoomState, playerId: string, tile: Tile): Clai
       phase: "gangDraw",
       selfDrawEligible: false,
       round: nextRound,
+      gangSettlementFacts: appendGangSettlementFact(room.gangSettlementFacts, gangSettlementFact),
       eventLog: [
         ...room.eventLog,
         { type: "anGangClaimed", seatId: ready.seat.seatId, playerId, tile, usedTiles },
@@ -1471,9 +1530,26 @@ function claimMeldFromDiscard(
       return value;
     }),
   };
+  const gangSettlementFacts =
+    options.meldType === "mingGang"
+      ? appendGangSettlementFact(
+          room.gangSettlementFacts,
+          createGangSettlementFact(room, {
+            gangType: "mingGang",
+            gangSeatId: seat.seatId,
+            gangPlayerId: playerId,
+            targetTile: room.claimWindow.tile,
+            physicalTiles: [...usedTiles, room.claimWindow.tile],
+            payerSeatIds: [room.claimWindow.discardedBySeatId],
+            sourceWindowId: room.claimWindow.windowId,
+            relatedEventType: "mingGangClaimed",
+          }),
+        )
+      : room.gangSettlementFacts;
   const nextRoom: RoomState = {
     ...room,
     round: nextRound,
+    gangSettlementFacts,
     claimWindow: null,
     gangDraw:
       options.meldType === "mingGang"
@@ -1677,9 +1753,50 @@ export function toClientVisibleRoomState(
     roundEnd: room.roundEnd,
     chaJiao: room.chaJiao,
     scores: room.scores,
-    settlementLedger: room.settlementLedger,
+    settlementLedger: room.settlementLedger.map(toClientVisibleSettlementEntry),
+    gangSettlements: room.gangSettlementFacts.map(toClientVisibleGangSettlementFact),
     responseWindow: clientVisibleResponseWindow(room, now),
     eventLog: room.eventLog.map((event) => toClientVisibleRoomEvent(event, localSeatId)),
+  };
+}
+
+function toClientVisibleGangSettlementFact(
+  fact: GangSettlementFact,
+): ClientVisibleGangSettlementFact {
+  return {
+    gangType: fact.gangType,
+    gangSeatId: fact.gangSeatId,
+    gangPlayerId: fact.gangPlayerId,
+    targetTile: fact.gangType === "anGang" ? null : fact.targetTile,
+    usesLaizi: fact.usesLaizi,
+    payerSeatIds: fact.payers.map((payer) => payer.seatId),
+    pointsPerPayer: fact.pointsPerPayer,
+  };
+}
+
+function toClientVisibleSettlementEntry(
+  entry: SettlementLedgerEntry,
+): ClientVisibleSettlementLedgerEntry {
+  if (!("gangId" in entry)) {
+    return entry;
+  }
+
+  return {
+    id: entry.id,
+    batchId: entry.batchId,
+    winnerSeatId: entry.winnerSeatId,
+    winnerPlayerId: entry.winnerPlayerId,
+    loserSeatId: entry.loserSeatId,
+    loserPlayerId: entry.loserPlayerId,
+    reason: entry.reason,
+    targetTile: entry.reason === "anGang" ? null : entry.targetTile,
+    usesLaizi: entry.usesLaizi,
+    sourceWindowId: entry.sourceWindowId,
+    sourceSettlementId: entry.sourceSettlementId,
+    basePoints: entry.basePoints,
+    rawPoints: entry.rawPoints,
+    finalPoints: entry.finalPoints,
+    relatedEvent: entry.relatedEvent,
   };
 }
 
@@ -2130,12 +2247,23 @@ function settleBaGangClaimWindow(
       player.id === claimWindow.upgradedBySeatId ? nextPlayer : player,
     ),
   };
+  const gangSettlementFact = createGangSettlementFact(room, {
+    gangType: "baGang",
+    gangSeatId: claimWindow.upgradedBySeatId,
+    gangPlayerId: claimWindow.upgradedByPlayerId,
+    targetTile: claimWindow.targetTile,
+    physicalTiles: [...peng.tiles, claimWindow.tile],
+    payerSeatIds: activeGangPayerSeatIds(room.round, claimWindow.upgradedBySeatId),
+    sourceWindowId: claimWindow.windowId,
+    relatedEventType: "baGangClaimed",
+  });
 
   return finishRoundIfNeeded({
     ...room,
     phase: "gangDraw",
     selfDrawEligible: false,
     round: nextRound,
+    gangSettlementFacts: appendGangSettlementFact(room.gangSettlementFacts, gangSettlementFact),
     baGangClaimWindow: null,
     resolvedWindowIds: appendResolvedWindowId(room.resolvedWindowIds, claimWindow.windowId),
     gangDraw: {
@@ -2190,6 +2318,60 @@ function appendResolvedWindowId(resolvedWindowIds: string[], windowId: string): 
     : [...resolvedWindowIds, windowId];
 }
 
+type CreateGangSettlementFactInput = {
+  gangType: GangType;
+  gangSeatId: PlayerId;
+  gangPlayerId: string;
+  targetTile: Tile;
+  physicalTiles: Tile[];
+  payerSeatIds: PlayerId[];
+  sourceWindowId: string | null;
+  relatedEventType: GangSettlementFact["relatedEventType"];
+};
+
+function createGangSettlementFact(
+  room: RoomState,
+  input: CreateGangSettlementFactInput,
+): GangSettlementFact {
+  const physicalTiles = [...input.physicalTiles];
+  const usesLaizi = physicalTiles.some(isYaoJi);
+  const pointsPerPayer = calculateGangPoints(input.gangType, usesLaizi) as 1 | 2 | 4;
+  const sourceId = input.sourceWindowId ?? `event-${room.eventLog.length}`;
+
+  return {
+    gangId: `${room.id}:round:${room.roundNumber}:gang:${input.gangType}:${sourceId}`,
+    gangType: input.gangType,
+    gangSeatId: input.gangSeatId,
+    gangPlayerId: input.gangPlayerId,
+    targetTile: input.targetTile,
+    physicalTiles,
+    usesLaizi,
+    payers: [...input.payerSeatIds]
+      .sort((left, right) => left - right)
+      .flatMap((seatId): GangSettlementPayer[] => {
+        const playerId = room.seats[seatId]?.playerId;
+
+        return playerId === null || playerId === undefined ? [] : [{ seatId, playerId }];
+      }),
+    pointsPerPayer,
+    sourceWindowId: input.sourceWindowId,
+    relatedEventType: input.relatedEventType,
+  };
+}
+
+function activeGangPayerSeatIds(round: RoundState, gangSeatId: PlayerId): PlayerId[] {
+  return round.players
+    .filter((player) => player.id !== gangSeatId && !player.hasWon)
+    .map((player) => player.id);
+}
+
+function appendGangSettlementFact(
+  facts: GangSettlementFact[],
+  fact: GangSettlementFact,
+): GangSettlementFact[] {
+  return facts.some((value) => value.gangId === fact.gangId) ? facts : [...facts, fact];
+}
+
 function finishRoundIfNeeded(room: RoomState): RoomState {
   if (room.round === null) {
     return room;
@@ -2201,10 +2383,10 @@ function finishRoundIfNeeded(room: RoomState): RoomState {
 
   if (room.roundEnd !== null) {
     if (room.roundEnd.reason === "wallEmpty" && room.chaJiao === null) {
-      return settleRoundChickenPayments({ ...room, chaJiao: buildChaJiaoResult(room) });
+      return settleRoundPayments({ ...room, chaJiao: buildChaJiaoResult(room) });
     }
 
-    return settleRoundChickenPayments(room);
+    return settleRoundPayments(room);
   }
 
   if (reason === null) {
@@ -2213,7 +2395,7 @@ function finishRoundIfNeeded(room: RoomState): RoomState {
 
   const roundEnd: RoundEndState = { reason, remainingPlayerIds };
 
-  return settleRoundChickenPayments({
+  return settleRoundPayments({
     ...room,
     status: "ended",
     phase: "ended",
@@ -2225,6 +2407,10 @@ function finishRoundIfNeeded(room: RoomState): RoomState {
     gangDraw: null,
     eventLog: [...room.eventLog, { type: "roundEnded", ...roundEnd }],
   });
+}
+
+function settleRoundPayments(room: RoomState): RoomState {
+  return settleRoundGangPayments(settleRoundChickenPayments(room));
 }
 
 export function settleRoundChickenPayments(room: RoomState): RoomState {
@@ -2306,6 +2492,52 @@ export function settleRoundChickenPayments(room: RoomState): RoomState {
     });
   });
   const result = applyChickenSettlementBatch(
+    room.scores,
+    room.settlementLedger,
+    room.resolvedSettlementIds,
+    sourceSettlementId,
+    transfers,
+  );
+
+  if (result.resolvedSettlementIds === room.resolvedSettlementIds) {
+    return room;
+  }
+
+  return {
+    ...room,
+    scores: result.scores,
+    settlementLedger: result.ledger,
+    resolvedSettlementIds: result.resolvedSettlementIds,
+  };
+}
+
+export function settleRoundGangPayments(room: RoomState): RoomState {
+  if (room.round === null || room.roundEnd === null || room.status !== "ended") {
+    return room;
+  }
+
+  if (room.gangSettlementFacts.length === 0) {
+    return room;
+  }
+
+  const sourceSettlementId = `${room.id}:round:${room.roundNumber}:gang`;
+  const transfers = room.gangSettlementFacts.flatMap((fact): GangSettlementTransfer[] =>
+    fact.payers.map((payer) => ({
+      gangId: fact.gangId,
+      winnerSeatId: fact.gangSeatId,
+      winnerPlayerId: fact.gangPlayerId,
+      loserSeatId: payer.seatId,
+      loserPlayerId: payer.playerId,
+      reason: fact.gangType,
+      targetTile: fact.targetTile,
+      physicalTiles: [...fact.physicalTiles],
+      usesLaizi: fact.usesLaizi,
+      sourceWindowId: fact.sourceWindowId,
+      points: fact.pointsPerPayer,
+      relatedEvent: { type: fact.relatedEventType, seatId: fact.gangSeatId },
+    })),
+  );
+  const result = applyGangSettlementBatch(
     room.scores,
     room.settlementLedger,
     room.resolvedSettlementIds,
