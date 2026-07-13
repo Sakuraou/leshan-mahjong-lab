@@ -678,6 +678,7 @@ function WebSocketTablePreview({
   const chaJiao = snapshot?.chaJiao ?? null;
   const recentSettlements = snapshot?.settlementLedger.slice(-6).reverse() ?? [];
   const responseWindow = snapshot?.responseWindow ?? null;
+  const latestPresence = snapshot?.eventLog.findLast((event) => event.type === "presenceChanged") ?? null;
   const [deadlineNow, setDeadlineNow] = useState(Date.now());
   const latestExpiry = snapshot?.eventLog.findLast((event) => event.type === "responseWindowExpired") ?? null;
   const responseSnapshotReceivedAt = primary?.state?.snapshotReceivedAtByPlayerId[primary.playerId] ?? deadlineNow;
@@ -740,6 +741,16 @@ function WebSocketTablePreview({
           <span>
             {latestExpiry.kind === "qiangGang" ? "抢杠" : "出牌"}窗口 {latestExpiry.windowId}：
             {latestExpiry.outcome === "allPassed" ? "全部过牌" : latestExpiry.outcome === "claimed" ? "胡牌成立" : "抢杠胡成立"}
+          </span>
+        </div>
+      )}
+
+      {latestPresence?.type === "presenceChanged" && (
+        <div className="preview-presence-status" data-connected={latestPresence.connected}>
+          <strong>{latestPresence.connected ? "玩家已恢复连接" : "玩家已离线"}</strong>
+          <span>
+            {snapshot?.members.find((member) => member.playerId === latestPresence.playerId)?.displayName ?? latestPresence.playerId}
+            {latestPresence.seatId === null ? "（未入座）" : `（座位 ${latestPresence.seatId + 1}）`}
           </span>
         </div>
       )}
@@ -841,10 +852,20 @@ function WebSocketPreviewSeatCard({
         : `${player.handCount} 张隐藏`;
 
   return (
-    <article className="preview-seat-card" data-ready={seat.ready} data-occupied={seat.playerId !== null}>
+    <article
+      className="preview-seat-card"
+      data-ready={seat.ready}
+      data-occupied={seat.playerId !== null}
+      data-connected={seat.connected}
+    >
       <div>
         <h3>座位 {seat.seatId + 1}</h3>
-        <span>{seat.ready ? "已准备" : "未准备"}</span>
+        <div className="preview-seat-badges">
+          <span>{seat.ready ? "已准备" : "未准备"}</span>
+          <span className="presence-badge" data-connected={seat.connected}>
+            {seat.playerId === null ? "空位" : seat.connected ? "在线" : "离线"}
+          </span>
+        </div>
       </div>
       <p>{seat.displayName ?? "空位"}</p>
       <p>积分：{score.points > 0 ? `+${score.points}` : score.points}</p>
@@ -930,10 +951,25 @@ function WebSocketPreviewClientCard({
   const canDrawGangTile = legalActions.includes("drawGangTile") && client.sessionToken !== null;
   const visibleHand = localPlayer?.hand ?? [];
   const remainingPlayerCount = players.filter((player) => !player.hasWon).length;
+  const localMember = snapshot?.members.find((member) => member.playerId === client.playerId) ?? null;
+  const latestLocalPresence = snapshot?.eventLog.findLast(
+    (event) => event.type === "presenceChanged" && event.playerId === client.playerId,
+  );
+  const presenceLabel =
+    localMember === null
+      ? "未加入"
+      : !localMember.connected
+        ? "离线"
+        : latestLocalPresence?.type === "presenceChanged" && latestLocalPresence.reason === "sessionResumed"
+          ? "已恢复"
+          : "在线";
 
   return (
     <article className="preview-client-card">
       <h3>{client.title}</h3>
+      <p className="preview-client-presence" data-connected={localMember?.connected ?? false}>
+        连接状态：<strong>{presenceLabel}</strong>
+      </p>
       <p>session：{client.sessionToken ?? "暂无"}</p>
       <p>本地座位：{localSeat === null || localSeat === undefined ? "-" : localSeat + 1}</p>
       <p>房间状态：{snapshot?.status ?? "待快照"}</p>
@@ -3172,6 +3208,8 @@ function roomEventText(event: RoomEvent, room: RoomState): string {
       return `${roomPlayerName(room, event.playerId)} 坐到玩家 ${event.seatId + 1}。`;
     case "readyChanged":
       return `${roomPlayerName(room, event.playerId)} ${event.ready ? "已准备" : "取消准备"}。`;
+    case "presenceChanged":
+      return `${roomPlayerName(room, event.playerId)}${event.connected ? "已恢复连接" : "已离线"}。`;
     case "roundStarted":
       return `房间开局，庄家是玩家 ${event.dealer + 1}。`;
     case "missingSuitChosen":

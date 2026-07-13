@@ -14,6 +14,7 @@ import {
   joinRoom,
   passClaim,
   passQiangGang,
+  setPlayerPresence,
   startRoomRound,
   takeSeat,
   toggleReady,
@@ -99,6 +100,7 @@ export type RoomAction =
 
 export type RoomServiceError =
   | "invalidSession"
+  | "sessionDisconnected"
   | ResultFailureReason<JoinRoomResult>
   | ResultFailureReason<TakeSeatResult>
   | ResultFailureReason<ToggleReadyResult>
@@ -134,7 +136,22 @@ export type RoomServiceResult =
 export type CreateRoomSessionResult = { ok: true } & RoomServiceResponse;
 
 export type ResumeRoomSessionResult =
-  | ({ ok: true } & RoomServiceResponse & { missedEvents: RoomEvent[] })
+  | ({
+      ok: true;
+      missedEvents: RoomEvent[];
+      presenceChanged: boolean;
+      presenceEvents: RoomEvent[];
+    } & RoomServiceResponse)
+  | { ok: false; reason: "invalidSession"; service: RoomServiceState };
+
+export type RoomPresenceUpdateResult =
+  | {
+      ok: true;
+      service: RoomServiceState;
+      session: RoomSession;
+      changed: boolean;
+      events: RoomEvent[];
+    }
   | { ok: false; reason: "invalidSession"; service: RoomServiceState };
 
 export type GetClientRoomViewResult =
@@ -232,6 +249,12 @@ export function handleRoomAction(
     return { ok: false, reason: "invalidSession", service };
   }
 
+  const member = service.room.members.find((value) => value.playerId === session.playerId);
+
+  if (member?.connected === false) {
+    return { ok: false, reason: "sessionDisconnected", service };
+  }
+
   const now = service.nowFactory();
   const result = applyRoomAction(service, session.playerId, action, now);
 
@@ -275,6 +298,20 @@ export function tickRoomDeadlines(
   };
 }
 
+export function markSessionDisconnected(
+  service: RoomServiceState,
+  sessionToken: string,
+): RoomPresenceUpdateResult {
+  return updateSessionPresence(service, sessionToken, false, "connectionClosed");
+}
+
+export function markSessionConnected(
+  service: RoomServiceState,
+  sessionToken: string,
+): RoomPresenceUpdateResult {
+  return updateSessionPresence(service, sessionToken, true, "sessionResumed");
+}
+
 export function resumeRoomSession(
   service: RoomServiceState,
   input: { sessionToken: string; lastSeenEventId?: number },
@@ -286,10 +323,20 @@ export function resumeRoomSession(
   }
 
   const lastSeenEventId = input.lastSeenEventId ?? session.lastEventId;
-  const missedEvents = service.room.eventLog.slice(lastSeenEventId);
+  const presence = markSessionConnected(service, input.sessionToken);
+
+  if (!presence.ok) {
+    return presence;
+  }
+
+  const missedEvents = presence.service.room.eventLog.slice(lastSeenEventId);
   const nextService: RoomServiceState = {
-    ...service,
-    sessions: updateSessionLastEventId(service.sessions, input.sessionToken, service.lastEventId),
+    ...presence.service,
+    sessions: updateSessionLastEventId(
+      presence.service.sessions,
+      input.sessionToken,
+      presence.service.lastEventId,
+    ),
   };
   const nextSession = findSession(nextService, input.sessionToken)!;
 
@@ -301,6 +348,8 @@ export function resumeRoomSession(
     lastEventId: nextService.lastEventId,
     events: missedEvents,
     missedEvents,
+    presenceChanged: presence.changed,
+    presenceEvents: presence.events,
   };
 }
 
@@ -439,6 +488,40 @@ function buildResponse(
 
 function advanceEventId(service: RoomServiceState, nextRoom: RoomState): number {
   return service.lastEventId + Math.max(0, nextRoom.eventLog.length - service.room.eventLog.length);
+}
+
+function updateSessionPresence(
+  service: RoomServiceState,
+  sessionToken: string,
+  connected: boolean,
+  reason: "connectionClosed" | "sessionResumed",
+): RoomPresenceUpdateResult {
+  const session = findSession(service, sessionToken);
+
+  if (session === undefined) {
+    return { ok: false, reason: "invalidSession", service };
+  }
+
+  const result = setPlayerPresence(service.room, session.playerId, connected, reason);
+
+  if (!result.changed) {
+    return { ok: true, service, session, changed: false, events: [] };
+  }
+
+  const nextLastEventId = advanceEventId(service, result.room);
+  const nextService: RoomServiceState = {
+    ...service,
+    room: result.room,
+    lastEventId: nextLastEventId,
+  };
+
+  return {
+    ok: true,
+    service: nextService,
+    session,
+    changed: true,
+    events: result.room.eventLog.slice(service.lastEventId),
+  };
 }
 
 function findSession(service: RoomServiceState, sessionToken: string): RoomSession | undefined {

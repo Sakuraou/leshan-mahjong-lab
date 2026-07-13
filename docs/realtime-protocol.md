@@ -589,13 +589,36 @@ Each browser stores a `sessionToken` in local storage. On reload:
 Server behavior:
 
 1. Validate the session token.
-2. If the room still exists and the missed event range is available, replay
-   events from `lastSeenEventId + 1`.
-3. Otherwise send a fresh `roomSnapshot`.
-4. Mark the seat connected and broadcast `playerReconnected`.
+2. Rebind the session to the requesting connection and clear the identity from
+   any older connection that held the same session.
+3. Mark the member and occupied seat connected, append an idempotent
+   `presenceChanged` event, and return missed events plus a fresh redacted
+   `roomSnapshot`.
+4. Broadcast the safe online state to other connected sessions. Repeating
+   `resumeSession` while already online succeeds without another presence
+   event.
 
-If the token is invalid or expired, the server returns `sessionExpired` and the
-client can rejoin as a new member if the room is still joinable.
+When the current connection closes, the server keeps the seat, hand, dingque,
+score, ledger, session token, and response state, but marks the member and seat
+offline. The event payload is safe to broadcast:
+
+```ts
+type PresenceChangedEvent = {
+  type: "presenceChanged";
+  playerId: string;
+  seatId: 0 | 1 | 2 | 3 | null;
+  connected: boolean;
+  reason: "connectionClosed" | "sessionResumed";
+};
+```
+
+Normal authenticated actions are accepted only from the connection currently
+bound to that room and session. An older connection receives the core protocol
+error `sessionNotBound`; its later `close` event cannot mark the resumed player
+offline. Invalid tokens still return `invalidSession`.
+
+Disconnected players remain subject to authoritative claim deadlines, so an
+offline responder is automatically passed when the window expires.
 
 ## Server Interface Draft
 
@@ -650,9 +673,10 @@ Validation should call the same rule modules that power the current tests:
 6. Add reconnect using `sessionToken` and `lastSeenEventId`. Done for the
    WebSocket experiment panel.
 7. Add server-authoritative dingque from the WebSocket table preview. Done.
-8. Add server-authoritative `drawTile` and `discardTile` actions. Designed
-   above; not implemented yet.
+8. Add server-authoritative `drawTile` and `discardTile` actions. Done.
+9. Add connection-close presence updates and latest-connection-only resume.
+   Done.
 
-The next implementation milestone is to move the draw/discard design into
-`roomService`, `roomSocketAdapter`, `roomSocketServerCore`, and the WebSocket
-table preview while keeping the mock table as the default fallback.
+The next networking milestone is heartbeat and stale-connection detection,
+followed by persistence and deployment hardening. Offline kicking, bot takeover,
+room dissolution, and database persistence are intentionally not implemented.

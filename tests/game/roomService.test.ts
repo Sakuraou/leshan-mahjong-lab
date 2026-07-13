@@ -6,6 +6,7 @@ import {
   getClientRoomView,
   handleRoomAction,
   joinRoomSession,
+  markSessionDisconnected,
   resumeRoomSession,
   tickRoomDeadlines,
   type RoomServiceState,
@@ -403,6 +404,103 @@ test("resumes a session and returns missed events after the client cursor", () =
     ["seatTaken", "readyChanged"],
   );
   assert.equal(resumed.view.localSeatId, 0);
+});
+
+test("marks a waiting session offline and restores it idempotently", () => {
+  const host = createRoomSession({ roomId: "svc-room-presence", seed: "svc-seed", displayName: "Host" });
+  const seated = handleOk(host.service, host.session.sessionToken, { type: "takeSeat", seatId: 0 });
+  const ready = handleOk(seated.service, host.session.sessionToken, { type: "toggleReady" });
+  const disconnected = markSessionDisconnected(ready.service, host.session.sessionToken);
+
+  assert.equal(disconnected.ok, true);
+  if (!disconnected.ok) return;
+
+  assert.equal(disconnected.changed, true);
+  assert.equal(disconnected.service.room.members[0].connected, false);
+  assert.equal(disconnected.service.room.seats[0].connected, false);
+  assert.equal(disconnected.service.room.seats[0].ready, true);
+  assert.deepEqual(disconnected.events, [
+    {
+      type: "presenceChanged",
+      playerId: "player-1",
+      seatId: 0,
+      connected: false,
+      reason: "connectionClosed",
+    },
+  ]);
+  assert.equal(
+    handleRoomAction(disconnected.service, host.session.sessionToken, { type: "toggleReady" }).ok,
+    false,
+  );
+
+  const repeatedDisconnect = markSessionDisconnected(disconnected.service, host.session.sessionToken);
+  assert.equal(repeatedDisconnect.ok, true);
+  if (!repeatedDisconnect.ok) return;
+  assert.equal(repeatedDisconnect.changed, false);
+  assert.equal(repeatedDisconnect.service.lastEventId, disconnected.service.lastEventId);
+
+  const resumed = resumeRoomSession(disconnected.service, {
+    sessionToken: host.session.sessionToken,
+    lastSeenEventId: ready.lastEventId,
+  });
+  assert.equal(resumed.ok, true);
+  if (!resumed.ok) return;
+
+  assert.equal(resumed.presenceChanged, true);
+  assert.equal(resumed.service.room.members[0].connected, true);
+  assert.equal(resumed.service.room.seats[0].connected, true);
+  assert.equal(resumed.service.room.seats[0].ready, true);
+  assert.equal(resumed.session.sessionToken, host.session.sessionToken);
+  assert.deepEqual(
+    resumed.missedEvents.map((event) => event.type),
+    ["presenceChanged", "presenceChanged"],
+  );
+
+  const repeatedResume = resumeRoomSession(resumed.service, {
+    sessionToken: host.session.sessionToken,
+    lastSeenEventId: resumed.lastEventId,
+  });
+  assert.equal(repeatedResume.ok, true);
+  if (!repeatedResume.ok) return;
+  assert.equal(repeatedResume.presenceChanged, false);
+  assert.deepEqual(repeatedResume.missedEvents, []);
+  assert.equal(repeatedResume.service.lastEventId, resumed.service.lastEventId);
+});
+
+test("keeps an offline responder in the authoritative deadline flow", () => {
+  const prepared = prepareServiceForDealerDiscard("svc-room-offline-deadline");
+  const service: RoomServiceState = {
+    ...prepared.service,
+    nowFactory: () => 200_000,
+    responseWindowTimeoutMs: 5_000,
+  };
+  const discarded = handleOk(service, prepared.sessions[0].sessionToken, {
+    type: "discardTile",
+    tile: prepared.discard,
+  });
+  const offlineHand = discarded.service.room.round!.players[1].hand;
+  const disconnected = markSessionDisconnected(discarded.service, prepared.sessions[1].sessionToken);
+  assert.equal(disconnected.ok, true);
+  if (!disconnected.ok) return;
+
+  let next = handleOk(disconnected.service, prepared.sessions[2].sessionToken, { type: "passClaim" }).service;
+  next = handleOk(next, prepared.sessions[3].sessionToken, { type: "passClaim" }).service;
+  const expired = tickRoomDeadlines(next, 205_000);
+  const expiryEvent = expired.events.find((event) => event.type === "responseWindowExpired");
+
+  assert.equal(expired.changed, true);
+  assert.equal(expired.service.room.phase, "draw");
+  assert.equal(expired.service.room.round?.currentPlayer, 1);
+  assert.deepEqual(expired.service.room.round?.players[1].hand, offlineHand);
+  assert.equal(expired.service.room.members[1].connected, false);
+  assert.deepEqual(expired.service.room.settlementLedger, []);
+  assert.deepEqual(expiryEvent, {
+    type: "responseWindowExpired",
+    windowId: discarded.service.room.claimWindow?.windowId,
+    kind: "discardClaim",
+    timedOutPlayerIds: [1],
+    outcome: "allPassed",
+  });
 });
 
 function fillReadyService(roomId: string): { service: RoomServiceState; sessions: RoomSession[] } {

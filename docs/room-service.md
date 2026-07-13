@@ -18,6 +18,7 @@ The room service owns the authoritative in-memory state for one room:
   - `takeSeat`
   - `toggleReady`
   - `startRoomRound`
+  - dingque, draw/discard, claim, gang, hu, and deadline transitions
 - A stable API that can be called by both the current frontend mock transport
   and a future real WebSocket adapter.
 
@@ -27,7 +28,7 @@ It does not own:
 - HTTP routing.
 - Database persistence.
 - Authentication beyond local `sessionToken` lookup.
-- Peng, gang, discard claim windows, or settlement flow.
+- Socket connection ids, network timers, or message delivery.
 
 ## State Structure
 
@@ -37,7 +38,9 @@ type RoomServiceState = {
   sessions: RoomSession[];
   lastEventId: number;
   nextPlayerNumber: number;
-  nextSessionNumber: number;
+  sessionTokenFactory: SessionTokenFactory;
+  nowFactory: NowFactory;
+  responseWindowTimeoutMs: number;
 };
 ```
 
@@ -59,16 +62,16 @@ type RoomSession = {
 monotonic for the room and lets a reconnecting client ask for events after its
 last seen cursor.
 
-`nextPlayerNumber` and `nextSessionNumber` are deterministic counters for this
-first in-memory version. A production server can replace them with generated
-ids and secure tokens without changing the room action flow.
+`nextPlayerNumber` provides stable in-room player ids. Session tokens are secure
+by default; tests inject `sessionTokenFactory`. `nowFactory` and
+`responseWindowTimeoutMs` make server deadlines deterministic under test.
 
 ## Public API
 
 ### `createRoomSession`
 
-Creates a new room, adds the host as the first member, creates `session-1`, and
-returns the host-scoped visible room view.
+Creates a new room, adds the host as the first member, issues a secure session
+token, and returns the host-scoped visible room view.
 
 ```ts
 createRoomSession({
@@ -150,6 +153,20 @@ The response contains:
 This is enough for the first WebSocket adapter to choose either event replay or
 snapshot replacement.
 
+### Presence Updates
+
+`markSessionDisconnected` and `markSessionConnected` are immutable service
+operations keyed by `sessionToken`. They update both `RoomMember.connected` and
+the occupied `SeatState.connected`, append a safe `presenceChanged` event, and
+advance `lastEventId`. Repeating the same state is idempotent and does not add
+another event.
+
+`resumeRoomSession` calls the connected transition before building its fresh
+snapshot. A reconnect therefore receives offline-period events and the recovery
+event, while the adapter can broadcast only the presence event to other
+sessions. Disconnection preserves seat ownership, readiness, round state,
+hands, dingque, scores, settlement records, and response deadlines.
+
 ## Action Flow
 
 ```text
@@ -224,7 +241,7 @@ Server-owned concerns:
 
 - Real socket connection lifecycle.
 - Session-to-socket registry.
-- Reconnect timeout and presence state.
+- Latest-connection binding and close notification.
 - Secure token generation.
 - Optional room persistence.
 - Deployment choice, such as Node WebSocket, Socket.IO, or a managed realtime
@@ -237,12 +254,12 @@ lookup, event ids, and redacted room views.
 
 - One service state represents one room. A server process will need a room map:
   `Map<roomId, RoomServiceState>`.
-- Session tokens are deterministic for tests. Production should use secure
-  random tokens.
-- The service covers room lifecycle through start round only.
-- Draw, discard, hu, peng, gang, settlement, and reconnect connection badges
-  are still future service actions.
+- Session tokens are secure by default and injectable for deterministic tests.
+- The service now covers dingque, draw/discard, claim windows, hu/peng/gang,
+  response deadlines, hu-score settlement, and presence recovery.
 - State is in memory only. Restarting the server would lose rooms.
+- Offline kicking, bot takeover, room dissolution, and database persistence are
+  not implemented.
 
 ## Next Adapter Step
 

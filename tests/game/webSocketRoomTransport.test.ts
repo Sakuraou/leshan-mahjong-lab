@@ -173,6 +173,58 @@ test("websocket room transport resumes a stored session over a real dev server",
   }
 });
 
+test("broadcasts offline presence and restores the same seat over real sockets", async () => {
+  const server = await createRoomSocketDevServer({ port: 0 });
+  const roomId = "transport-presence-ws-room";
+  const transports: WebSocketRoomTransport[] = [];
+
+  try {
+    const host = await createWebSocketRoomTransport({
+      url: server.url,
+      roomId,
+      webSocketFactory: createNodeWebSocket,
+    });
+    const guest = await createWebSocketRoomTransport({
+      url: server.url,
+      roomId,
+      webSocketFactory: createNodeWebSocket,
+    });
+    transports.push(host, guest);
+
+    assert.equal((await host.createRoomSession({ displayName: "Player One" })).ok, true);
+    assert.equal((await host.takeSeat("player-1", 0)).ok, true);
+    assert.equal((await host.toggleReady("player-1")).ok, true);
+    assert.equal((await guest.joinRoomSession({ displayName: "Player Two" })).ok, true);
+    const sessionToken = host.getSessionToken("player-1");
+    assert.ok(sessionToken);
+
+    host.close();
+    await waitForSeatPresence(guest, "player-2", 0, false);
+    assert.equal(guest.getClientView("player-2")?.seats[0].ready, true);
+
+    const resumed = await createWebSocketRoomTransport({
+      url: server.url,
+      roomId,
+      webSocketFactory: createNodeWebSocket,
+    });
+    transports.push(resumed);
+    const resumeResult = await resumed.resumeSession({ sessionToken, lastSeenEventId: 4 });
+    assert.equal(resumeResult.ok, true);
+
+    await waitForSeatPresence(guest, "player-2", 0, true);
+    await waitForSeatPresence(resumed, "player-1", 0, true);
+    assert.equal(resumed.getClientView("player-1")?.seats[0].ready, true);
+    assert.equal(resumed.getSessionToken("player-1"), sessionToken);
+    assert.equal(
+      resumed.getClientView("player-1")?.eventLog.findLast((event) => event.type === "presenceChanged")?.type,
+      "presenceChanged",
+    );
+  } finally {
+    transports.forEach((transport) => transport.close());
+    await server.close();
+  }
+});
+
 test("websocket room transport reports failed resume reasons over a real dev server", async () => {
   const server = await createRoomSocketDevServer({ port: 0 });
   const roomId = "transport-failed-resume-ws-room";
@@ -222,6 +274,23 @@ async function waitForRoundSnapshots(transports: WebSocketRoomTransport[]): Prom
   while (transports.some((transport, index) => transport.getClientView(`player-${index + 1}`)?.round == null)) {
     if (Date.now() > deadline) {
       throw new Error("Timed out waiting for WebSocket round snapshots.");
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
+async function waitForSeatPresence(
+  transport: WebSocketRoomTransport,
+  playerId: string,
+  seatId: 0 | 1 | 2 | 3,
+  connected: boolean,
+): Promise<void> {
+  const deadline = Date.now() + 3_000;
+
+  while (transport.getClientView(playerId)?.seats[seatId].connected !== connected) {
+    if (Date.now() > deadline) {
+      throw new Error(`Timed out waiting for seat ${seatId} presence ${connected}.`);
     }
 
     await new Promise((resolve) => setTimeout(resolve, 10));

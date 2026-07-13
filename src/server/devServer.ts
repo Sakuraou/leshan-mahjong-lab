@@ -4,9 +4,9 @@ import type { RoomSocketAdapterOptions } from "../game/index.ts";
 
 import {
   createRoomSocketServerCoreState,
+  handleRoomSocketConnectionClosed,
   handleRoomSocketRawMessage,
   registerRoomSocketConnection,
-  unregisterRoomSocketConnection,
   tickRoomSocketServerDeadlines,
   type RoomSocketServerCoreState,
   type RoomSocketUndeliveredMessage,
@@ -73,7 +73,17 @@ export async function createRoomSocketDevServer(options: RoomSocketDevServerOpti
 
     socket.on("close", () => {
       sockets.delete(connectionId);
-      state = unregisterRoomSocketConnection(state, connectionId);
+      const result = handleRoomSocketConnectionClosed(state, connectionId);
+      state = result.state;
+
+      for (const outgoing of result.outgoing) {
+        sockets.get(outgoing.connectionId)?.send(JSON.stringify(outgoing.message));
+      }
+
+      for (const undelivered of result.undelivered) {
+        options.onUndelivered?.(undelivered);
+      }
+
       options.onLog?.(`disconnected ${connectionId}`);
     });
   });

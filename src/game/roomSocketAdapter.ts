@@ -4,6 +4,7 @@ import {
   getClientRoomView,
   handleRoomAction,
   joinRoomSession,
+  markSessionDisconnected,
   resumeRoomSession,
   tickRoomDeadlines,
   type NowFactory,
@@ -239,6 +240,10 @@ export type RoomSocketDeadlineTickResult = RoomSocketAdapterResult & {
   expiredWindowIds: string[];
 };
 
+export type RoomSocketPresenceResult = RoomSocketAdapterResult & {
+  changed: boolean;
+};
+
 export function createRoomSocketAdapterState(options: RoomSocketAdapterOptions = {}): RoomSocketAdapterState {
   return {
     rooms: [],
@@ -298,6 +303,30 @@ export function tickRoomSocketDeadlines(
   }
 
   return { adapter: nextAdapter, messages, expiredWindowIds };
+}
+
+export function markRoomSocketSessionDisconnected(
+  adapter: RoomSocketAdapterState,
+  roomId: string,
+  sessionToken: string,
+): RoomSocketPresenceResult {
+  const room = findRoom(adapter, roomId);
+
+  if (room === undefined) {
+    return { adapter, messages: [], changed: false };
+  }
+
+  const result = markSessionDisconnected(room.service, sessionToken);
+
+  if (!result.ok || !result.changed) {
+    return { adapter, messages: [], changed: false };
+  }
+
+  return {
+    adapter: upsertRoom(adapter, result.service),
+    messages: snapshotMessagesForSessions(result.service, result.events),
+    changed: true,
+  };
 }
 
 function handleCreateRoom(
@@ -377,12 +406,18 @@ function handleResumeSession(
   }
 
   const nextAdapter = upsertRoom(adapter, result.service);
+  const presenceBroadcasts = result.presenceChanged
+    ? result.service.sessions
+        .filter((session) => session.sessionToken !== message.sessionToken)
+        .map((session) => snapshotMessage(result.service, session.sessionToken, result.presenceEvents))
+    : [];
 
   return {
     adapter: nextAdapter,
     messages: [
       acceptedMessage(message, result.service.room.id, message.sessionToken, result.lastEventId),
       snapshotMessage(result.service, message.sessionToken, result.missedEvents),
+      ...presenceBroadcasts,
     ],
   };
 }
@@ -599,6 +634,7 @@ function errorMessage(code: RoomSocketErrorCode): string {
     roomNotFound: "Room was not found.",
     roomAlreadyExists: "Room already exists.",
     invalidSession: "Session is invalid.",
+    sessionDisconnected: "Session is disconnected; resume it before sending actions.",
     roomAlreadyStarted: "Room has already started.",
     playerAlreadyJoined: "Player already joined.",
     playerNotInRoom: "Player is not in the room.",

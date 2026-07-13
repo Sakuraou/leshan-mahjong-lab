@@ -115,9 +115,11 @@ server authoritative.
 - [x] Add server-owned response deadlines, deterministic clock injection,
   idempotent timeout settlement, automatic dev-server ticks, and synchronized
   client countdown snapshots
+- [x] Add server-authoritative online/offline presence, latest-connection-only
+  session binding, reconnect broadcasts, and idempotent presence events
 - Wrap `roomSocketAdapter` with a production-ready WebSocket server entry
 - Connect table UI to WebSocket room snapshots
-- Add reconnect with a local session token
+- [x] Add reconnect with a local session token
 
 ## Phase 5: Portfolio Polish
 

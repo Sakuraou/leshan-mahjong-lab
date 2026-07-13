@@ -1,6 +1,7 @@
 import {
   createRoomSocketAdapterState,
   handleRoomSocketMessage,
+  markRoomSocketSessionDisconnected,
   tickRoomSocketDeadlines,
   type PlayerId,
   type RoomSocketAdapterOptions,
@@ -13,6 +14,7 @@ export type RoomSocketConnection = {
   connectionId: string;
   roomId?: string;
   sessionToken?: string;
+  playerId?: string;
 };
 
 export type RoomSocketServerCoreState = {
@@ -29,7 +31,7 @@ export type RoomSocketProtocolError = {
   connectionId: string;
   type: "protocolError";
   payload: {
-    code: "invalidJson" | "invalidMessage" | "unknownConnection";
+    code: "invalidJson" | "invalidMessage" | "unknownConnection" | "sessionNotBound";
     message: string;
   };
 };
@@ -77,6 +79,38 @@ export function unregisterRoomSocketConnection(
   };
 }
 
+export function handleRoomSocketConnectionClosed(
+  state: RoomSocketServerCoreState,
+  connectionId: string,
+): RoomSocketServerCoreResult {
+  const connection = state.connections.find((value) => value.connectionId === connectionId);
+
+  if (connection === undefined) {
+    return emptyResult(state);
+  }
+
+  let nextState = unregisterRoomSocketConnection(state, connectionId);
+
+  if (connection.roomId === undefined || connection.sessionToken === undefined || connection.playerId === undefined) {
+    return emptyResult(nextState);
+  }
+
+  const presence = markRoomSocketSessionDisconnected(
+    nextState.adapter,
+    connection.roomId,
+    connection.sessionToken,
+  );
+  nextState = { ...nextState, adapter: presence.adapter };
+  const delivery = routeServerMessages(nextState, "", presence.messages);
+
+  return {
+    state: nextState,
+    outgoing: delivery.outgoing,
+    undelivered: delivery.undelivered,
+    errors: [],
+  };
+}
+
 export function handleRoomSocketRawMessage(
   state: RoomSocketServerCoreState,
   connectionId: string,
@@ -92,6 +126,15 @@ export function handleRoomSocketRawMessage(
 
   if (!parsed.ok) {
     return protocolErrorResult(state, connectionId, parsed.code, parsed.message);
+  }
+
+  if (!connectionCanSendMessage(state, connection, parsed.message)) {
+    return protocolErrorResult(
+      state,
+      connectionId,
+      "sessionNotBound",
+      "Session is bound to another connection; resume it on this connection first.",
+    );
   }
 
   const adapterResult = handleRoomSocketMessage(state.adapter, parsed.message);
@@ -158,11 +201,22 @@ function bindRequestingConnection(
     return state;
   }
 
+  const snapshot = messages.find(
+    (message) =>
+      message.type === "roomSnapshot" &&
+      message.recipientSessionToken === accepted.recipientSessionToken,
+  );
+
   return {
     ...state,
     connections: state.connections.map((connection) => {
       if (connection.connectionId === connectionId) {
-        return { ...connection, roomId: accepted.roomId, sessionToken: accepted.recipientSessionToken };
+        return {
+          ...connection,
+          roomId: accepted.roomId,
+          sessionToken: accepted.recipientSessionToken,
+          ...(snapshot?.type === "roomSnapshot" ? { playerId: snapshot.payload.playerId } : {}),
+        };
       }
 
       if (connection.roomId === accepted.roomId && connection.sessionToken === accepted.recipientSessionToken) {
@@ -172,6 +226,28 @@ function bindRequestingConnection(
       return connection;
     }),
   };
+}
+
+function connectionCanSendMessage(
+  state: RoomSocketServerCoreState,
+  connection: RoomSocketConnection,
+  message: RoomSocketClientMessage,
+): boolean {
+  if (message.type === "createRoom" || message.type === "joinRoom" || message.type === "resumeSession") {
+    return true;
+  }
+
+  if (connection.roomId === message.roomId && connection.sessionToken === message.sessionToken) {
+    return true;
+  }
+
+  const sessionExists = state.adapter.rooms.some(
+    (room) =>
+      room.roomId === message.roomId &&
+      room.service.sessions.some((session) => session.sessionToken === message.sessionToken),
+  );
+
+  return !sessionExists;
 }
 
 function routeServerMessages(
@@ -221,6 +297,10 @@ function protocolErrorResult(
       },
     ],
   };
+}
+
+function emptyResult(state: RoomSocketServerCoreState): RoomSocketServerCoreResult {
+  return { state, outgoing: [], undelivered: [], errors: [] };
 }
 
 function isRoomSocketClientMessage(value: unknown): value is RoomSocketClientMessage {

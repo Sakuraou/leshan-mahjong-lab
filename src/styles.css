@@ -503,6 +503,13 @@ button {
   gap: 8px;
 }
 
+.preview-seat-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
 .preview-seat-card h3,
 .preview-client-card h3 {
   font-size: 14px;
@@ -517,9 +524,43 @@ button {
   font-weight: 800;
 }
 
-.preview-seat-card[data-ready="true"] span {
+.preview-seat-card[data-ready="true"] .preview-seat-badges > span:first-child {
   background: #dcefd7;
   color: #247a48;
+}
+
+.presence-badge[data-connected="false"] {
+  background: #f5e7e4;
+  color: #a33d32;
+}
+
+.presence-badge[data-connected="true"] {
+  background: #dcefd7;
+  color: #247a48;
+}
+
+.preview-presence-status,
+.preview-client-presence {
+  border-left: 3px solid #247a48;
+  padding-left: 10px;
+}
+
+.preview-presence-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  background: #f4fbef;
+}
+
+.preview-presence-status[data-connected="false"],
+.preview-client-presence[data-connected="false"] {
+  border-left-color: #a33d32;
+}
+
+.preview-presence-status[data-connected="false"] {
+  background: #fff7f5;
 }
 
 .preview-client-card > div {

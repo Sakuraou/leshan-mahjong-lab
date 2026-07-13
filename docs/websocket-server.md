@@ -343,6 +343,25 @@ the reconnect contract: client state stores only a session cursor, server state
 remains authoritative, and the response is still scoped to the recovering
 client's redacted view.
 
+## Authoritative Presence And Connection Ownership
+
+`RoomSocketConnection` now records the server-derived `roomId`, `sessionToken`,
+and `playerId`. A successful resume moves that identity to the newest
+connection and clears it from the previous one. Ordinary room actions must come
+from the currently bound connection; a stale socket cannot use a remembered
+token to reclaim the session by sending a gameplay action.
+
+The dev server delegates `close` to the testable
+`handleRoomSocketConnectionClosed` core function. Only a connection that still
+owns the session can mark it offline. The resulting `presenceChanged` event and
+redacted snapshots are routed to the remaining clients; the disconnected
+client's own snapshot is reported as undelivered.
+
+Presence does not remove gameplay state or pause response deadlines. Resume
+marks the same member and seat online, preserves the session token, and binds
+future snapshots to the newest connection. The WebSocket preview renders
+`在线`, `离线`, and `已恢复` badges plus the latest safe presence event.
+
 ## Screenshot Plan
 
 Portfolio screenshots to capture next:
@@ -383,6 +402,9 @@ countdown while the server remains authoritative.
 - Unknown-session messages becoming `undelivered` instead of being sent to the
   wrong connection.
 - Resumed sessions being rebound from stale sockets to the newest connection.
+- Stale sockets being rejected before adapter execution and stale closes not
+  overriding a newly resumed connection.
+- Latest-connection close broadcasting offline member/seat state.
 
 `tests/game/roomSocketDevServer.test.ts` covers the real `ws` wrapper path:
 
@@ -404,6 +426,8 @@ wrapper against a real local WebSocket server:
 - A new transport can call `resumeSession` with a stored `sessionToken` and
   `lastSeenEventId`, then receive missed events and a restored redacted
   snapshot.
+- A real socket close broadcasts offline presence, and a new transport restores
+  the same seat and readiness state with the original session token.
 
 The React WebSocket preview now consumes server-authoritative dingque, draw,
 discard, claim, gang, hu, score-ledger, and response-deadline snapshots while
@@ -411,6 +435,8 @@ the mock table remains available as the default portfolio-safe path.
 
 ## Next Milestone
 
-The next milestone is production hardening: heartbeat/presence tracking,
-persistent room recovery, deployment configuration for the WebSocket process,
-and extension of the settlement ledger to gang, chicken, and cha-jiao payments.
+The next milestone is production hardening: heartbeat and stale-connection
+detection, persistent room recovery, deployment configuration for the
+WebSocket process, and extension of the settlement ledger to gang, chicken,
+and cha-jiao payments. Offline kicking, bot takeover, room dissolution, and
+database persistence are not part of the current implementation.

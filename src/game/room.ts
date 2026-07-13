@@ -128,11 +128,20 @@ export type SeatState = {
   ready: boolean;
 };
 
+export type PresenceChangeReason = "connectionClosed" | "sessionResumed";
+
 export type RoomEvent =
   | { type: "roomCreated"; roomId: string }
   | { type: "playerJoined"; playerId: string; displayName: string }
   | { type: "seatTaken"; seatId: PlayerId; playerId: string }
   | { type: "readyChanged"; seatId: PlayerId; playerId: string; ready: boolean }
+  | {
+      type: "presenceChanged";
+      playerId: string;
+      seatId: PlayerId | null;
+      connected: boolean;
+      reason: PresenceChangeReason;
+    }
   | { type: "roundStarted"; dealer: PlayerId }
   | { type: "missingSuitChosen"; seatId: PlayerId; playerId: string; suit: Suit }
   | { type: "tileDrawn"; seatId: PlayerId; playerId: string }
@@ -236,6 +245,7 @@ export type ClientVisibleRoomState = {
   phase: RoundPhase | null;
   legalActions: ClientLegalAction[];
   localSeatId: PlayerId | null;
+  members: Array<RoomMember & { seatId: PlayerId | null }>;
   seats: SeatState[];
   round:
     | null
@@ -510,6 +520,54 @@ export function joinRoom(room: RoomState, input: JoinRoomInput): JoinRoomResult 
       ...room,
       members: [...room.members, { ...input, connected: true }],
       eventLog: [...room.eventLog, { type: "playerJoined", ...input }],
+    },
+  };
+}
+
+export type SetPlayerPresenceResult = {
+  room: RoomState;
+  changed: boolean;
+};
+
+export function setPlayerPresence(
+  room: RoomState,
+  playerId: string,
+  connected: boolean,
+  reason: PresenceChangeReason,
+): SetPlayerPresenceResult {
+  const member = room.members.find((value) => value.playerId === playerId);
+
+  if (member === undefined) {
+    return { room, changed: false };
+  }
+
+  const seat = room.seats.find((value) => value.playerId === playerId);
+
+  if (member.connected === connected && (seat === undefined || seat.connected === connected)) {
+    return { room, changed: false };
+  }
+
+  return {
+    changed: true,
+    room: {
+      ...room,
+      members: room.members.map((value) =>
+        value.playerId === playerId ? { ...value, connected } : value,
+      ),
+      seats:
+        seat === undefined
+          ? room.seats
+          : replaceSeat(room.seats, seat.seatId, { ...seat, connected }),
+      eventLog: [
+        ...room.eventLog,
+        {
+          type: "presenceChanged",
+          playerId,
+          seatId: seat?.seatId ?? null,
+          connected,
+          reason,
+        },
+      ],
     },
   };
 }
@@ -1525,6 +1583,10 @@ export function toClientVisibleRoomState(
     phase: room.phase,
     legalActions: clientLegalActions(room, localSeatId),
     localSeatId,
+    members: room.members.map((member) => ({
+      ...member,
+      seatId: room.seats.find((seat) => seat.playerId === member.playerId)?.seatId ?? null,
+    })),
     seats: room.seats,
     round:
       room.round === null
