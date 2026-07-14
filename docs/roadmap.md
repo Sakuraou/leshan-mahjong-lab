@@ -1,5 +1,10 @@
 # Roadmap
 
+Product direction: the final deliverable is a mobile Mahjong App. The current
+Vite/React Web client is the rule, multiplayer-protocol, privacy, and portfolio
+validation surface; mobile clients should reuse the same authoritative
+snapshots and `legalActions` instead of reimplementing game rules.
+
 ## Phase 0: Repository Setup
 
 - [x] Create portfolio-oriented README
@@ -141,11 +146,32 @@ server authoritative.
   player's highest discard-hu result, settle every non-listener/listener pair
   with a 64-point cap, exclude prior winners, and hide waits/decompositions
   until the terminal snapshot
+- [x] Make discard and qiang-gang responses private per session, expose only
+  own response plus pending count, and atomically publish winners, melds,
+  ledgers, and events when the window resolves
+- [x] Accept peng/ming-gang candidates privately so `legalActions` cannot leak
+  another player's hu opportunity
+- [x] Prevent superseded WebSocket connections from reclaiming a session with a
+  delayed resume message
 - Wrap `roomSocketAdapter` with a production-ready WebSocket server entry
 - Connect table UI to WebSocket room snapshots
 - [x] Add reconnect with a local session token
 
-## Phase 5: Portfolio Polish
+## Phase 5: Mobile App Client
+
+Goal: turn the validated rule engine and realtime protocol into the actual
+phone-first product.
+
+- Choose the mobile shell after the Web MVP stabilizes, with Expo/React Native
+  as the current leading option
+- Extract shared protocol and game-display types into a mobile-safe package
+- Build phone-first room, table, hand, action, reconnect, and settlement screens
+- Add touch interactions, safe-area handling, vibration/audio feedback, and
+  foreground/background recovery
+- Test Android and iOS layouts plus weak-network reconnect behavior
+- Package an installable beta build
+
+## Phase 6: Portfolio Polish
 
 Goal: make the project easy to understand in a resume or personal homepage.
 
@@ -155,11 +181,11 @@ Goal: make the project easy to understand in a resume or personal homepage.
 - Deploy to Vercel
 - Link from personal homepage
 
-## Phase 6: Advanced Features
+## Phase 7: Advanced Features
 
 Optional after the MVP:
 
 - More accurate Leshan local scoring
 - AI opponents
 - User accounts and match history
-- Expo mobile version
+- User profiles and cross-device account recovery

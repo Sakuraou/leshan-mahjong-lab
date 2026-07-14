@@ -266,6 +266,24 @@ test("rebinds a resumed session to the newest connection", () => {
     },
   ]);
   assert.equal(staleAction.state, result.state);
+
+  const staleResume = handleRoomSocketRawMessage(
+    result.state,
+    "conn-host",
+    JSON.stringify({
+      protocolVersion: 1,
+      clientMessageId: "m-stale-resume",
+      roomId: "server-room-resume-route",
+      sessionToken: "session-1",
+      type: "resumeSession",
+      payload: { lastSeenEventId: 0 },
+    } satisfies RoomSocketClientMessage),
+  );
+  assert.equal(staleResume.state, result.state);
+  assert.equal(staleResume.outgoing.length, 0);
+  assert.deepEqual(staleResume.errors.map((error) => error.payload.code), ["sessionNotBound"]);
+  assert.equal(sessionFor(staleResume.state, "conn-host"), undefined);
+  assert.equal(sessionFor(staleResume.state, "conn-resumed"), "session-1");
 });
 
 test("only closing the latest session connection broadcasts offline presence", () => {

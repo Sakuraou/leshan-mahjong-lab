@@ -686,6 +686,43 @@ hand and continue pursuing more dragons.
 This matches the frontend client-perspective switcher: changing perspective
 should only change which hand is visible, not the authoritative game state.
 
+## Private Responses And Atomic Publication
+
+Discard-claim and qiang-gang choices are server-private until their window is
+resolved. Internal room state may retain responder seat ids, pass choices, hu
+claims, and pending peng or ming-gang candidates, but none of those collections
+cross the client boundary.
+
+Each session receives only this response projection:
+
+```ts
+type ClientVisibleResponseState = {
+  pendingResponderCount: number;
+  hasRespondedByMe: boolean;
+  responseByMe: "pass" | "hu" | "peng" | "mingGang" | null;
+};
+```
+
+The specific claim-window DTOs add only public context such as the discarded
+tile or ba-gang declarer. They never contain `pendingPlayerIds`,
+`passedPlayerIds`, `huClaims`, private meld candidates, or the internal peng
+meld index. A responder sees their own accepted choice; every other session
+sees only the remaining count.
+
+Before resolution, an accepted response does not change public `hasWon`, melds,
+scores, settlement rows, or `eventLog`. When all required responses arrive or
+the deadline expires, the server resolves the window once: hu claims win over
+peng/ming-gang candidates, multi-hu winners are applied together, ledger rows
+are written as one batch, and final response plus close events become public.
+If nobody hu claims, the first accepted legal peng/ming-gang candidate preserves
+the existing server action ordering and is committed at resolution.
+
+`legalActions` is also session-scoped. A player's own peng/ming-gang action is
+not removed merely because another session can hu or has privately claimed hu;
+this prevents button availability from becoming a hidden-response side channel.
+The same DTO can be consumed unchanged by the current Web client and a future
+mobile App.
+
 ## Authoritative Response Deadlines
 
 Every discard-claim and qiang-gang window receives a stable `windowId`, an
@@ -800,7 +837,9 @@ type PresenceChangedEvent = {
 Normal authenticated actions are accepted only from the connection currently
 bound to that room and session. An older connection receives the core protocol
 error `sessionNotBound`; its later `close` event cannot mark the resumed player
-offline. Invalid tokens still return `invalidSession`.
+offline. Once superseded, that old connection also cannot send a delayed
+`resumeSession` to reclaim the same token; recovery requires a new connection.
+Invalid tokens still return `invalidSession`.
 
 Disconnected players remain subject to authoritative claim deadlines, so an
 offline responder is automatically passed when the window expires.

@@ -181,6 +181,25 @@ authoritative deadlines eventually treat their missing response as a pass, so
 transport failure cannot block the round. No heartbeat timestamp, timer,
 connection id, or session token is copied into `ClientVisibleRoomState`.
 
+### Private Response Projection
+
+`RoomState` keeps response details as server-only facts. Pass, hu, peng, and
+ming-gang choices do not enter the public event log or mutate public winners,
+melds, scores, or ledger rows while a response window remains open.
+
+`toClientVisibleRoomState` derives a per-session projection containing only
+`pendingResponderCount`, `hasRespondedByMe`, and `responseByMe`, plus public
+window context. It omits responder seat arrays, other players' choices, hu
+scores, and pending meld material. `resumeRoomSession` uses the same projection,
+so reconnecting restores only that session's own response. Its missed-event
+cursor cannot replay private choices because private choices were never events.
+
+At resolution, the room reducer applies hu priority, multi-winner state, meld
+outcomes, settlement entries, and public events in one transition. Pending peng
+and ming-gang actions are accepted privately so `legalActions` cannot reveal
+another player's hu opportunity. This service contract is UI-independent and
+is intended to be shared by both Web and future mobile clients.
+
 ## Action Flow
 
 ```text
@@ -303,6 +322,10 @@ lookup, event ids, and redacted room views.
 - Seven-pairs dragon roots are included in the tier multiplier, so the service
   sends `genCount: 0` for those candidates. Hu availability adds a legal action
   but never changes `hasWon` until the player explicitly claims.
+- Open response windows expose only a session's own accepted choice and a
+  remaining responder count. Other response identities, hu claims, meld
+  candidates, winner flags, and response events become public only when the
+  authoritative window resolves.
 - WebSocket heartbeat and stale-connection detection live in the server core;
   the service receives only connected/disconnected transitions.
 - State is in memory only. Restarting the server would lose rooms.

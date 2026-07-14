@@ -16,6 +16,7 @@ export type RoomSocketConnection = {
   roomId?: string;
   sessionToken?: string;
   playerId?: string;
+  supersededSessionTokens?: string[];
 };
 
 export type RoomSocketServerCoreState = {
@@ -269,7 +270,14 @@ function bindRequestingConnection(
       }
 
       if (connection.roomId === accepted.roomId && connection.sessionToken === accepted.recipientSessionToken) {
-        return { connectionId: connection.connectionId, lastSeenAt: connection.lastSeenAt };
+        return {
+          connectionId: connection.connectionId,
+          lastSeenAt: connection.lastSeenAt,
+          supersededSessionTokens: [
+            ...(connection.supersededSessionTokens ?? []),
+            accepted.recipientSessionToken,
+          ],
+        };
       }
 
       return connection;
@@ -282,8 +290,12 @@ function connectionCanSendMessage(
   connection: RoomSocketConnection,
   message: RoomSocketClientMessage,
 ): boolean {
-  if (message.type === "createRoom" || message.type === "joinRoom" || message.type === "resumeSession") {
+  if (message.type === "createRoom" || message.type === "joinRoom") {
     return true;
+  }
+
+  if (message.type === "resumeSession") {
+    return !(connection.supersededSessionTokens ?? []).includes(message.sessionToken);
   }
 
   if (connection.roomId === message.roomId && connection.sessionToken === message.sessionToken) {

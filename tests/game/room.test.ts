@@ -328,7 +328,7 @@ test("discards a tile for the current seated player after dingque is complete", 
     type: "claimWindowOpened",
     discardedBySeatId: 0,
     tile: discard,
-    pendingPlayerIds: [1, 2, 3],
+    pendingResponderCount: 3,
   });
   assert.equal(result.room.claimWindow?.nextPlayer, 1);
   assert.equal(result.room.phase, "claim");
@@ -340,7 +340,7 @@ test("discards a tile for the current seated player after dingque is complete", 
   assert.equal(visibleToP2.round?.players[0].hand, null);
   assert.equal(visibleToP2.round?.players[0].handCount, 13);
   assert.deepEqual(visibleToP2.round?.players[0].discards, [discard]);
-  assert.equal(visibleToP2.claimWindow?.pendingPlayerIds.length, 3);
+  assert.equal(visibleToP2.claimWindow?.pendingResponderCount, 3);
 });
 
 test("rejects discard before start, before dingque, out of turn, and outside discard phase", () => {
@@ -431,6 +431,9 @@ test("expires an unanswered discard window at the injected deadline and remains 
     deadlineAt: 108_000,
     remainingMs: 7_500,
     status: "open",
+    pendingResponderCount: 3,
+    hasRespondedByMe: false,
+    responseByMe: null,
   });
 
   const early = tickRoomStateDeadlines(discarded.room, 107_999);
@@ -477,6 +480,10 @@ test("keeps single and multiple discard hu claims when the remaining players tim
       assert.equal(result.ok, true);
       return result.ok ? result.room : nextRoom;
     }, discarded.room);
+    assert.equal(claimed.round?.players.slice(1).every((player) => !player.hasWon), true);
+    assert.equal(claimed.eventLog.some((event) => event.type === "huClaimed"), false);
+    assert.equal(toClientVisibleRoomState(claimed, "p2").claimWindow?.responseByMe, "hu");
+    assert.equal(toClientVisibleRoomState(claimed, "p4").claimWindow?.responseByMe, null);
     const expired = tickRoomStateDeadlines(claimed, 6_000);
 
     assert.equal(expired.changed, true);
@@ -507,25 +514,31 @@ test("lets a player claim discard hu from the claim window", () => {
     return;
   }
 
-  assert.equal(claimed.room.round?.players[1].hasWon, true);
-  assert.deepEqual(claimed.room.round?.players[1].claimedWinningTile, {
-    tile: discard,
-    source: "discard",
-    sourceWindowId: discarded.room.claimWindow?.windowId,
-    responsibleSeatId: 0,
-    responsiblePlayerId: "p1",
-  });
+  assert.equal(claimed.room.round?.players[1].hasWon, false);
+  assert.equal(claimed.room.round?.players[1].claimedWinningTile, null);
   assert.equal(claimed.room.claimWindow?.huClaims[0].seatId, 1);
   assert.deepEqual(claimed.room.settlementLedger, []);
-  assert.deepEqual(claimed.room.eventLog.at(-1), {
-    type: "huClaimed",
-    seatId: 1,
-    playerId: "p2",
+  assert.equal(claimed.room.eventLog.some((event) => event.type === "huClaimed"), false);
+
+  const winnerView = toClientVisibleRoomState(claimed.room, "p2");
+  const thirdPartyView = toClientVisibleRoomState(claimed.room, "p3");
+  assert.deepEqual(winnerView.claimWindow, {
+    windowId: discarded.room.claimWindow?.windowId,
+    deadlineAt: discarded.room.claimWindow?.deadlineAt,
+    status: "open",
+    discardedBySeatId: 0,
+    discardedByPlayerId: "p1",
     tile: discard,
-    patterns: ["pingHu", "wuJi", "qingYiSe"],
-    genCount: 0,
-    points: 16,
+    pendingResponderCount: 2,
+    hasRespondedByMe: true,
+    responseByMe: "hu",
   });
+  assert.equal(thirdPartyView.claimWindow?.pendingResponderCount, 2);
+  assert.equal(thirdPartyView.claimWindow?.hasRespondedByMe, false);
+  assert.equal(thirdPartyView.claimWindow?.responseByMe, null);
+  assert.equal(thirdPartyView.round?.players[1].hasWon, false);
+  assert.equal(JSON.stringify(thirdPartyView).includes("huClaims"), false);
+  assert.equal(JSON.stringify(thirdPartyView).includes("passedPlayerIds"), false);
 });
 
 test("continues blood battle by skipping a player who claimed discard hu", () => {
@@ -592,7 +605,7 @@ test("continues blood battle by skipping a player who claimed discard hu", () =>
   assert.equal(winnerView.round?.players[0].hand, null);
 });
 
-test("keeps hu priority over peng while a hu-capable player is unresolved", () => {
+test("keeps peng private while a hu-capable player is unresolved and resolves hu first", () => {
   const { room, discard } = readyRoomForHuPriority();
   const discarded = discardRoomTile(room, "p1", discard);
 
@@ -602,10 +615,24 @@ test("keeps hu priority over peng while a hu-capable player is unresolved", () =
     return;
   }
 
-  assert.deepEqual(claimPeng(discarded.room, "p3"), {
-    ok: false,
-    reason: "cannotPeng",
-  });
+  const peng = claimPeng(discarded.room, "p3");
+  assert.equal(peng.ok, true);
+  if (!peng.ok) return;
+
+  assert.equal(peng.room.round?.players[2].melds.length, 0);
+  assert.equal(peng.room.eventLog.some((event) => event.type === "pengClaimed"), false);
+  assert.equal(toClientVisibleRoomState(peng.room, "p3").claimWindow?.responseByMe, "peng");
+  assert.equal(toClientVisibleRoomState(peng.room, "p2").claimWindow?.responseByMe, null);
+  assert.equal(toClientVisibleRoomState(peng.room, "p2").legalActions.includes("claimHu"), true);
+
+  const hu = claimHu(peng.room, "p2");
+  assert.equal(hu.ok, true);
+  if (!hu.ok) return;
+  assert.equal(hu.room.claimWindow, null);
+  assert.equal(hu.room.round?.players[1].hasWon, true);
+  assert.equal(hu.room.round?.players[2].melds.length, 0);
+  assert.equal(hu.room.eventLog.some((event) => event.type === "pengClaimed"), false);
+  assert.equal(hu.room.eventLog.some((event) => event.type === "huClaimed"), true);
 });
 
 test("records multiple discard hu claims before closing the claim window", () => {
@@ -790,6 +817,11 @@ test("lets a seven-pairs discard winner pass and keep playing", () => {
   if (!passed.ok) return;
   assert.equal(passed.room.round?.players[1].hasWon, false);
   assert.equal(passed.room.claimWindow?.passedPlayerIds.includes(1), true);
+  const responderViewAfterPass = toClientVisibleRoomState(passed.room, "p2");
+  const observerViewAfterPass = toClientVisibleRoomState(passed.room, "p3");
+  assert.equal(responderViewAfterPass.claimWindow?.responseByMe, "pass");
+  assert.equal(observerViewAfterPass.claimWindow?.responseByMe, null);
+  assert.equal(observerViewAfterPass.claimWindow?.pendingResponderCount, 2);
 });
 
 test("marks wall-empty round end with authoritative cha jiao results", () => {
@@ -1777,6 +1809,16 @@ test("keeps the original peng when one player claims qiang gang hu", () => {
   const hu = claimQiangGangHu(declared.room, "p2");
   assert.equal(hu.ok, true);
   if (!hu.ok) return;
+  assert.equal(hu.room.round?.players[1].hasWon, false);
+  assert.deepEqual(hu.room.settlementLedger, []);
+  assert.equal(hu.room.eventLog.some((event) => event.type === "qiangGangHuClaimed"), false);
+  const huResponderView = toClientVisibleRoomState(hu.room, "p2");
+  const huObserverView = toClientVisibleRoomState(hu.room, "p3");
+  assert.equal(huResponderView.baGangClaimWindow?.responseByMe, "hu");
+  assert.equal(huObserverView.baGangClaimWindow?.responseByMe, null);
+  assert.equal(huObserverView.round?.players[1].hasWon, false);
+  assert.equal(JSON.stringify(huObserverView).includes("huClaims"), false);
+  assert.equal(JSON.stringify(huObserverView).includes("passedPlayerIds"), false);
   const p3Passed = passQiangGang(hu.room, "p3");
   assert.equal(p3Passed.ok, true);
   if (!p3Passed.ok) return;
@@ -1912,6 +1954,10 @@ test("keeps qiang gang hu claims when remaining responders time out", () => {
       assert.equal(result.ok, true);
       return result.ok ? result.room : nextRoom;
     }, declared.room);
+    assert.equal(claimed.round?.players.slice(1).every((player) => !player.hasWon), true);
+    assert.equal(claimed.eventLog.some((event) => event.type === "qiangGangHuClaimed"), false);
+    assert.equal(toClientVisibleRoomState(claimed, "p2").baGangClaimWindow?.responseByMe, "hu");
+    assert.equal(toClientVisibleRoomState(claimed, "p4").baGangClaimWindow?.responseByMe, null);
     const expired = tickRoomStateDeadlines(claimed, 23_000);
 
     assert.equal(expired.changed, true);

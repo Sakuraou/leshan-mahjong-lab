@@ -187,9 +187,9 @@ test("discards through the authoritative service and returns a redacted view", (
   assert.deepEqual(discarded.view.legalActions, []);
   assert.deepEqual(discarded.events, [
     { type: "tileDiscarded", seatId: 0, playerId: "player-1", tile: prepared.discard },
-    { type: "claimWindowOpened", discardedBySeatId: 0, tile: prepared.discard, pendingPlayerIds: [1, 2, 3] },
+    { type: "claimWindowOpened", discardedBySeatId: 0, tile: prepared.discard, pendingResponderCount: 3 },
   ]);
-  assert.equal(discarded.view.claimWindow?.pendingPlayerIds.length, 3);
+  assert.equal(discarded.view.claimWindow?.pendingResponderCount, 3);
 });
 
 test("ticks authoritative room deadlines with an injected clock", () => {
@@ -501,6 +501,48 @@ test("keeps an offline responder in the authoritative deadline flow", () => {
     timedOutPlayerIds: [1],
     outcome: "allPassed",
   });
+});
+
+test("restores only the current session's private claim response", () => {
+  const prepared = prepareServiceForDealerDiscard("svc-room-private-resume");
+  const discarded = handleOk(prepared.service, prepared.sessions[0].sessionToken, {
+    type: "discardTile",
+    tile: prepared.discard,
+  });
+  const passed = handleOk(discarded.service, prepared.sessions[1].sessionToken, { type: "passClaim" });
+
+  assert.deepEqual(passed.events, []);
+  assert.equal(passed.view.claimWindow?.responseByMe, "pass");
+  const observerView = getClientRoomView(passed.service, prepared.sessions[2].sessionToken);
+  assert.equal(observerView.ok, true);
+  if (!observerView.ok) return;
+  assert.equal(observerView.view.claimWindow?.responseByMe, null);
+
+  const disconnected = markSessionDisconnected(passed.service, prepared.sessions[1].sessionToken);
+  assert.equal(disconnected.ok, true);
+  if (!disconnected.ok) return;
+  const responderResume = resumeRoomSession(disconnected.service, {
+    sessionToken: prepared.sessions[1].sessionToken,
+    lastSeenEventId: passed.lastEventId,
+  });
+  assert.equal(responderResume.ok, true);
+  if (!responderResume.ok) return;
+  assert.equal(responderResume.view.claimWindow?.responseByMe, "pass");
+  assert.equal(
+    responderResume.missedEvents.some((event) => event.type === "claimPassed" || event.type === "huClaimed"),
+    false,
+  );
+
+  const observerResume = resumeRoomSession(responderResume.service, {
+    sessionToken: prepared.sessions[2].sessionToken,
+    lastSeenEventId: passed.lastEventId,
+  });
+  assert.equal(observerResume.ok, true);
+  if (!observerResume.ok) return;
+  assert.equal(observerResume.view.claimWindow?.responseByMe, null);
+  assert.equal(observerResume.view.claimWindow?.pendingResponderCount, 2);
+  assert.equal(JSON.stringify(observerResume.view).includes("passedPlayerIds"), false);
+  assert.equal(JSON.stringify(observerResume.view).includes("huClaims"), false);
 });
 
 function fillReadyService(roomId: string): { service: RoomServiceState; sessions: RoomSession[] } {

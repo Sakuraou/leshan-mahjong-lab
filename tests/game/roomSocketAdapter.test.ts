@@ -261,9 +261,41 @@ test("maps discardTile and broadcasts redacted snapshots to every session", () =
   });
   assert.deepEqual(snapshots[0].payload.events, [
     { type: "tileDiscarded", seatId: 0, playerId: "player-1", tile: prepared.discard },
-    { type: "claimWindowOpened", discardedBySeatId: 0, tile: prepared.discard, pendingPlayerIds: [1, 2, 3] },
+    { type: "claimWindowOpened", discardedBySeatId: 0, tile: prepared.discard, pendingResponderCount: 3 },
   ]);
-  assert.equal(snapshots[1].payload.view.claimWindow?.pendingPlayerIds.length, 3);
+  assert.equal(snapshots[1].payload.view.claimWindow?.pendingResponderCount, 3);
+});
+
+test("broadcasts only each session's own private claim response", () => {
+  const prepared = prepareAdapterForDealerDiscard("socket-room-private-claim");
+  const discarded = dispatch(prepared.adapter, {
+    protocolVersion: 1,
+    clientMessageId: "m-private-discard",
+    roomId: "socket-room-private-claim",
+    sessionToken: prepared.sessions[0],
+    type: "discardTile",
+    payload: { tile: prepared.discard },
+  });
+  const passed = dispatch(discarded.adapter, {
+    protocolVersion: 1,
+    clientMessageId: "m-private-pass",
+    roomId: "socket-room-private-claim",
+    sessionToken: prepared.sessions[1],
+    type: "passClaim",
+    payload: {},
+  });
+  const snapshots = snapshotMessages(passed.messages);
+  const responder = snapshots.find((message) => message.payload.playerId === "player-2")!;
+  const observer = snapshots.find((message) => message.payload.playerId === "player-3")!;
+
+  assert.equal(passed.messages[0].type, "actionAccepted");
+  assert.equal(responder.payload.view.claimWindow?.responseByMe, "pass");
+  assert.equal(observer.payload.view.claimWindow?.responseByMe, null);
+  assert.equal(observer.payload.view.claimWindow?.pendingResponderCount, 2);
+  assert.equal(snapshots.every((message) => message.payload.events.length === 0), true);
+  assert.equal(JSON.stringify(snapshots).includes("passedPlayerIds"), false);
+  assert.equal(JSON.stringify(snapshots).includes("huClaims"), false);
+  assert.equal(JSON.stringify(snapshots).includes("pendingPlayerIds"), false);
 });
 
 test("broadcasts identical redacted snapshots when a server deadline tick expires a window", () => {

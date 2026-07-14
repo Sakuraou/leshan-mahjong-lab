@@ -358,6 +358,11 @@ connection and clears it from the previous one. Ordinary room actions must come
 from the currently bound connection; a stale socket cannot use a remembered
 token to reclaim the session by sending a gameplay action.
 
+The cleared connection is marked internally as superseded for that session.
+It cannot race the current owner with a delayed `resumeSession`; only a newly
+registered connection may recover the token again. Superseded-token metadata
+stays inside the server core and never enters a room snapshot.
+
 The dev server delegates `close` to the testable
 `handleRoomSocketConnectionClosed` core function. Only a connection that still
 owns the session can mark it offline. The resulting `presenceChanged` event and
@@ -395,6 +400,20 @@ offline players.
 Heartbeat timestamps, connection ids, timer handles, and session tokens stay
 inside the server process. `roomSnapshot` contains only the redacted player
 view, safe player id, event cursor, server time, and visible events.
+
+## Private Response Routing
+
+The adapter still broadcasts a fresh snapshot after each accepted response,
+but it builds that snapshot independently for every session. The responder sees
+their own `responseByMe`; all other clients see only
+`pendingResponderCount`. Serialized snapshots contain no `pendingPlayerIds`,
+`passedPlayerIds`, `huClaims`, or private peng/ming-gang candidate data.
+
+While the window is open, no public claim/pass event, winner flag, score change,
+or settlement row is emitted. Deadline and all-response resolution publish the
+final outcome atomically. This keeps reconnect snapshots and missed-event replay
+on the same privacy boundary and gives a future mobile client the same protocol
+contract as the Web preview.
 
 ## Qiang-Gang Three-Chicken Liability
 
@@ -499,6 +518,10 @@ countdown while the server remains authoritative.
 - Resumed sessions being rebound from stale sockets to the newest connection.
 - Stale sockets being rejected before adapter execution and stale closes not
   overriding a newly resumed connection.
+- Superseded sockets being unable to reclaim the same session with a delayed
+  `resumeSession`.
+- Per-session response snapshots exposing only the current client's choice,
+  while response events and winner state remain private until resolution.
 - Latest-connection close broadcasting offline member/seat state.
 - Injected-clock pong refresh, timeout boundaries, idempotent repeated health
   ticks, and stale old-connection timeouts after session recovery.

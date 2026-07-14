@@ -1009,7 +1009,7 @@ function WebSocketPreviewClientCard({
         抢杠状态：
         {baGangClaimWindow === null
           ? "暂无抢杠胡窗口"
-          : `等待抢 ${tileText(baGangClaimWindow.tile)}；已过 ${baGangClaimWindow.passedPlayerIds.length} 人，已胡 ${baGangClaimWindow.huClaims.length} 人`}
+          : `等待抢 ${tileText(baGangClaimWindow.tile)}；剩余 ${baGangClaimWindow.pendingResponderCount} 人响应；${baGangClaimWindow.hasRespondedByMe ? `我的选择：${clientResponseText(baGangClaimWindow.responseByMe, true)}` : "我尚未响应"}`}
       </p>
       <p>胡优先：{claimWindow === null ? "暂无响应窗口" : huPriorityActive ? "胡牌响应优先，碰/明杠暂时不可用" : "暂无胡牌优先锁定"}</p>
       <p>胡牌提示：{webSocketClaimHuHint(localClaimHuCheck, canPassClaim)}</p>
@@ -1193,7 +1193,7 @@ function webSocketDiscardHint(
 
 function webSocketClaimHint(
   snapshot: ClientVisibleRoomState | null,
-  localSeat: PlayerId | null | undefined,
+  _localSeat: PlayerId | null | undefined,
 ): string {
   const claimWindow = snapshot?.claimWindow ?? null;
 
@@ -1201,23 +1201,25 @@ function webSocketClaimHint(
     return "暂无响应窗口";
   }
 
-  const pendingText = claimWindow.pendingPlayerIds.map((seatId) => `玩家 ${seatId + 1}`).join("、");
-  const passedText =
-    claimWindow.passedPlayerIds.length === 0
-      ? "暂无"
-      : claimWindow.passedPlayerIds.map((seatId) => `玩家 ${seatId + 1}`).join("、");
-  const huText =
-    claimWindow.huClaims.length === 0
-      ? "暂无胡牌响应"
-      : `已胡：${claimWindow.huClaims.map((claim) => `玩家 ${claim.seatId + 1}`).join("、")}`;
-
-  if (localSeat !== null && localSeat !== undefined && claimWindow.pendingPlayerIds.includes(localSeat)) {
-    return claimWindow.passedPlayerIds.includes(localSeat)
-      ? `已过牌，等待其他玩家响应；已过：${passedText}`
-      : `你可以响应 ${tileText(claimWindow.tile)}，胡牌优先；待响应：${pendingText}；${huText}`;
+  if (claimWindow.hasRespondedByMe) {
+    return `你已选择${clientResponseText(claimWindow.responseByMe)}，等待剩余 ${claimWindow.pendingResponderCount} 人响应`;
   }
 
-  return `等待 ${pendingText} 响应 ${tileText(claimWindow.tile)}；已过：${passedText}；${huText}`;
+  if (snapshot?.legalActions.includes("passClaim")) {
+    return `你可以响应 ${tileText(claimWindow.tile)}，胡牌优先；剩余 ${claimWindow.pendingResponderCount} 人`;
+  }
+
+  return `等待其他客户端响应 ${tileText(claimWindow.tile)}；剩余 ${claimWindow.pendingResponderCount} 人`;
+}
+
+function clientResponseText(
+  response: "pass" | "hu" | "peng" | "mingGang" | null,
+  qiangGang = false,
+): string {
+  if (response === "hu") return qiangGang ? "抢杠胡" : "胡牌";
+  if (response === "peng") return "碰牌";
+  if (response === "mingGang") return "明杠";
+  return "过牌";
 }
 
 function getLocalClaimHuCheck(
@@ -1236,7 +1238,7 @@ function getLocalClaimHuCheck(
 
   const localPlayer = snapshot.round.players[localSeat];
 
-  if (localPlayer.hand === null || !snapshot.claimWindow.pendingPlayerIds.includes(localSeat)) {
+  if (localPlayer.hand === null || !snapshot.legalActions.includes("passClaim")) {
     return null;
   }
 
@@ -1315,23 +1317,7 @@ function webSocketClaimHuHint(check: ReturnType<typeof checkDiscardHu> | null, c
 }
 
 function claimWindowHasHuPriority(snapshot: ClientVisibleRoomState | null): boolean {
-  const claimWindow = snapshot?.claimWindow ?? null;
-
-  if (claimWindow === null) {
-    return false;
-  }
-
-  if (claimWindow.huClaims.length > 0) {
-    return true;
-  }
-
-  return claimWindow.pendingPlayerIds.some((seatId) => {
-    if (claimWindow.passedPlayerIds.includes(seatId) || claimWindow.huClaims.some((claim) => claim.seatId === seatId)) {
-      return false;
-    }
-
-    return getLocalClaimHuCheck(snapshot, seatId)?.canHu ?? false;
-  });
+  return snapshot?.claimWindow !== null && snapshot?.claimWindow !== undefined;
 }
 
 function getActiveAnGangCandidates(
@@ -1986,12 +1972,8 @@ function WebSocketExperimentPanel({
 
     if (result.ok) {
       await waitForWebSocketView(transport, playerId, (view) => {
-        const seatId = view.localSeatId;
-        return (
-          view.claimWindow === null ||
-          (seatId !== null &&
-            seatId !== undefined &&
-            view.claimWindow.passedPlayerIds.includes(seatId))
+        return view.claimWindow === null || (
+          view.claimWindow.hasRespondedByMe && view.claimWindow.responseByMe === "pass"
         );
       }).catch(() => undefined);
       setWebSocketStep("claim", "success", `${playerId} 已由服务端确认过牌。`);
@@ -2018,12 +2000,8 @@ function WebSocketExperimentPanel({
 
     if (result.ok) {
       await waitForWebSocketView(transport, playerId, (view) => {
-        const seatId = view.localSeatId;
-        return (
-          view.claimWindow === null ||
-          (seatId !== null &&
-            seatId !== undefined &&
-            (view.round?.players[seatId].hasWon ?? false))
+        return view.claimWindow === null || (
+          view.claimWindow.hasRespondedByMe && view.claimWindow.responseByMe === "hu"
         );
       }).catch(() => undefined);
       setWebSocketStep("claim", "success", `${playerId} 已由服务端确认点炮胡。`);
@@ -2179,10 +2157,8 @@ function WebSocketExperimentPanel({
 
     if (result.ok) {
       await waitForWebSocketView(transport, playerId, (view) => {
-        const seatId = view.localSeatId;
-        return (
-          view.baGangClaimWindow === null ||
-          (seatId !== null && seatId !== undefined && view.baGangClaimWindow.passedPlayerIds.includes(seatId))
+        return view.baGangClaimWindow === null || (
+          view.baGangClaimWindow.hasRespondedByMe && view.baGangClaimWindow.responseByMe === "pass"
         );
       }).catch(() => undefined);
       setWebSocketStep("claim", "success", `${playerId} 已由服务端确认抢杠过牌。`);
@@ -2209,8 +2185,9 @@ function WebSocketExperimentPanel({
 
     if (result.ok) {
       await waitForWebSocketView(transport, playerId, (view) => {
-        const seatId = view.localSeatId;
-        return seatId !== null && seatId !== undefined && (view.round?.players[seatId].hasWon ?? false);
+        return view.baGangClaimWindow === null || (
+          view.baGangClaimWindow.hasRespondedByMe && view.baGangClaimWindow.responseByMe === "hu"
+        );
       }).catch(() => undefined);
       setWebSocketStep("claim", "success", `${playerId} 已由服务端确认抢杠胡。`);
     } else {
@@ -3269,7 +3246,7 @@ function roomEventText(event: RoomEvent, room: RoomState): string {
     case "tileDiscarded":
       return `${roomPlayerName(room, event.playerId)} 打出 ${tileText(event.tile)}。`;
     case "claimWindowOpened":
-      return `等待玩家 ${event.pendingPlayerIds.map((seatId) => seatId + 1).join("、")} 响应 ${tileText(event.tile)}。`;
+      return `等待 ${event.pendingResponderCount} 位玩家响应 ${tileText(event.tile)}。`;
     case "claimPassed":
       return `${roomPlayerName(room, event.playerId)} 过牌。`;
     case "huClaimed":
