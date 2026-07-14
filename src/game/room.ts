@@ -49,6 +49,9 @@ export type RoomStatus = "waiting" | "dingque" | "playing" | "ended";
 export type RoundPhase = "dingque" | "draw" | "discard" | "claim" | "gangDraw" | "qiangGang" | "ended";
 
 export type ClientLegalAction =
+  | "takeSeat"
+  | "toggleReady"
+  | "startRound"
   | "chooseMissingSuit"
   | "drawTile"
   | "drawGangTile"
@@ -1879,6 +1882,20 @@ export function toClientVisibleRoomEvent(
 }
 
 function clientLegalActions(room: RoomState, localSeatId: PlayerId | null): ClientLegalAction[] {
+  if (room.status === "waiting") {
+    if (localSeatId === null) {
+      return ["takeSeat"];
+    }
+
+    const actions: ClientLegalAction[] = ["toggleReady"];
+
+    if (room.seats.every((seat) => seat.playerId !== null && seat.ready)) {
+      actions.push("startRound");
+    }
+
+    return actions;
+  }
+
   if (localSeatId === null || room.round === null || room.phase === null || room.phase === "ended") {
     return [];
   }

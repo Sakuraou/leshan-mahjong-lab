@@ -6,6 +6,7 @@ import type {
   Suit,
   Tile,
 } from "./game/index.ts";
+import type { RoomClientTransport } from "@leshan-mahjong/client-core";
 
 export type WebSocketRoomTransportState = {
   url: string;
@@ -49,9 +50,16 @@ export type WebSocketRoomTransport = {
   close: () => void;
 };
 
+type AssertSharedTransport<T extends true> = T;
+type WebSocketTransportMatchesSharedContract = AssertSharedTransport<
+  WebSocketRoomTransport extends RoomClientTransport ? true : false
+>;
+
 export type WebSocketRoomTransportActionResult =
   | {
       ok: true;
+      playerId: string;
+      sessionToken: string;
       clientMessageId: string;
       acceptedMessage: Extract<RoomSocketServerMessage, { type: "actionAccepted" }>;
       state: WebSocketRoomTransportState;
@@ -396,6 +404,8 @@ function waitForActionResult(
       if (message.type === "actionAccepted") {
         resolve({
           ok: true,
+          playerId: message.payload.playerId,
+          sessionToken: message.recipientSessionToken,
           clientMessageId,
           acceptedMessage: message,
           state: getState(),

@@ -171,8 +171,10 @@ function waitForListening(server: WebSocketServer): Promise<void> {
 }
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const port = Number.parseInt(process.env.PORT ?? "8787", 10);
+  const port = Number.parseInt(readCliOption("--port") ?? process.env.PORT ?? "8787", 10);
+  const host = readCliOption("--host") ?? process.env.HOST ?? "127.0.0.1";
   const server = await createRoomSocketDevServer({
+    host,
     port,
     onLog: (message) => console.log(`[room-ws] ${message}`),
     onUndelivered: (message) =>
@@ -180,4 +182,9 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
   });
 
   console.log(`[room-ws] listening on ${server.url}`);
+}
+
+function readCliOption(name: string): string | undefined {
+  const index = process.argv.indexOf(name);
+  return index === -1 ? undefined : process.argv[index + 1];
 }

@@ -167,6 +167,17 @@ Run it locally with:
 npm run dev:server
 ```
 
+For an Expo client running on a physical phone on the same network, bind the
+development server to all local interfaces:
+
+```bash
+npm run dev:server:lan
+```
+
+Then enter `ws://<computer-LAN-IP>:8787` in the mobile client. Android Emulator
+uses `ws://10.0.2.2:8787`; a same-host simulator can use
+`ws://127.0.0.1:8787`. Production mobile builds must use `wss://`.
+
 By default it listens on:
 
 ```text

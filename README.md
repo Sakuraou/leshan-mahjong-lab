@@ -1,9 +1,8 @@
 # Leshan Mahjong Lab
 
-An interactive frontend multiplayer-table prototype for learning and testing
-Leshan eight-chicken Mahjong rules. The project turns a local, oral rule set
-into a tested TypeScript game engine and a browser table that is ready for a
-future real-time room layer.
+A phone-first Leshan eight-chicken Mahjong project with an Expo mobile client,
+a tested TypeScript rule engine, and a Vite browser table retained as the
+multiplayer, privacy, and portfolio validation surface.
 
 ## Online Demo
 
@@ -20,6 +19,7 @@ after the GitHub repository is imported in Vercel.
 - Room service interface: [docs/room-service.md](docs/room-service.md)
 - Socket adapter interface: [docs/socket-adapter.md](docs/socket-adapter.md)
 - WebSocket server core: [docs/websocket-server.md](docs/websocket-server.md)
+- Mobile App plan: [docs/mobile-app-plan.md](docs/mobile-app-plan.md)
 
 ## Deploy To Vercel
 
@@ -127,6 +127,11 @@ and AI-assisted development.
   `chooseMissingSuit` after the real server starts the round, and the server
   validates seat ownership, round state, and duplicate submissions before
   broadcasting redacted snapshots
+- Expo/React Native mobile App workspace with server configuration,
+  create/join, seat, ready, start, dingque, a redacted read-only table,
+  SecureStore session persistence, and AppState reconnect recovery
+- Shared client-core package for mobile-safe room view models, tile display
+  helpers, transport contracts, and authoritative `legalActions` consumption
 
 ## Screenshots
 
@@ -170,7 +175,11 @@ http://127.0.0.1:5173
 npm test
 npm run build
 npm run dev
+npm run mobile
+npm run mobile:typecheck
+npm run mobile:export
 npm run dev:server
+npm run dev:server:lan
 npm run smoke:server
 ```
 
@@ -178,6 +187,7 @@ npm run smoke:server
 
 - Vite
 - React
+- Expo / React Native
 - TypeScript
 - Node test runner
 - Pure TypeScript game engine under `src/game`
@@ -207,6 +217,10 @@ src/
     win.ts          Self-draw and discard hu checks
   server/
     roomSocketServerCore.ts Testable WebSocket server core without a live port
+apps/
+  mobile/               Expo phone client and SecureStore/AppState integration
+packages/
+  client-core/          Mobile-safe view model and shared transport contracts
 tests/
   game/             Rule, round, hu, and win tests
   docs/
@@ -240,6 +254,14 @@ redacted snapshot delivery. It also demonstrates `sessionToken` + `lastEventId`
 recovery by saving host/guest sessions locally, reconnecting after a simulated
 refresh, and calling `resumeSession` for fresh redacted snapshots. The default
 playable table still uses the local mock transport for a stable portfolio demo.
+
+The first mobile client is now available under `apps/mobile`. It uses the same
+real WebSocket transport and per-session redacted snapshots as the browser
+experiment, while keeping session tokens in Expo SecureStore and closing and
+resuming the socket across AppState transitions. See
+[docs/mobile-app-plan.md](docs/mobile-app-plan.md) for run addresses, privacy
+boundaries, and the Android/iOS roadmap.
+
 The main table now has a limited "真实 WebSocket 桌面预览" mode that consumes the
 experiment panel's latest real `roomSnapshot` data and renders room, seat,
 ready, wall, and redacted hand-count summaries without enabling real draw or

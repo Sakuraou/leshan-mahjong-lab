@@ -3,20 +3,29 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "workspaces": [
+    "apps/mobile",
+    "packages/client-core"
+  ],
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "dev:server": "node --experimental-strip-types src/server/devServer.ts",
+    "dev:server:lan": "node --experimental-strip-types src/server/devServer.ts --host 0.0.0.0",
     "smoke:server": "node --experimental-strip-types src/server/smokeClient.ts",
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm test && npm run build",
+    "check:all": "npm run check && npm run mobile:typecheck",
     "build": "vite build",
+    "mobile": "npm run start --workspace @leshan-mahjong/mobile",
+    "mobile:typecheck": "npm run typecheck --workspace @leshan-mahjong/mobile",
+    "mobile:export": "npm run export:android --workspace @leshan-mahjong/mobile",
     "preview": "vite preview --host 127.0.0.1",
     "test": "node --test --experimental-strip-types tests/game/*.test.ts"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^4.3.4",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
     "typescript": "^5.7.2",
     "vite": "^6.0.7",
     "ws": "^8.21.0"

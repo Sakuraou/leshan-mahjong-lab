@@ -162,12 +162,19 @@ server authoritative.
 Goal: turn the validated rule engine and realtime protocol into the actual
 phone-first product.
 
-- Choose the mobile shell after the Web MVP stabilizes, with Expo/React Native
-  as the current leading option
-- Extract shared protocol and game-display types into a mobile-safe package
-- Build phone-first room, table, hand, action, reconnect, and settlement screens
-- Add touch interactions, safe-area handling, vibration/audio feedback, and
-  foreground/background recovery
+- [x] Choose Expo/React Native + TypeScript as the phone shell
+- [x] Add `apps/mobile` without replacing the Vite Web debug client
+- [x] Add a shared `client-core` view model, transport contract, tile labels,
+  and session-storage contract
+- [x] Build the first phone room shell for server config, create/join, seats,
+  ready, start, dingque, and a redacted read-only table
+- [x] Gate lobby and dingque commands with authoritative `legalActions`
+- [x] Save session recovery data with Expo SecureStore and resume after an
+  AppState background/foreground transition
+- [x] Add safe-area handling and stable phone touch targets
+- Add interactive hand selection and server-authoritative discard confirmation
+- Add mobile claim, gang, hu, and settlement action surfaces
+- Add vibration/audio feedback and foreground network retry backoff
 - Test Android and iOS layouts plus weak-network reconnect behavior
 - Package an installable beta build
 
