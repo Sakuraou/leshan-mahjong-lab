@@ -49,6 +49,14 @@ Goal: move from visual demo to real rule logic.
   valid resolutions
 - [x] Bound multi-decomposition search to 128 unique candidates and 20,000
   expanded states per hu check
+- [x] Add explainable seven-pairs decomposition with pair-level laizi source /
+  target resolution and bounded stable candidate search
+- [x] Score mutually exclusive xiao qi dui, long qi dui, shuang long qi dui,
+  and san long qi dui tiers without double-counting their included roots
+- [x] Compare ordinary and seven-pairs candidates for live hu, legal actions,
+  events, and wall-empty cha-jiao maximum score
+- [x] Keep hu player-confirmed: publish claim plus continue/pass actions without
+  automatically changing `hasWon`
 - [x] Build wall shuffle and dealing logic
 - [x] Implement basic draw and discard state transitions
 - [x] Implement basic win detection

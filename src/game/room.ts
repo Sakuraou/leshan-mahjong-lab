@@ -5,7 +5,7 @@ import {
   type DiscardTileResult,
   type DrawTileResult,
 } from "./round.ts";
-import { huDecompositionSignature, type StandardHuDecomposition } from "./hu.ts";
+import { huDecompositionSignature, type HuDecomposition } from "./hu.ts";
 import { isYaoJi, sameTile, tile, tileKey } from "./tiles.ts";
 import { checkCurrentPlayerHu, checkDiscardHu, type WinCheckResult } from "./win.ts";
 import {
@@ -171,7 +171,7 @@ export type ChaJiaoSettlementFact = {
   readonly winnerPlayerId: string;
   readonly payers: readonly ChaJiaoSettlementPayer[];
   readonly winningTile: Tile;
-  readonly decomposition: StandardHuDecomposition;
+  readonly decomposition: HuDecomposition;
   readonly patterns: readonly ScorePattern[];
   readonly genCount: number;
   readonly rawPoints: number;

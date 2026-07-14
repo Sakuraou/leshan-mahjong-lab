@@ -9,6 +9,7 @@ import {
   detectHuPatterns,
   findHuDecompositions,
   huDecompositionSignature,
+  isSevenPairsDecomposition,
   tile,
 } from "../../src/game/index.ts";
 
@@ -108,6 +109,135 @@ test("rejects hands that cannot form a hu structure", () => {
 
   assert.equal(result.canHu, false);
   assert.equal(!result.canHu && result.reason, "cannotDecompose");
+});
+
+test("scores small, single-, double-, and triple-dragon seven pairs without extra gen", () => {
+  const cases: Array<{
+    name: string;
+    hand: Tile[];
+    pattern: ScorePattern;
+    rawPoints: number;
+    dragonCount: 0 | 1 | 2 | 3;
+  }> = [
+    {
+      name: "small seven pairs",
+      hand: pairHand([
+        tile("characters", 2), tile("characters", 5), tile("characters", 8),
+        tile("dots", 2), tile("dots", 5), tile("dots", 8), tile("dots", 9),
+      ]),
+      pattern: "xiaoQiDui",
+      rawPoints: 32,
+      dragonCount: 0,
+    },
+    {
+      name: "single dragon",
+      hand: [
+        ...repeatTile(tile("characters", 2), 4),
+        ...pairHand([
+          tile("characters", 5), tile("characters", 8), tile("dots", 2),
+          tile("dots", 5), tile("dots", 8),
+        ]),
+      ],
+      pattern: "longQiDui",
+      rawPoints: 64,
+      dragonCount: 1,
+    },
+    {
+      name: "double dragon",
+      hand: [
+        ...repeatTile(tile("characters", 2), 4),
+        ...repeatTile(tile("characters", 5), 4),
+        ...pairHand([tile("characters", 8), tile("dots", 2), tile("dots", 5)]),
+      ],
+      pattern: "shuangLongQiDui",
+      rawPoints: 128,
+      dragonCount: 2,
+    },
+    {
+      name: "triple dragon",
+      hand: [
+        ...repeatTile(tile("characters", 2), 4),
+        ...repeatTile(tile("characters", 5), 4),
+        ...repeatTile(tile("dots", 2), 4),
+        ...repeatTile(tile("dots", 5), 2),
+      ],
+      pattern: "sanLongQiDui",
+      rawPoints: 256,
+      dragonCount: 3,
+    },
+  ];
+
+  for (const value of cases) {
+    const result = checkCurrentPlayerHu(makeRound(value.hand));
+    assert.equal(result.canHu, true, value.name);
+    if (!result.canHu) continue;
+    assert.deepEqual(result.patterns, [value.pattern, "wuJi"], value.name);
+    assert.equal(result.score.rawPoints, value.rawPoints, value.name);
+    assert.equal(result.score.genCount, 0, value.name);
+    assert.equal(isSevenPairsDecomposition(result.decomposition), true, value.name);
+    if (!isSevenPairsDecomposition(result.decomposition)) continue;
+    assert.equal(result.decomposition.dragonCount, value.dragonCount, value.name);
+  }
+});
+
+test("selects seven pairs over a lower-scoring standard decomposition", () => {
+  const hand = pairHand([1, 2, 3, 4, 5, 6, 7].map((rank) =>
+    tile("characters", rank as 1 | 2 | 3 | 4 | 5 | 6 | 7),
+  ));
+  const result = checkCurrentPlayerHu(makeRound(hand));
+
+  assert.equal(result.canHu, true);
+  if (!result.canHu) return;
+  assert.equal(isSevenPairsDecomposition(result.decomposition), true);
+  assert.deepEqual(result.patterns, ["xiaoQiDui", "wuJi", "qingYiSe"]);
+  assert.equal(result.score.rawPoints, 128);
+  assert.equal(result.score.cappedPoints, 64);
+});
+
+test("resolves laizi targets into a pure dragon seven pairs without restoring wu ji", () => {
+  const hand = [
+    ...pairHand([
+      tile("characters", 3), tile("characters", 4), tile("characters", 5),
+      tile("characters", 6), tile("characters", 7),
+    ]),
+    tile("characters", 2),
+    tile("bamboos", 1), tile("dots", 1), tile("bamboos", 1),
+  ];
+  const result = checkCurrentPlayerHu(makeRound(hand));
+  const repeated = checkCurrentPlayerHu(makeRound(hand));
+
+  assert.equal(result.canHu, true);
+  assert.equal(repeated.canHu, true);
+  if (!result.canHu || !repeated.canHu) return;
+  assert.deepEqual(result.patterns, ["longQiDui", "qingYiSe"]);
+  assert.equal(result.score.genCount, 0);
+  assert.equal(isSevenPairsDecomposition(result.decomposition), true);
+  if (!isSevenPairsDecomposition(result.decomposition)) return;
+  assert.equal(result.decomposition.dragonCount, 1);
+  assert.equal(
+    huDecompositionSignature(repeated.decomposition),
+    huDecompositionSignature(result.decomposition),
+  );
+  assert.equal(
+    result.decomposition.pairs
+      .flatMap((pair) => pair.tiles)
+      .filter((value) => value.usedAsLaizi)
+      .every((value) => value.target.suit === "characters" && value.target.rank === 2),
+    true,
+  );
+});
+
+test("allows discard seven pairs at its highest discard score", () => {
+  const winningHand = pairHand([
+    tile("characters", 2), tile("characters", 5), tile("characters", 8),
+    tile("dots", 2), tile("dots", 5), tile("dots", 8), tile("dots", 9),
+  ]);
+  const result = checkDiscardHu(makeRound(winningHand.slice(0, -1)), 0, winningHand.at(-1)!);
+
+  assert.equal(result.canHu, true);
+  if (!result.canHu) return;
+  assert.deepEqual(result.patterns, ["xiaoQiDui", "wuJi"]);
+  assert.equal(result.score.rawPoints, 16);
 });
 
 test("allows self-draw hu after a peng meld", () => {
@@ -334,6 +464,8 @@ test("selects da dui over lower-scoring sequence decompositions", () => {
 
   assert.deepEqual(result.patterns, ["pingHu", "daDui", "wuJi", "qingYiSe"]);
   assert.equal(result.score.rawPoints, 64);
+  assert.equal(isSevenPairsDecomposition(result.decomposition), false);
+  if (isSevenPairsDecomposition(result.decomposition)) return;
   assert.equal(result.decomposition.melds.every((meld) => meld.type === "triplet"), true);
 });
 
@@ -471,6 +603,10 @@ function makeMeld(type: Meld["type"], value: Tile, count: 3 | 4): Meld {
 
 function repeatTile(value: Tile, count: number): Tile[] {
   return Array.from({ length: count }, () => value);
+}
+
+function pairHand(values: Tile[]): Tile[] {
+  return values.flatMap((value) => repeatTile(value, 2));
 }
 
 function makeRound(hand: Tile[], melds: Meld[] = []): RoundState {

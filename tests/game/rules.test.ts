@@ -143,12 +143,16 @@ test("calculates minimum win score, stacking, self-draw, and cap", () => {
     16,
   );
 
+  const doubleDragon = calculateHuScore({
+    patterns: ["shuangLongQiDui", "qingYiSe", "wuJi"],
+    genCount: 2,
+    winMethod: "selfDraw",
+  });
+  assert.equal(doubleDragon.cappedPoints, 64);
+  assert.equal(doubleDragon.genCount, 0);
+
   assert.equal(
-    calculateHuScore({
-      patterns: ["shuangLongQiDui", "qingYiSe", "wuJi"],
-      genCount: 2,
-      winMethod: "selfDraw",
-    }).cappedPoints,
+    calculateHuScore({ patterns: ["sanLongQiDui"], winMethod: "selfDraw" }).rawPoints,
     64,
   );
 });

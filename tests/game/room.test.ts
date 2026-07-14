@@ -724,6 +724,74 @@ test("offers exposed-hand self-draw only after a real draw", () => {
   assert.deepEqual(claimSelfDrawHu(roomAfterPeng, "p1"), { ok: false, reason: "notDiscardPhase" });
 });
 
+test("offers seven-pairs hu without forcing the player to leave the round", () => {
+  const baseRoom = readyRoomForSelfDrawHu();
+  const winningHand = sevenPairsWinningHand();
+  const room: RoomState = {
+    ...baseRoom,
+    selfDrawEligible: true,
+    round: {
+      ...baseRoom.round!,
+      players: baseRoom.round!.players.map((player) =>
+        player.id === 0 ? { ...player, hand: winningHand, missingSuit: "bamboos" } : player,
+      ),
+    },
+  };
+  const view = toClientVisibleRoomState(room, "p1");
+
+  assert.equal(view.legalActions.includes("claimSelfDrawHu"), true);
+  assert.equal(view.legalActions.includes("discardTile"), true);
+  assert.equal(view.round?.players[0].hasWon, false);
+  assert.equal(JSON.stringify(view).includes("decomposition"), false);
+
+  const claimed = claimSelfDrawHu(room, "p1");
+  assert.equal(claimed.ok, true);
+  if (!claimed.ok) return;
+  assert.deepEqual(claimed.room.eventLog.at(-1), {
+    type: "selfDrawHuClaimed",
+    seatId: 0,
+    playerId: "p1",
+    patterns: ["xiaoQiDui", "wuJi", "qingYiSe"],
+    genCount: 0,
+    points: 64,
+  });
+
+  const continued = discardRoomTile(room, "p1", winningHand[0]);
+  assert.equal(continued.ok, true);
+  if (!continued.ok) return;
+  assert.equal(continued.room.round?.players[0].hasWon, false);
+  assert.equal(continued.room.phase, "claim");
+});
+
+test("lets a seven-pairs discard winner pass and keep playing", () => {
+  const baseRoom = readyRoomForSelfDrawHu();
+  const room: RoomState = {
+    ...baseRoom,
+    selfDrawEligible: false,
+    round: {
+      ...baseRoom.round!,
+      players: baseRoom.round!.players.map((player) =>
+        player.id === 1
+          ? { ...player, hand: sevenPairsListeningHand(), missingSuit: "bamboos" }
+          : player,
+      ),
+    },
+  };
+  const discarded = discardRoomTile(room, "p1", tile("characters", 7));
+  assert.equal(discarded.ok, true);
+  if (!discarded.ok) return;
+
+  const responderView = toClientVisibleRoomState(discarded.room, "p2");
+  assert.equal(responderView.legalActions.includes("claimHu"), true);
+  assert.equal(responderView.legalActions.includes("passClaim"), true);
+
+  const passed = passClaim(discarded.room, "p2");
+  assert.equal(passed.ok, true);
+  if (!passed.ok) return;
+  assert.equal(passed.room.round?.players[1].hasWon, false);
+  assert.equal(passed.room.claimWindow?.passedPlayerIds.includes(1), true);
+});
+
 test("marks wall-empty round end with authoritative cha jiao results", () => {
   const room = readyRoomForSelfDrawHu();
   const roomWithEmptyWall: RoomState = {
@@ -859,6 +927,22 @@ test("uses the highest laizi-assisted discard score for cha jiao", () => {
 
   assert.equal(listener?.maxHuPoints, 16);
   assert.equal(chaJiaoEntries(ended)[0].finalPoints, 16);
+});
+
+test("uses the highest seven-pairs result for cha jiao", () => {
+  const ended = endedRoomForChaJiao([
+    { hand: notListeningHand() },
+    { hand: sevenPairsListeningHand() },
+    { hand: [], hasWon: true },
+    { hand: [], hasWon: true },
+  ]);
+  const listener = ended.chaJiao?.players.find((player) => player.seatId === 1);
+  const entry = chaJiaoEntries(ended)[0];
+
+  assert.deepEqual(listener?.patterns, ["xiaoQiDui", "wuJi", "qingYiSe"]);
+  assert.equal(listener?.genCount, 0);
+  assert.equal(listener?.maxHuPoints, 64);
+  assert.deepEqual([entry.rawPoints, entry.finalPoints], [64, 64]);
 });
 
 test("keeps cha jiao settlement idempotent and private until wall empty", () => {
@@ -2080,10 +2164,19 @@ function chaJiaoEntries(room: RoomState): ChaJiaoSettlementEntry[] {
 
 function notListeningHand(): Tile[] {
   return [
-    ...Array.from({ length: 4 }, () => tile("characters", 2)),
-    ...Array.from({ length: 4 }, () => tile("characters", 3)),
-    ...Array.from({ length: 4 }, () => tile("dots", 4)),
+    tile("characters", 2),
+    tile("characters", 3),
+    tile("characters", 4),
+    tile("characters", 7),
+    tile("characters", 8),
     tile("characters", 9),
+    tile("dots", 3),
+    tile("dots", 4),
+    tile("dots", 5),
+    tile("dots", 6),
+    tile("dots", 7),
+    tile("dots", 9),
+    tile("characters", 5),
   ];
 }
 
@@ -2103,6 +2196,19 @@ function listeningSixteenHand(): Tile[] {
     tile("characters", 9),
     tile("characters", 9),
   ];
+}
+
+function sevenPairsWinningHand(): Tile[] {
+  return [1, 2, 3, 4, 5, 6, 7].flatMap((rank) =>
+    Array.from(
+      { length: 2 },
+      () => tile("characters", rank as 1 | 2 | 3 | 4 | 5 | 6 | 7),
+    ),
+  );
+}
+
+function sevenPairsListeningHand(): Tile[] {
+  return sevenPairsWinningHand().slice(0, -1);
 }
 
 function makeTestMeld(type: Meld["type"], targetTile: Tile, count: 3 | 4): Meld {

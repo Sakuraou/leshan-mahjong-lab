@@ -95,6 +95,7 @@ Scoring is multiplier-based.
 | Wu ji | 2 | 4x |
 | Long qi dui | 3 | 8x |
 | Shuang long qi dui | 4 | 16x |
+| San long qi dui | 5 | 32x |
 
 Examples:
 
@@ -106,6 +107,33 @@ Dan diao is only possible when all sets except the final waiting tile have been
 exposed through peng or gang, leaving exactly one tile in hand as the wait. It is
 mutually exclusive with seven-pair hands because seven pairs must stay concealed
 in hand.
+
+## Seven Pairs And Dragons
+
+Seven pairs is a fully concealed 14-tile structure. A four-of-a-kind is split
+into two pairs for this structure. Laizi keep their original `source` but may
+resolve to any `target`; dragon count is calculated from the final targets, so
+`3 natural + 1 laizi`, `2 + 2`, `1 + 3`, and four laizi can all form four equal
+resolved tiles. Every complete group of four equal resolved targets contributes
+one dragon; additional copies may form another pair or another complete dragon.
+
+The seven-pairs tiers are mutually exclusive and only the highest tier applies:
+
+- Zero groups of four: xiao qi dui, 2 fan / 4x.
+- One group of four: long qi dui, 3 fan / 8x.
+- Two groups of four: shuang long qi dui, 4 fan / 16x.
+- Three groups of four: san long qi dui, 5 fan / 32x.
+
+Each dragon tier already includes the value of its roots. A long-qi-dui hand
+therefore reports `genCount: 0` for scoring and must not add another gen
+multiplier. Qing yi se still uses resolved targets, while wu ji still uses the
+original physical sources.
+
+Hu availability is advisory, not automatic. The server publishes a legal hu
+action and the client shows a clear prompt, but the player decides whether to
+claim. On self-draw the player may discard instead and keep playing for a larger
+dragon hand; on another player's discard the player may pass. `hasWon` changes
+only after an explicit hu claim succeeds.
 
 ## Wu Ji
 
@@ -261,10 +289,10 @@ one active player remains does not run cha jiao.
   amount are frozen in a terminal settlement fact. Repeated terminal calls or
   deadline ticks cannot write the same payment twice.
 
-The current MVP listening search uses the implemented ordinary `4 sets + 1
-pair` hu engine, including exposed melds, laizi resolution, best decomposition,
-patterns, gen, and the discard-hu minimum-score rule. Seven pairs and its
-derived patterns are not yet part of cha-jiao evaluation.
+The listening search evaluates both ordinary `4 sets + 1 pair` and concealed
+seven-pairs candidates. It includes laizi resolution, xiao/long/shuang-long/
+san-long tiers, qing yi se, wu ji, ordinary-hand gen, highest-score selection,
+and the discard-hu minimum-score rule.
 
 Drawing the physical last wall tile does not immediately settle the round. The
 drawer first receives the normal self-draw/discard opportunity; `wallEmpty`
@@ -295,6 +323,10 @@ engine for legal actions and settlement results.
 - Dingque checks ordinary missing-suit tiles, while laizi can resolve as needed.
 - Qing yi se requires all resolved laizi to match the pure suit.
 - Dan diao is 1 fan and cannot overlap with seven pairs.
+- Seven-pairs dragon tiers are mutually exclusive, and their included roots do
+  not also add `genCount` fan.
+- Hu is never automatic: the server offers a legal claim, while the player may
+  pass or discard and continue building a larger hand.
 - One-discard multiple wins are paid separately by the discarder.
 - Gang payments are settled together at the final settlement screen.
 - Gang payer sets are frozen when each gang formally becomes valid, rather than

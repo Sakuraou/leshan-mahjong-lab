@@ -3357,7 +3357,7 @@ function reasonText(reason: string | undefined): string {
     invalidTileCount: "手牌张数不符合胡牌结构",
     invalidMeldCount: "副露组数不合法",
     tooManyCopies: "同一普通牌数量超过四张",
-    cannotDecompose: "暂时无法拆成四组一对",
+    cannotDecompose: "暂时无法拆成四组一对或七对",
     hasMissingSuitTile: "手里还有缺门牌，不能胡",
     belowMinimumScore: "不足 2 分，不能胡",
   };
@@ -3374,6 +3374,7 @@ function patternText(pattern: string): string {
     xiaoQiDui: "小七对",
     longQiDui: "龙七对",
     shuangLongQiDui: "双龙七",
+    sanLongQiDui: "三龙七",
   };
   return names[pattern] ?? pattern;
 }

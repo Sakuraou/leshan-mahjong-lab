@@ -296,6 +296,13 @@ lookup, event ids, and redacted room views.
 - Cha-jiao candidate tiles, decompositions, raw hands, and internal fact IDs
   remain server-only. The result is `null` while playing; ended snapshots show
   only safe listening summaries and completed transfers.
+- Live hu and cha-jiao checks compare the bounded ordinary decomposition search
+  with a bounded, explainable seven-pairs search. Seven-pairs candidates retain
+  pair-level laizi source/target assignments and a zero-to-three dragon count;
+  only the selected pattern and score cross the redaction boundary.
+- Seven-pairs dragon roots are included in the tier multiplier, so the service
+  sends `genCount: 0` for those candidates. Hu availability adds a legal action
+  but never changes `hasWon` until the player explicitly claims.
 - WebSocket heartbeat and stale-connection detection live in the server core;
   the service receives only connected/disconnected transitions.
 - State is in memory only. Restarting the server would lose rooms.
@@ -306,8 +313,8 @@ lookup, event ids, and redacted room views.
 
 The pure-function adapter, real `ws` development wrapper, and frontend preview
 are already in place. Authoritative hu, chicken, gang, and cha-jiao transfers
-now share the ledger boundary. The next rule milestone is seven-pairs support,
-which will broaden both live hu checks and wall-empty maximum-score analysis.
+share the ledger boundary, and live/cha-jiao scoring now includes explainable
+seven-pairs candidates through san long qi dui.
 The production runtime still needs to:
 
 1. Maintains a `Map<roomId, RoomServiceState>`.

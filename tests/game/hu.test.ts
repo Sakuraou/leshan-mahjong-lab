@@ -4,6 +4,8 @@ import assert from "node:assert/strict";
 import {
   canHuWithLaizi,
   findHuDecompositions,
+  findSevenPairsDecompositions,
+  isSevenPairsDecomposition,
   MAX_HU_DECOMPOSITIONS,
   MAX_HU_SEARCH_NODES,
   tile,
@@ -31,6 +33,57 @@ test("recognizes a standard hand without laizi", () => {
     canHu: true,
     laiziCount: 0,
   });
+});
+
+test("explains a concealed seven-pairs hand", () => {
+  const result = canHuWithLaizi({
+    hand: [
+      tile("characters", 2), tile("characters", 5), tile("characters", 8),
+      tile("dots", 2), tile("dots", 5), tile("dots", 8), tile("bamboos", 2),
+    ].flatMap((value) => repeatTile(value, 2)),
+    explain: true,
+  });
+
+  assert.equal(result.canHu, true);
+  if (!result.canHu) return;
+  assert.equal(isSevenPairsDecomposition(result.decomposition), true);
+  if (!isSevenPairsDecomposition(result.decomposition)) return;
+  assert.equal(result.decomposition.pairs.length, 7);
+  assert.equal(result.decomposition.dragonCount, 0);
+  assert.equal(
+    result.decomposition.pairs.flatMap((pair) => pair.tiles).every((value) => !value.usedAsLaizi),
+    true,
+  );
+});
+
+test("lets any resolved laizi combination form a seven-pairs dragon", () => {
+  const naturalPairs = [3, 4, 5, 6, 7].flatMap((rank) =>
+    repeatTile(tile("characters", rank as 3 | 4 | 5 | 6 | 7), 2),
+  );
+
+  for (const naturalCount of [3, 2, 1, 0]) {
+    const laiziCount = 4 - naturalCount;
+    const hand = [
+      ...repeatTile(tile("characters", 2), naturalCount),
+      ...laiziTiles(laiziCount),
+      ...naturalPairs,
+    ];
+    const result = findSevenPairsDecompositions({ hand });
+
+    assert.equal(result.canHu, true, `${naturalCount} natural + ${laiziCount} laizi`);
+    if (!result.canHu) continue;
+    const decomposition = result.candidates
+      .map((candidate) => candidate.decomposition)
+      .filter(isSevenPairsDecomposition)
+      .find((candidate) => {
+        const resolvedLaizi = candidate.pairs
+          .flatMap((pair) => pair.tiles)
+          .filter((value) => value.usedAsLaizi);
+        return candidate.dragonCount === 1 &&
+          new Set(resolvedLaizi.map((value) => `${value.target.suit}-${value.target.rank}`)).size === 1;
+      });
+    assert.notEqual(decomposition, undefined, `${naturalCount} natural + ${laiziCount} laizi`);
+  }
 });
 
 test("uses laizi to complete a sequence", () => {
@@ -84,6 +137,12 @@ test("uses laizi to complete the pair", () => {
     return;
   }
 
+  assert.equal(isSevenPairsDecomposition(result.decomposition), false);
+
+  if (isSevenPairsDecomposition(result.decomposition)) {
+    return;
+  }
+
   assert.deepEqual(result.decomposition.pair.tiles.find((value) => value.usedAsLaizi), {
     source: tile("dots", 1),
     target: tile("characters", 2),
@@ -115,6 +174,12 @@ test("uses laizi to complete a triplet", () => {
   assert.equal(result.canHu, true);
 
   if (!result.canHu) {
+    return;
+  }
+
+  assert.equal(isSevenPairsDecomposition(result.decomposition), false);
+
+  if (isSevenPairsDecomposition(result.decomposition)) {
     return;
   }
 
@@ -207,6 +272,20 @@ test("validates the concealed hand tile count for standard hu", () => {
   });
 });
 
+test("rejects more than four copies of the same physical yaoji", () => {
+  const hand = [
+    ...repeatTile(tile("characters", 1), 5),
+    ...repeatTile(tile("characters", 2), 3),
+    ...repeatTile(tile("characters", 3), 3),
+    ...repeatTile(tile("characters", 4), 3),
+  ];
+
+  const result = findSevenPairsDecompositions({ hand });
+
+  assert.equal(result.canHu, false);
+  assert.equal(result.reason, "tooManyCopies");
+});
+
 test("explains a laizi sequence with one fixed meld", () => {
   const result = canHuWithLaizi({
     hand: [
@@ -279,8 +358,14 @@ test("enumerates deduplicated decompositions in stable order", () => {
   const signatures = first.candidates.map((candidate) => candidate.signature);
   assert.equal(signatures.length, new Set(signatures).size);
   assert.deepEqual(second.candidates.map((candidate) => candidate.signature), signatures);
-  assert.equal(first.candidates.some((candidate) => candidate.decomposition.melds.every((meld) => meld.type === "triplet")), true);
-  assert.equal(first.candidates.some((candidate) => candidate.decomposition.melds.some((meld) => meld.type === "sequence")), true);
+  assert.equal(first.candidates.some((candidate) =>
+    !isSevenPairsDecomposition(candidate.decomposition) &&
+    candidate.decomposition.melds.every((meld) => meld.type === "triplet")
+  ), true);
+  assert.equal(first.candidates.some((candidate) =>
+    !isSevenPairsDecomposition(candidate.decomposition) &&
+    candidate.decomposition.melds.some((meld) => meld.type === "sequence")
+  ), true);
   assert.equal(limited.candidates.length, 2);
   assert.equal(limited.truncated, true);
 });
@@ -315,4 +400,13 @@ test("bounds decomposition search for all eight laizi", () => {
 
 function repeatTile(value: ReturnType<typeof tile>, count: number): ReturnType<typeof tile>[] {
   return Array.from({ length: count }, () => value);
+}
+
+function laiziTiles(count: number): ReturnType<typeof tile>[] {
+  return [
+    tile("bamboos", 1),
+    tile("dots", 1),
+    tile("bamboos", 1),
+    tile("dots", 1),
+  ].slice(0, count);
 }

@@ -447,6 +447,16 @@ winning tiles, decomposition, internal fact ID, or opponent hand. After
 maximum, payment rows, and updated public balances. Stable round settlement IDs
 make repeated terminal calls and deadline ticks idempotent.
 
+Ordinary and seven-pairs candidates are scored together inside the room rule
+core. The WebSocket server never receives or broadcasts pair decompositions,
+laizi target assignments, dragon alternatives, or stable search signatures.
+Clients receive only the selected pattern list, zero non-duplicated gen count
+for dragon seven-pairs hands, legal claim actions, and final points.
+
+The preview treats hu as a player decision. It displays the server-provided hu
+action alongside `discardTile` for self-draw or `passClaim` for discard hu; it
+does not automatically submit a claim or mark the player as won.
+
 ## Screenshot Plan
 
 Portfolio screenshots to capture next:
@@ -529,9 +539,8 @@ results and transfers without publishing candidate waits or decomposition data.
 
 ## Next Milestone
 
-The next rule milestone is seven-pairs hu and score support so the same
-authoritative cha-jiao search can include xiao qi dui, long qi dui, and shuang
-long qi dui. Persistent room recovery and deployment configuration for the
-WebSocket process follow. Offline
+The next rule milestone is a player-facing listening-tile and discard-suggestion
+layer built from the same authoritative candidate engine. Persistent room
+recovery and deployment configuration for the WebSocket process follow. Offline
 kicking, bot takeover, room dissolution, and database persistence are not part
 of the current implementation.

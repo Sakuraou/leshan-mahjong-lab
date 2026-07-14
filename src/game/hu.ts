@@ -34,6 +34,14 @@ export type StandardHuDecomposition = {
   melds: HuMeldGroup[];
 };
 
+export type SevenPairsDecomposition = {
+  fixedMeldCount: 0;
+  pairs: HuPairGroup[];
+  dragonCount: 0 | 1 | 2 | 3;
+};
+
+export type HuDecomposition = StandardHuDecomposition | SevenPairsDecomposition;
+
 export type HuCheckResult = {
   canHu: boolean;
   laiziCount: number;
@@ -44,7 +52,7 @@ export type HuExplainResult =
   | {
       canHu: true;
       laiziCount: number;
-      decomposition: StandardHuDecomposition;
+      decomposition: HuDecomposition;
     }
   | {
       canHu: false;
@@ -58,7 +66,7 @@ export type FindHuDecompositionsInput = HuCheckInput & {
 
 export type HuDecompositionCandidate = {
   signature: string;
-  decomposition: StandardHuDecomposition;
+  decomposition: HuDecomposition;
 };
 
 export type FindHuDecompositionsResult =
@@ -85,6 +93,7 @@ const suitSize = 9;
 
 export const MAX_HU_DECOMPOSITIONS = 128;
 export const MAX_HU_SEARCH_NODES = 20_000;
+export const MAX_SEVEN_PAIRS_DECOMPOSITIONS = 128;
 
 type PairPlan = {
   type: "pair";
@@ -103,6 +112,16 @@ type DecompositionPlan = {
   melds: MeldPlan[];
 };
 
+type SevenPairsPlan = {
+  pairTargetIndexes: number[];
+};
+
+type SevenPairsPlanSearch = {
+  plans: SevenPairsPlan[];
+  exploredNodes: number;
+  truncated: boolean;
+};
+
 type MeldMemo = Map<string, MeldPlan[] | null>;
 
 type MultiMeldMemo = Map<string, MeldPlan[][]>;
@@ -115,6 +134,8 @@ type MultiSearchContext = {
   pureLaiziTargetIndexes: number[];
   memo: MultiMeldMemo;
 };
+
+const maxSevenPairsSearchNodes = 5_000;
 
 export function canHuWithLaizi(input: HuExplainInput): HuExplainResult;
 export function canHuWithLaizi(input: HuCheckInput | Tile[]): HuCheckResult;
@@ -146,7 +167,21 @@ export function canHuWithLaizi(
   const plan = choosePairAndFormMelds(countResult.counts, countResult.laiziCount, meldsNeeded);
 
   if (plan === null) {
-    return { canHu: false, laiziCount, reason: "cannotDecompose" };
+    const sevenPairs = findSevenPairsDecompositions({ hand, fixedMeldCount });
+
+    if (!sevenPairs.canHu) {
+      return { canHu: false, laiziCount, reason: "cannotDecompose" };
+    }
+
+    if (!explain) {
+      return { canHu: true, laiziCount };
+    }
+
+    return {
+      canHu: true,
+      laiziCount,
+      decomposition: sevenPairs.candidates[0].decomposition,
+    };
   }
 
   if (!explain) {
@@ -234,7 +269,120 @@ export function findHuDecompositions(input: FindHuDecompositionsInput): FindHuDe
   };
 }
 
-export function huDecompositionSignature(decomposition: StandardHuDecomposition): string {
+export function findSevenPairsDecompositions(
+  input: FindHuDecompositionsInput,
+): FindHuDecompositionsResult {
+  const hand = input.hand;
+  const fixedMeldCount = input.fixedMeldCount ?? 0;
+  const laiziCount = hand.filter(isYaoJi).length;
+
+  if (!Number.isInteger(fixedMeldCount) || fixedMeldCount < 0 || fixedMeldCount > standardMeldCount) {
+    return emptyDecompositionSearch(laiziCount, "invalidMeldCount");
+  }
+
+  if (fixedMeldCount !== 0) {
+    return emptyDecompositionSearch(laiziCount, "cannotDecompose");
+  }
+
+  if (hand.length !== 14) {
+    return emptyDecompositionSearch(laiziCount, "invalidTileCount");
+  }
+
+  const countResult = countOrdinaryTiles(hand);
+
+  if (!countResult.valid) {
+    return emptyDecompositionSearch(laiziCount, "tooManyCopies");
+  }
+
+  const search = findSevenPairsPlans(countResult.counts, countResult.laiziCount);
+
+  if (search.plans.length === 0) {
+    return {
+      ...emptyDecompositionSearch(laiziCount, "cannotDecompose"),
+      exploredNodes: search.exploredNodes,
+      truncated: search.truncated,
+    };
+  }
+
+  const requestedLimit = input.limit === undefined
+    ? MAX_SEVEN_PAIRS_DECOMPOSITIONS
+    : Number.isFinite(input.limit)
+      ? Math.floor(input.limit)
+      : 1;
+  const resultLimit = Math.min(
+    Math.max(requestedLimit, 1),
+    MAX_SEVEN_PAIRS_DECOMPOSITIONS,
+  );
+  const candidatesBySignature = new Map<string, HuDecompositionCandidate>();
+
+  for (const plan of search.plans) {
+    const decomposition = materializeSevenPairsDecomposition(plan, hand);
+    const signature = huDecompositionSignature(decomposition);
+    candidatesBySignature.set(signature, { signature, decomposition });
+  }
+
+  const candidates = [...candidatesBySignature.values()].sort(compareSevenPairsCandidates);
+
+  return {
+    canHu: true,
+    laiziCount,
+    candidates: candidates.slice(0, resultLimit),
+    truncated: search.truncated || candidates.length > resultLimit,
+    exploredNodes: search.exploredNodes,
+  };
+}
+
+export function findAllHuDecompositions(
+  input: FindHuDecompositionsInput,
+): FindHuDecompositionsResult {
+  const standard = findHuDecompositions(input);
+  const sevenPairs = findSevenPairsDecompositions(input);
+  const candidates = [
+    ...(standard.canHu ? standard.candidates : []),
+    ...(sevenPairs.canHu ? sevenPairs.candidates : []),
+  ].sort((left, right) => compareAscii(left.signature, right.signature));
+
+  if (candidates.length === 0) {
+    const reason = !standard.canHu && standard.reason !== "cannotDecompose"
+      ? standard.reason
+      : !sevenPairs.canHu && sevenPairs.reason !== "cannotDecompose"
+        ? sevenPairs.reason
+        : "cannotDecompose";
+
+    return {
+      canHu: false,
+      laiziCount: standard.laiziCount,
+      candidates: [],
+      truncated: standard.truncated || sevenPairs.truncated,
+      exploredNodes: standard.exploredNodes + sevenPairs.exploredNodes,
+      reason,
+    };
+  }
+
+  return {
+    canHu: true,
+    laiziCount: standard.laiziCount,
+    candidates,
+    truncated: standard.truncated || sevenPairs.truncated,
+    exploredNodes: standard.exploredNodes + sevenPairs.exploredNodes,
+  };
+}
+
+export function isSevenPairsDecomposition(
+  decomposition: HuDecomposition,
+): decomposition is SevenPairsDecomposition {
+  return "pairs" in decomposition;
+}
+
+export function huDecompositionSignature(decomposition: HuDecomposition): string {
+  if (isSevenPairsDecomposition(decomposition)) {
+    const pairSignatures = decomposition.pairs
+      .map((pair) => tileSignature(pair.tiles[0].target))
+      .sort();
+
+    return `v2|d:${decomposition.dragonCount}|p:${pairSignatures.join(",")}`;
+  }
+
   const pairTarget = decomposition.pair.tiles[0]?.target;
   const pairSignature = pairTarget === undefined ? "none" : tileSignature(pairTarget);
   const meldSignatures = decomposition.melds
@@ -256,9 +404,19 @@ type CountOrdinaryTilesResult =
 
 function countOrdinaryTiles(hand: Tile[]): CountOrdinaryTilesResult {
   const counts = Array.from({ length: SUITS.length * suitSize }, () => 0);
+  const physicalCounts = new Map<string, number>();
   let laiziCount = 0;
 
   for (const value of hand) {
+    const physicalKey = tileSignature(value);
+    const physicalCount = (physicalCounts.get(physicalKey) ?? 0) + 1;
+
+    if (physicalCount > 4) {
+      return { valid: false };
+    }
+
+    physicalCounts.set(physicalKey, physicalCount);
+
     if (isYaoJi(value)) {
       laiziCount += 1;
       continue;
@@ -805,6 +963,143 @@ function replaceMaskValue(
   const nextMask: [boolean, boolean, boolean] = [...mask];
   nextMask[position] = value;
   return nextMask;
+}
+
+function findSevenPairsPlans(counts: number[], laiziCount: number): SevenPairsPlanSearch {
+  const forcedTargets: number[] = [];
+  let remainingLaizi = laiziCount;
+
+  counts.forEach((count, targetIndex) => {
+    for (let pairIndex = 0; pairIndex < Math.floor(count / 2); pairIndex += 1) {
+      forcedTargets.push(targetIndex);
+    }
+
+    if (count % 2 === 1) {
+      forcedTargets.push(targetIndex);
+      remainingLaizi -= 1;
+    }
+  });
+
+  if (remainingLaizi < 0 || remainingLaizi % 2 !== 0) {
+    return { plans: [], exploredNodes: 0, truncated: false };
+  }
+
+  const freePairCount = remainingLaizi / 2;
+
+  if (forcedTargets.length + freePairCount !== 7) {
+    return { plans: [], exploredNodes: 0, truncated: false };
+  }
+
+  const availableTargets = new Set<number>([0, suitSize, suitSize * 2]);
+  counts.forEach((count, targetIndex) => {
+    if (count > 0) {
+      availableTargets.add(targetIndex);
+    }
+  });
+  const targetIndexes = [...availableTargets].sort((left, right) => left - right);
+  const plans = new Map<string, SevenPairsPlan>();
+  let exploredNodes = 0;
+  let truncated = false;
+
+  const visit = (startIndex: number, selected: number[]): void => {
+    if (exploredNodes >= maxSevenPairsSearchNodes) {
+      truncated = true;
+      return;
+    }
+
+    exploredNodes += 1;
+
+    if (selected.length === freePairCount) {
+      const pairTargetIndexes = [...forcedTargets, ...selected].sort((left, right) => left - right);
+      const signature = pairTargetIndexes.join(",");
+      plans.set(signature, { pairTargetIndexes });
+      return;
+    }
+
+    for (let index = startIndex; index < targetIndexes.length; index += 1) {
+      visit(index, [...selected, targetIndexes[index]]);
+
+      if (truncated) {
+        return;
+      }
+    }
+  };
+
+  visit(0, []);
+  return { plans: [...plans.values()], exploredNodes, truncated };
+}
+
+function materializeSevenPairsDecomposition(
+  plan: SevenPairsPlan,
+  hand: Tile[],
+): SevenPairsDecomposition {
+  const ordinarySources = new Map<number, Tile[]>();
+
+  for (const source of hand) {
+    if (isYaoJi(source)) {
+      continue;
+    }
+
+    const targetIndex = tileIndex(source);
+    ordinarySources.set(targetIndex, [...(ordinarySources.get(targetIndex) ?? []), source]);
+  }
+
+  const laiziSources = hand.filter(isYaoJi);
+  let laiziIndex = 0;
+  const pairs = plan.pairTargetIndexes.map((targetIndex): HuPairGroup => {
+    const target = indexTile(targetIndex);
+    const targetSources = ordinarySources.get(targetIndex) ?? [];
+    const resolvedTiles = Array.from({ length: 2 }, (): HuResolvedTile => {
+      const source = targetSources.shift();
+
+      if (source !== undefined) {
+        return { source, target, usedAsLaizi: false };
+      }
+
+      const laiziSource = laiziSources[laiziIndex];
+      laiziIndex += 1;
+      return { source: laiziSource, target, usedAsLaizi: true };
+    });
+    ordinarySources.set(targetIndex, targetSources);
+    return { type: "pair", tiles: resolvedTiles };
+  });
+  const targetCounts = new Map<number, number>();
+
+  for (const targetIndex of plan.pairTargetIndexes) {
+    targetCounts.set(targetIndex, (targetCounts.get(targetIndex) ?? 0) + 2);
+  }
+
+  const dragonCount = Math.min(
+    3,
+    [...targetCounts.values()].reduce((total, count) => total + Math.floor(count / 4), 0),
+  ) as SevenPairsDecomposition["dragonCount"];
+
+  return { fixedMeldCount: 0, pairs, dragonCount };
+}
+
+function compareSevenPairsCandidates(
+  left: HuDecompositionCandidate,
+  right: HuDecompositionCandidate,
+): number {
+  const leftDecomposition = left.decomposition;
+  const rightDecomposition = right.decomposition;
+
+  if (!isSevenPairsDecomposition(leftDecomposition) || !isSevenPairsDecomposition(rightDecomposition)) {
+    return compareAscii(left.signature, right.signature);
+  }
+
+  const leftSuitCount = new Set(
+    leftDecomposition.pairs.flatMap((pair) => pair.tiles.map((value) => value.target.suit)),
+  ).size;
+  const rightSuitCount = new Set(
+    rightDecomposition.pairs.flatMap((pair) => pair.tiles.map((value) => value.target.suit)),
+  ).size;
+
+  return (
+    rightDecomposition.dragonCount - leftDecomposition.dragonCount ||
+    leftSuitCount - rightSuitCount ||
+    compareAscii(left.signature, right.signature)
+  );
 }
 
 function materializeDecomposition(

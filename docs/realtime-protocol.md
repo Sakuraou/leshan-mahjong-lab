@@ -671,6 +671,18 @@ decompositions, raw hands, or internal fact IDs. After `ended`, clients receive
 only listening status, patterns, gen count, capped maximum, and completed
 ledger rows. A final match total remains outside this ledger phase.
 
+The same server-side candidate scorer now compares ordinary and seven-pairs
+decompositions. Seven-pairs snapshots expose only the selected pattern name
+(`xiaoQiDui`, `longQiDui`, `shuangLongQiDui`, or `sanLongQiDui`) and final
+score. Pair groups, laizi source/target assignments, dragon candidates, and
+decomposition signatures remain server-only.
+
+Hu availability never auto-submits a claim. During self-draw discard phase,
+`legalActions` may contain both `claimSelfDrawHu` and `discardTile`; during a
+discard response it may contain both `claimHu` and `passClaim`. Only the claim
+message marks the player as won, allowing a player to pass a small seven-pairs
+hand and continue pursuing more dragons.
+
 This matches the frontend client-perspective switcher: changing perspective
 should only change which hand is visible, not the authoritative game state.
 

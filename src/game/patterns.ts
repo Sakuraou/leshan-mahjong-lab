@@ -1,9 +1,13 @@
-import type { StandardHuDecomposition } from "./hu.ts";
+import {
+  isSevenPairsDecomposition,
+  type HuDecomposition,
+  type SevenPairsDecomposition,
+} from "./hu.ts";
 import { isYaoJi, tileKey } from "./tiles.ts";
 import type { Meld, ScorePattern, Tile, WinMethod } from "./types.ts";
 
 export type DetectHuPatternsInput = {
-  decomposition: StandardHuDecomposition;
+  decomposition: HuDecomposition;
   melds: readonly Meld[];
   // Full concealed winning hand, including the self-drawn or discarded winning tile.
   originalHand: readonly Tile[];
@@ -16,6 +20,10 @@ export type HuPatternDetection = {
 };
 
 export function detectHuPatterns(input: DetectHuPatternsInput): HuPatternDetection {
+  if (isSevenPairsDecomposition(input.decomposition)) {
+    return detectSevenPairsPatterns(input, input.decomposition);
+  }
+
   if (input.decomposition.fixedMeldCount !== input.melds.length) {
     throw new Error("Hu decomposition and exposed meld count do not match.");
   }
@@ -71,4 +79,38 @@ export function detectHuPatterns(input: DetectHuPatternsInput): HuPatternDetecti
   );
 
   return { patterns, genCount };
+}
+
+function detectSevenPairsPatterns(
+  input: DetectHuPatternsInput,
+  decomposition: SevenPairsDecomposition,
+): HuPatternDetection {
+  if (input.melds.length !== 0) {
+    throw new Error("Seven pairs cannot contain exposed melds.");
+  }
+
+  const resolvedTiles = decomposition.pairs.flatMap((pair) => pair.tiles);
+  const patterns: ScorePattern[] = [sevenPairsPattern(decomposition.dragonCount)];
+
+  if (input.originalHand.every((value) => !isYaoJi(value))) {
+    patterns.push("wuJi");
+  }
+
+  if (new Set(resolvedTiles.map((value) => value.target.suit)).size === 1) {
+    patterns.push("qingYiSe");
+  }
+
+  // The dragon pattern already includes its roots, so seven pairs never adds gen fan again.
+  return { patterns, genCount: 0 };
+}
+
+function sevenPairsPattern(dragonCount: SevenPairsDecomposition["dragonCount"]): ScorePattern {
+  const patterns: Record<SevenPairsDecomposition["dragonCount"], ScorePattern> = {
+    0: "xiaoQiDui",
+    1: "longQiDui",
+    2: "shuangLongQiDui",
+    3: "sanLongQiDui",
+  };
+
+  return patterns[dragonCount];
 }

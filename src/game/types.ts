@@ -19,6 +19,7 @@ export type ScorePattern =
   | "xiaoQiDui"
   | "longQiDui"
   | "shuangLongQiDui"
+  | "sanLongQiDui"
   | "wuJi";
 
 export type PatternScore = {

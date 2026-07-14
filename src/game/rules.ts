@@ -122,7 +122,15 @@ const patternScores: Record<ScorePattern, PatternScore> = {
   wuJi: { pattern: "wuJi", fan: 2, multiplier: 4 },
   longQiDui: { pattern: "longQiDui", fan: 3, multiplier: 8 },
   shuangLongQiDui: { pattern: "shuangLongQiDui", fan: 4, multiplier: 16 },
+  sanLongQiDui: { pattern: "sanLongQiDui", fan: 5, multiplier: 32 },
 };
+
+const sevenPairsPatterns = new Set<ScorePattern>([
+  "xiaoQiDui",
+  "longQiDui",
+  "shuangLongQiDui",
+  "sanLongQiDui",
+]);
 
 export type HuScoreInput = {
   patterns: ScorePattern[];
@@ -345,7 +353,9 @@ export type ChaJiaoSettlementBatchResult = {
 
 export function calculateHuScore(input: HuScoreInput): HuScore {
   const cap = input.cap ?? 64;
-  const genCount = input.genCount ?? 0;
+  const genCount = input.patterns.some((pattern) => sevenPairsPatterns.has(pattern))
+    ? 0
+    : (input.genCount ?? 0);
   const patterns = input.patterns.map((pattern) => patternScores[pattern]);
   const patternMultiplier = patterns.reduce(
     (multiplier, patternScore) => multiplier * patternScore.multiplier,

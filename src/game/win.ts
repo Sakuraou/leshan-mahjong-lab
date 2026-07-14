@@ -1,8 +1,8 @@
 import {
-  findHuDecompositions,
+  findAllHuDecompositions,
   type HuDecompositionCandidate,
+  type HuDecomposition,
   type HuCheckReason,
-  type StandardHuDecomposition,
 } from "./hu.ts";
 import { detectHuPatterns } from "./patterns.ts";
 import { calculateHuScore, hasOrdinaryMissingSuitTile, type HuScore } from "./rules.ts";
@@ -21,7 +21,7 @@ export type WinCheckResult =
       canHu: true;
       winMethod: WinMethod;
       hand: Tile[];
-      decomposition: StandardHuDecomposition;
+      decomposition: HuDecomposition;
       patterns: ScorePattern[];
       score: HuScore;
     }
@@ -64,7 +64,7 @@ function checkPlayerHu(
     return { canHu: false, winMethod, hand, reason: "hasMissingSuitTile" };
   }
 
-  const structure = findHuDecompositions({
+  const structure = findAllHuDecompositions({
     hand,
     fixedMeldCount: player.melds.length,
   });
