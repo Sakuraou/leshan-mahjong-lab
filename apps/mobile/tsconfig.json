@@ -5,5 +5,5 @@
     "noEmit": true,
     "allowImportingTsExtensions": true
   },
-  "include": ["**/*.ts", "**/*.tsx", "../../src/webSocketRoomTransport.ts", "../../packages/client-core/src/**/*.ts"]
+  "include": ["**/*.ts", "**/*.tsx"]
 }

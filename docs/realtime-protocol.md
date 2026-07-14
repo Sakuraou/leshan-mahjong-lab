@@ -3,8 +3,8 @@
 This document defines the first WebSocket protocol draft for the future
 server-authoritative Leshan Mahjong room. It is a design contract only. The
 current app has a local `ws` development server, a WebSocket experiment panel,
-session recovery, a main-table WebSocket preview, and a server-authoritative
-`chooseMissingSuit` path. Real WebSocket `drawTile` and `discardTile` actions
+session recovery, a main-table WebSocket preview, and server-authoritative
+`chooseMissingSuit`, `drawTile`, and `discardTile` paths. Those actions
 are specified below but are not implemented yet.
 
 ## Goals
@@ -461,6 +461,7 @@ type ClientVisibleRoomState = {
     | "ended"
     | null;
   legalActions: ClientLegalAction[];
+  actionDescriptors: ClientActionDescriptor[];
   localSeatId: 0 | 1 | 2 | 3 | null;
   seats: SeatState[];
   round: null | {
@@ -483,6 +484,16 @@ type ClientVisibleRoomState = {
   eventLog: RoomEvent[];
 };
 
+type ClientActionDescriptor =
+  | { action: ClientLegalAction; actionId: string }
+  | { action: "takeSeat"; actionId: string; seatIds: Array<0 | 1 | 2 | 3> }
+  | { action: "chooseMissingSuit"; actionId: string; suits: Suit[] }
+  | {
+      action: "discardTile" | "claimAnGang" | "claimBaGang";
+      actionId: string;
+      tiles: Tile[];
+    };
+
 type VisiblePlayerState = {
   id: 0 | 1 | 2 | 3;
   hand: Tile[] | null;
@@ -492,6 +503,33 @@ type VisiblePlayerState = {
   missingSuit: "bamboos" | "dots" | "characters" | null;
 };
 ```
+
+`legalActions` remains the coarse capability list for compatibility.
+`actionDescriptors` is session-scoped and contains only safe parameters already
+validated by the authoritative room state. In particular, the mobile client
+uses the `discardTile.tiles` list and does not duplicate dingque priority or the
+no-active-yaoji-discard rule. `drawTile.actionId` is stable for the current draw
+state and lets the App suppress duplicate automatic requests after recovery.
+
+## Production Client Parsing Boundary
+
+The phone client imports its DTOs, protocol messages, stable error codes, and
+transport only from `packages/client-core`. It does not import `RoomState`, the
+room service, socket adapter, or the broad `src/game/index.ts` barrel.
+
+Every server frame is parsed at runtime before it can update mobile state:
+
+- Message envelopes and action payloads use exact key allowlists.
+- Public `protocolError` frames include only a stable code and message; the
+  server's internal `connectionId` is removed before transmission.
+- Snapshot views are rebuilt into a reduced mobile DTO.
+- `seed`, `wall`, private response arrays, internal settlement ids, connection
+  metadata, and non-null opponent hands reject the whole frame.
+- The single-session transport rejects a snapshot whose `playerId` differs
+  from the authenticated session.
+- Accepted session tokens are retained only in the transport closure and Expo
+  SecureStore; raw message history and multi-player snapshot maps are reserved
+  for the Web experiment transport.
 
 Visibility rule:
 

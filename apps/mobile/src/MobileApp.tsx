@@ -8,9 +8,12 @@ import type {
   PersistedRoomSession,
   PlayerId,
   Suit,
+  Tile,
 } from "@leshan-mahjong/client-core";
 import {
   canUseAction,
+  legalTilesForAction,
+  nextAutomaticDrawAction,
   suitLabel,
   tileLabel,
   toClientRoomViewModel,
@@ -52,11 +55,14 @@ export function MobileApp() {
   const [identity, setIdentity] = useState<Identity | null>(null);
   const [snapshot, setSnapshot] = useState<ClientVisibleRoomState | null>(null);
   const [storedSession, setStoredSession] = useState<PersistedRoomSession | null>(null);
+  const [selectedDiscard, setSelectedDiscard] = useState<Tile | null>(null);
+  const [actionBusy, setActionBusy] = useState(false);
   const gatewayRef = useRef<MobileRoomGateway | null>(null);
   const sessionRef = useRef<PersistedRoomSession | null>(null);
   const connectionGeneration = useRef(0);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
   const lastPersistedEventId = useRef(-1);
+  const autoDrawInFlight = useRef<string | null>(null);
   const viewModel = useMemo(
     () => (snapshot === null ? null : toClientRoomViewModel(snapshot)),
     [snapshot],
@@ -105,26 +111,66 @@ export function MobileApp() {
   }, []);
 
   useEffect(() => {
-    if (gateway === null || identity === null) {
+    if (gateway === null) {
       return;
     }
 
-    const interval = setInterval(() => {
-      const nextSnapshot = gateway.getClientView(identity.playerId);
-
-      if (nextSnapshot !== undefined) {
-        setSnapshot(nextSnapshot);
+    return gateway.subscribe((transportState) => {
+      if (transportState.snapshot !== null) {
+        setSnapshot(transportState.snapshot);
         const record = sessionRef.current;
-        const eventId = latestServerEventId(gateway);
-
-        if (record !== null && eventId !== lastPersistedEventId.current) {
+        if (record !== null && transportState.lastEventId !== lastPersistedEventId.current) {
           void persistSession(gateway, record);
         }
       }
-    }, 500);
+      if (transportState.status === "closed" || transportState.status === "error") {
+        setConnectionStatus("offline");
+        setStatusText(transportState.lastError ?? "连接已断开，可使用恢复会话重新进入");
+      }
+    });
+  }, [gateway]);
 
-    return () => clearInterval(interval);
-  }, [gateway, identity]);
+  useEffect(() => {
+    const drawAction = nextAutomaticDrawAction(
+      snapshot,
+      autoDrawInFlight.current,
+      sessionRef.current?.lastCompletedAutoDrawActionId,
+    );
+    if (gateway === null || drawAction === null) {
+      return;
+    }
+
+    const actionId = drawAction.actionId;
+    autoDrawInFlight.current = actionId;
+    setStatusText(drawAction.action === "drawGangTile" ? "系统正在发放杠后补牌" : "轮到你了，系统正在自动摸牌");
+    const request = drawAction.action === "drawGangTile" ? gateway.drawGangTile() : gateway.drawTile();
+    void request.then(async (result) => {
+      if (!result.ok) {
+        setStatusText(actionFailureText(result.reason));
+        return;
+      }
+      const record = sessionRef.current;
+      if (record !== null) {
+        const nextRecord = { ...record, lastCompletedAutoDrawActionId: actionId };
+        sessionRef.current = nextRecord;
+        setStoredSession(nextRecord);
+        await mobileRoomSessionStore.save(nextRecord);
+      }
+      setStatusText("已自动摸牌，请选择一张合法手牌打出");
+    }).finally(() => {
+      autoDrawInFlight.current = null;
+    });
+  }, [gateway, snapshot]);
+
+  useEffect(() => {
+    if (selectedDiscard === null) {
+      return;
+    }
+    const stillLegal = legalTilesForAction(snapshot, "discardTile").some((tile) => sameTile(tile, selectedDiscard));
+    if (!stillLegal) {
+      setSelectedDiscard(null);
+    }
+  }, [selectedDiscard, snapshot]);
 
   async function createOrJoinRoom(mode: "create" | "join") {
     if (serverUrl.trim() === "" || roomId.trim() === "" || displayName.trim() === "") {
@@ -216,7 +262,7 @@ export function MobileApp() {
     playerId: string,
     sessionToken: string,
   ) {
-    const nextSnapshot = await nextGateway.waitForSnapshot(playerId);
+    const nextSnapshot = await nextGateway.waitForSnapshot();
     const record: PersistedRoomSession = {
       serverUrl: nextGateway.getState().url,
       roomId: nextGateway.getState().roomId,
@@ -238,31 +284,45 @@ export function MobileApp() {
 
   async function runRoomAction(
     action: ClientLegalAction,
-    callback: (activeGateway: MobileRoomGateway, playerId: string) => Promise<ClientTransportActionResult>,
+    callback: (activeGateway: MobileRoomGateway) => Promise<ClientTransportActionResult>,
   ) {
     if (gateway === null || identity === null || snapshot === null || !canUseAction(snapshot, action)) {
       setStatusText("服务端当前未开放此操作");
       return;
     }
 
-    const result = await callback(gateway, identity.playerId);
+    setActionBusy(true);
+    let result: ClientTransportActionResult;
+    try {
+      result = await callback(gateway);
+    } catch {
+      setConnectionStatus("offline");
+      setStatusText("连接中断，操作未确认，请恢复会话后查看服务端状态");
+      return;
+    } finally {
+      setActionBusy(false);
+    }
 
     if (!result.ok) {
       setStatusText(actionFailureText(result.reason));
       return;
     }
 
-    const nextSnapshot = gateway.getClientView(identity.playerId);
-    if (nextSnapshot !== undefined) {
-      setSnapshot(nextSnapshot);
-    }
     await persistSession(gateway, sessionRef.current);
     setStatusText(actionSuccessText(action));
   }
 
   async function chooseSuit(suit: Suit) {
-    await runRoomAction("chooseMissingSuit", (activeGateway, playerId) =>
-      activeGateway.chooseMissingSuit(playerId, suit));
+    await runRoomAction("chooseMissingSuit", (activeGateway) => activeGateway.chooseMissingSuit(suit));
+  }
+
+  async function confirmDiscard() {
+    if (selectedDiscard === null) {
+      return;
+    }
+    const tile = selectedDiscard;
+    await runRoomAction("discardTile", (activeGateway) => activeGateway.discardTile(tile));
+    setSelectedDiscard(null);
   }
 
   async function clearStoredSession() {
@@ -272,6 +332,7 @@ export function MobileApp() {
     setStoredSession(null);
     setIdentity(null);
     setSnapshot(null);
+    setSelectedDiscard(null);
     setConnectionStatus("idle");
     setStatusText("已清除本机保存的会话");
     await mobileRoomSessionStore.clear();
@@ -325,17 +386,17 @@ export function MobileApp() {
                 key={seatId}
                 seat={viewModel?.seats[seatId] ?? null}
                 seatId={seatId}
-                canTakeSeat={canUseAction(viewModel, "takeSeat")}
-                onTakeSeat={() => void runRoomAction("takeSeat", (activeGateway, playerId) => activeGateway.takeSeat(playerId, seatId))}
+                canTakeSeat={canUseAction(viewModel, "takeSeat") && !actionBusy}
+                onTakeSeat={() => void runRoomAction("takeSeat", (activeGateway) => activeGateway.takeSeat(seatId))}
               />
             ))}
           </View>
           <View style={styles.actionRow}>
             {canUseAction(viewModel, "toggleReady") ? (
-              <CommandButton label={localSeat(viewModel)?.ready ? "取消准备" : "准备"} onPress={() => void runRoomAction("toggleReady", (activeGateway, playerId) => activeGateway.toggleReady(playerId))} />
+              <CommandButton label={localSeat(viewModel)?.ready ? "取消准备" : "准备"} onPress={() => void runRoomAction("toggleReady", (activeGateway) => activeGateway.toggleReady())} disabled={actionBusy} />
             ) : null}
             {canUseAction(viewModel, "startRound") ? (
-              <CommandButton label="开始牌局" onPress={() => void runRoomAction("startRound", (activeGateway, playerId) => activeGateway.startRound(playerId))} tone="secondary" />
+              <CommandButton label="开始牌局" onPress={() => void runRoomAction("startRound", (activeGateway) => activeGateway.startRound())} disabled={actionBusy} tone="secondary" />
             ) : null}
           </View>
         </Section>
@@ -344,7 +405,7 @@ export function MobileApp() {
           <Section title="定缺">
             <View style={styles.segmentedControl}>
               {suits.map((suit) => (
-                <Pressable key={suit} style={({ pressed }) => [styles.segment, pressed && styles.pressed]} onPress={() => void chooseSuit(suit)} accessibilityRole="button">
+                <Pressable key={suit} disabled={actionBusy} style={({ pressed }) => [styles.segment, actionBusy && styles.disabled, pressed && !actionBusy && styles.pressed]} onPress={() => void chooseSuit(suit)} accessibilityRole="button">
                   <Text style={styles.segmentText}>缺{suitLabel(suit)}</Text>
                 </Pressable>
               ))}
@@ -366,8 +427,45 @@ export function MobileApp() {
                 <MetaItem label="可用动作" value={`${viewModel.legalActions.length}`} />
               </View>
               {viewModel.seats.map((seat) => (
-                <TableSeat key={seat.seatId} seat={seat} />
+                <TableSeat
+                  key={seat.seatId}
+                  seat={seat}
+                  legalDiscardTiles={seat.isLocal ? legalTilesForAction(viewModel, "discardTile") : []}
+                  selectedDiscard={seat.isLocal ? selectedDiscard : null}
+                  onSelectDiscard={seat.isLocal ? setSelectedDiscard : undefined}
+                />
               ))}
+              {canUseAction(viewModel, "discardTile") ? (
+                <View style={styles.turnActionBand}>
+                  <Text style={styles.turnActionTitle}>
+                    {selectedDiscard === null ? "请选择亮起的手牌" : `准备打出 ${tileLabel(selectedDiscard)}`}
+                  </Text>
+                  <CommandButton
+                    label={selectedDiscard === null ? "确认出牌" : `打出 ${tileLabel(selectedDiscard)}`}
+                    onPress={() => void confirmDiscard()}
+                    disabled={selectedDiscard === null || actionBusy}
+                  />
+                </View>
+              ) : null}
+              {viewModel.phase === "draw" && canUseAction(viewModel, "drawTile") ? (
+                <View style={styles.turnNotice}><Text style={styles.turnNoticeText}>系统正在自动摸牌，无需手动点击</Text></View>
+              ) : null}
+              {viewModel.responseWindow === null ? null : (
+                <View style={styles.responseBand}>
+                  <Text style={styles.responseTitle}>
+                    {viewModel.responseWindow.kind === "qiangGang" ? "等待抢杠响应" : "等待碰、杠、胡响应"}
+                  </Text>
+                  <Text style={styles.responseMeta}>
+                    剩余 {viewModel.pendingResponderCount} 人待响应
+                    {viewModel.hasRespondedByMe ? " · 你的选择已提交" : " · 其他玩家的选择暂不公开"}
+                  </Text>
+                </View>
+              )}
+              <ResponseActions
+                viewModel={viewModel}
+                busy={actionBusy}
+                run={(action, callback) => void runRoomAction(action, callback)}
+              />
               <View style={styles.legalActionBand}>
                 <Text style={styles.legalActionTitle}>服务端可用动作</Text>
                 <Text style={styles.legalActionText}>
@@ -495,7 +593,17 @@ function SeatCard({
   );
 }
 
-function TableSeat({ seat }: { seat: ClientSeatViewModel }) {
+function TableSeat({
+  seat,
+  legalDiscardTiles,
+  selectedDiscard,
+  onSelectDiscard,
+}: {
+  seat: ClientSeatViewModel;
+  legalDiscardTiles: Tile[];
+  selectedDiscard: Tile | null;
+  onSelectDiscard?: (tile: Tile) => void;
+}) {
   return (
     <View style={[styles.tableSeat, seat.isLocal && styles.tableSeatLocal]}>
       <View style={styles.tableSeatHeader}>
@@ -517,12 +625,72 @@ function TableSeat({ seat }: { seat: ClientSeatViewModel }) {
         </View>
       ) : (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.handRow}>
-          {seat.hand.map((tile, index) => <TileFace key={`${tile.suit}-${tile.rank}-${index}`} tile={tile} />)}
+          {seat.hand.map((tile, index) => {
+            const selectable = legalDiscardTiles.some((candidate) => sameTile(candidate, tile));
+            const selected = selectedDiscard !== null && sameTile(selectedDiscard, tile);
+            return (
+              <Pressable
+                key={`${tile.suit}-${tile.rank}-${index}`}
+                accessibilityRole="button"
+                accessibilityLabel={`${tileLabel(tile)}${selectable ? "，可出牌" : "，当前不可出"}`}
+                disabled={!selectable || onSelectDiscard === undefined}
+                onPress={() => onSelectDiscard?.(tile)}
+                style={[styles.handTileButton, !selectable && styles.handTileDisabled, selected && styles.handTileSelected]}
+              >
+                <TileFace tile={tile} />
+              </Pressable>
+            );
+          })}
         </ScrollView>
       )}
       {seat.melds.length === 0 ? null : (
         <Text style={styles.meldText}>副露：{seat.melds.map(meldLabel).join(" · ")}</Text>
       )}
+    </View>
+  );
+}
+
+function ResponseActions({
+  viewModel,
+  busy,
+  run,
+}: {
+  viewModel: ClientRoomViewModel;
+  busy: boolean;
+  run: (
+    action: ClientLegalAction,
+    callback: (gateway: MobileRoomGateway) => Promise<ClientTransportActionResult>,
+  ) => void;
+}) {
+  const actions: Array<{
+    action: ClientLegalAction;
+    label: string;
+    tone?: "primary" | "secondary" | "quiet" | "danger";
+    callback: (gateway: MobileRoomGateway) => Promise<ClientTransportActionResult>;
+  }> = [
+    { action: "passClaim", label: "过", tone: "quiet", callback: (gateway) => gateway.passClaim() },
+    { action: "claimPeng", label: "碰", tone: "secondary", callback: (gateway) => gateway.claimPeng() },
+    { action: "claimMingGang", label: "杠", tone: "secondary", callback: (gateway) => gateway.claimMingGang() },
+    { action: "claimHu", label: "胡", callback: (gateway) => gateway.claimHu() },
+    { action: "claimSelfDrawHu", label: "自摸胡", callback: (gateway) => gateway.claimSelfDrawHu() },
+    { action: "passQiangGang", label: "过", tone: "quiet", callback: (gateway) => gateway.passQiangGang() },
+    { action: "claimQiangGangHu", label: "抢杠胡", callback: (gateway) => gateway.claimQiangGangHu() },
+  ];
+  const visible = actions.filter((entry) => canUseAction(viewModel, entry.action));
+  if (visible.length === 0) {
+    return null;
+  }
+  return (
+    <View style={styles.responseActionRow}>
+      {visible.map((entry) => (
+        <CommandButton
+          key={entry.action}
+          label={entry.label}
+          tone={entry.tone}
+          disabled={busy}
+          onPress={() => run(entry.action, entry.callback)}
+        />
+      ))}
     </View>
   );
 }
@@ -558,6 +726,10 @@ function StatusBadge({ status }: { status: ConnectionStatus }) {
 
 function localSeat(viewModel: ClientRoomViewModel | null): ClientSeatViewModel | null {
   return viewModel?.seats.find((seat) => seat.isLocal) ?? null;
+}
+
+function sameTile(left: Tile, right: Tile): boolean {
+  return left.suit === right.suit && left.rank === right.rank;
 }
 
 function phaseText(viewModel: ClientRoomViewModel | null): string {
@@ -931,6 +1103,23 @@ const styles = StyleSheet.create({
   handRow: {
     paddingRight: 8,
   },
+  handTileButton: {
+    minWidth: 42,
+    minHeight: 58,
+    marginRight: 3,
+    borderRadius: 5,
+    alignItems: "center",
+    justifyContent: "flex-end",
+  },
+  handTileDisabled: {
+    opacity: 0.34,
+  },
+  handTileSelected: {
+    backgroundColor: "#CFE7D8",
+    borderWidth: 2,
+    borderColor: "#24704B",
+    transform: [{ translateY: -6 }],
+  },
   coveredRow: {
     height: 42,
     flexDirection: "row",
@@ -957,6 +1146,55 @@ const styles = StyleSheet.create({
     borderLeftWidth: 4,
     borderLeftColor: "#2F6073",
     backgroundColor: "#E8EEF0",
+  },
+  turnActionBand: {
+    marginTop: 10,
+    padding: 12,
+    borderRadius: 6,
+    backgroundColor: "#E2EEE7",
+  },
+  turnActionTitle: {
+    color: "#214B38",
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: "800",
+    marginBottom: 8,
+  },
+  turnNotice: {
+    marginTop: 10,
+    padding: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: "#24704B",
+    backgroundColor: "#E7F2EB",
+  },
+  turnNoticeText: {
+    color: "#214B38",
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: "700",
+  },
+  responseBand: {
+    marginTop: 10,
+    padding: 12,
+    borderRadius: 6,
+    backgroundColor: "#F0E9D8",
+  },
+  responseTitle: {
+    color: "#5A431B",
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: "800",
+  },
+  responseMeta: {
+    color: "#705E3B",
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 3,
+  },
+  responseActionRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 10,
   },
   legalActionTitle: {
     color: "#274652",

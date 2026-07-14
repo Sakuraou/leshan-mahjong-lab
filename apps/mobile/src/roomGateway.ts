@@ -1,24 +1,20 @@
 import {
-  createWebSocketRoomTransport,
-  type WebSocketRoomTransport,
-} from "../../../src/webSocketRoomTransport.ts";
+  createMobileRoomTransport,
+  type MobileRoomTransport,
+} from "@leshan-mahjong/client-core";
 
-export type MobileRoomGateway = WebSocketRoomTransport;
+export type MobileRoomGateway = MobileRoomTransport;
 
 export function connectMobileRoomGateway(input: {
   serverUrl: string;
   roomId: string;
 }): Promise<MobileRoomGateway> {
-  return createWebSocketRoomTransport({
+  return createMobileRoomTransport({
     url: input.serverUrl.trim(),
     roomId: input.roomId.trim(),
   });
 }
 
 export function latestServerEventId(gateway: MobileRoomGateway): number {
-  const snapshot = gateway
-    .getState()
-    .messages.findLast((message) => message.type === "roomSnapshot");
-
-  return snapshot?.type === "roomSnapshot" ? snapshot.payload.lastEventId : 0;
+  return gateway.getState().lastEventId;
 }

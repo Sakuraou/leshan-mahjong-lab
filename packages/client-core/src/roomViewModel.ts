@@ -1,10 +1,14 @@
 import type {
+  ClientActionDescriptor,
   ClientLegalAction,
   ClientResponseChoice,
   ClientVisibleMeld,
+  ClientVisibleResponseWindow,
   ClientVisibleRoomState,
-} from "../../../src/game/room.ts";
-import type { PlayerId, Suit, Tile } from "../../../src/game/types.ts";
+  PlayerId,
+  Suit,
+  Tile,
+} from "./contract.ts";
 
 export type ClientSeatViewModel = {
   seatId: PlayerId;
@@ -29,11 +33,13 @@ export type ClientRoomViewModel = {
   status: ClientVisibleRoomState["status"];
   phase: ClientVisibleRoomState["phase"];
   legalActions: ClientLegalAction[];
+  actionDescriptors: ClientActionDescriptor[];
   localSeatId: PlayerId | null;
   wallCount: number | null;
   pendingResponderCount: number;
   hasRespondedByMe: boolean;
   responseByMe: ClientResponseChoice | null;
+  responseWindow: ClientVisibleResponseWindow | null;
   seats: ClientSeatViewModel[];
 };
 
@@ -49,11 +55,13 @@ export function toClientRoomViewModel(view: ClientVisibleRoomState): ClientRoomV
     status: view.status,
     phase: view.phase,
     legalActions: [...view.legalActions],
+    actionDescriptors: view.actionDescriptors.map(cloneActionDescriptor),
     localSeatId: view.localSeatId,
     wallCount: view.round?.wallCount ?? null,
     pendingResponderCount: view.responseWindow?.pendingResponderCount ?? 0,
     hasRespondedByMe: view.responseWindow?.hasRespondedByMe ?? false,
     responseByMe: view.responseWindow?.responseByMe ?? null,
+    responseWindow: view.responseWindow === null ? null : { ...view.responseWindow },
     seats: view.seats.map((seat) => {
       const player = view.round?.players[seat.seatId];
       const score = view.scores.find((entry) => entry.seatId === seat.seatId)?.points ?? 0;
@@ -84,6 +92,21 @@ export function canUseAction(
   action: ClientLegalAction,
 ): boolean {
   return view?.legalActions.includes(action) ?? false;
+}
+
+export function descriptorForAction(
+  view: ClientVisibleRoomState | ClientRoomViewModel | null,
+  action: ClientLegalAction,
+): ClientActionDescriptor | null {
+  return view?.actionDescriptors.find((descriptor) => descriptor.action === action) ?? null;
+}
+
+export function legalTilesForAction(
+  view: ClientVisibleRoomState | ClientRoomViewModel | null,
+  action: "discardTile" | "claimAnGang" | "claimBaGang",
+): Tile[] {
+  const descriptor = descriptorForAction(view, action);
+  return descriptor !== null && "tiles" in descriptor ? descriptor.tiles.map(cloneTile) : [];
 }
 
 export function sortTilesForHand(tiles: Tile[]): Tile[] {
@@ -123,8 +146,22 @@ function cloneMeld(meld: ClientVisibleMeld): ClientVisibleMeld {
   }
 
   return {
-    ...meld,
+    type: meld.type,
     tile: cloneTile(meld.tile),
     tiles: meld.tiles.map(cloneTile),
+    fromPlayer: meld.fromPlayer,
   };
+}
+
+function cloneActionDescriptor(descriptor: ClientActionDescriptor): ClientActionDescriptor {
+  if (descriptor.action === "takeSeat") {
+    return { ...descriptor, seatIds: [...descriptor.seatIds] };
+  }
+  if (descriptor.action === "chooseMissingSuit") {
+    return { ...descriptor, suits: [...descriptor.suits] };
+  }
+  if (descriptor.action === "discardTile" || descriptor.action === "claimAnGang" || descriptor.action === "claimBaGang") {
+    return { ...descriptor, tiles: descriptor.tiles.map(cloneTile) };
+  }
+  return { ...descriptor };
 }

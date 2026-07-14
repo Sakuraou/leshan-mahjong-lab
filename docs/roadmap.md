@@ -172,8 +172,16 @@ phone-first product.
 - [x] Save session recovery data with Expo SecureStore and resume after an
   AppState background/foreground transition
 - [x] Add safe-area handling and stable phone touch targets
-- Add interactive hand selection and server-authoritative discard confirmation
-- Add mobile claim, gang, hu, and settlement action surfaces
+- [x] Extract a standalone client-safe contract with strict runtime snapshot
+  parsing and no imports from the server rule/service modules
+- [x] Replace the Web experiment transport in mobile with a single-session
+  transport that stores one token and one redacted snapshot
+- [x] Add stable action descriptors and server-authoritative discard candidates
+- [x] Automatically request normal and gang-replacement draws once, then
+  support touch selection and server-authoritative discard confirmation
+- [x] Add private pass, hu, peng, and ming-gang response controls; hu remains a
+  player decision
+- Add active an-gang/ba-gang selection and settlement detail surfaces
 - Add vibration/audio feedback and foreground network retry backoff
 - Test Android and iOS layouts plus weak-network reconnect behavior
 - Package an installable beta build

@@ -34,6 +34,9 @@ export const mobileRoomSessionStore: RoomSessionStore = {
         playerId: value.playerId,
         sessionToken: value.sessionToken,
         lastEventId: value.lastEventId,
+        ...(typeof value.lastCompletedAutoDrawActionId === "string"
+          ? { lastCompletedAutoDrawActionId: value.lastCompletedAutoDrawActionId }
+          : {}),
       };
     } catch {
       return null;

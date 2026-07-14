@@ -1,25 +1,44 @@
 export type {
+  ClientActionDescriptor,
   ClientLegalAction,
   ClientResponseChoice,
   ClientVisibleMeld,
+  ClientVisiblePlayerState,
+  ClientVisibleResponseWindow,
   ClientVisibleRoomState,
-} from "../../../src/game/room.ts";
-export type {
+  ClientVisibleSeatState,
+  MobileRoomServerMessage,
+  MobileServerMessageParseResult,
   PlayerId,
+  ProtocolErrorCode,
+  ProtocolVersion,
+  Rank,
+  RoomSocketClientMessage,
+  RoomSocketErrorCode,
+  RoomStatus,
+  RoundPhase,
+  SeatId,
   Suit,
   Tile,
-} from "../../../src/game/types.ts";
+} from "./contract.ts";
+export { parseMobileRoomServerMessage } from "./contract.ts";
 export {
   canUseAction,
+  descriptorForAction,
+  legalTilesForAction,
   sortTilesForHand,
   suitLabel,
   tileLabel,
   toClientRoomViewModel,
 } from "./roomViewModel.ts";
 export type { ClientRoomViewModel, ClientSeatViewModel } from "./roomViewModel.ts";
+export { createMobileRoomTransport } from "./mobileTransport.ts";
+export type { MobileRoomTransportOptions, MobileWebSocketLike } from "./mobileTransport.ts";
+export { nextAutomaticDrawAction, nextAutomaticDrawActionId } from "./mobileTurn.ts";
 export type {
   ClientTransportActionResult,
+  MobileRoomTransport,
+  MobileRoomTransportState,
   PersistedRoomSession,
-  RoomClientTransport,
   RoomSessionStore,
 } from "./transport.ts";

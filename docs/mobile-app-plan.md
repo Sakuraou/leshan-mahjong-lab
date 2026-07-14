@@ -4,7 +4,7 @@ The final product is a phone-first Leshan Mahjong App. The Vite Web client stays
 in the repository as a rule, protocol, privacy, and portfolio validation tool;
 it is not the final gameplay shell.
 
-## First Mobile Milestone
+## First Interactive Mobile Milestone
 
 The first Expo/React Native client lives in `apps/mobile`. It currently covers:
 
@@ -14,24 +14,37 @@ The first Expo/React Native client lives in `apps/mobile`. It currently covers:
 - Taking a seat, toggling ready, and starting a full room only when those
   actions appear in the server-provided `legalActions` list.
 - Submitting dingque through the same authoritative WebSocket action.
-- Rendering a read-only table with the local hand, opponent concealed counts,
+- Rendering a table with the local hand, opponent concealed counts,
   public melds, discards, current player, wall count, and score.
+- Automatically requesting normal and gang-replacement draws when the server
+  exposes a stable `drawTile` or `drawGangTile` action descriptor. The
+  descriptor id is persisted after an accepted request so App recovery does
+  not send the same draw twice.
+- Letting the local player select only server-provided discard candidates and
+  confirm the discard. Dingque priority and the active yaoji restriction are
+  never recalculated by React Native.
+- Showing private pass, hu, peng, and ming-gang actions during a response
+  window. Hu remains an explicit player decision; the App never auto-hu.
+- Showing only the window deadline summary, remaining responder count, and the
+  local player's submitted choice before the server atomically closes it.
 - Saving a small versioned session record with Expo SecureStore.
 - Closing the socket on background and resuming with `sessionToken` plus
   `lastEventId` after the App becomes active again.
 
-Draw, discard, peng, gang, and hu buttons are intentionally not enabled in the
-first mobile milestone. The client may display those server legal actions, but
-the Web preview remains the gameplay integration surface until the phone table
-interaction is designed and tested.
+The Vite Web preview remains the multi-client debugging surface. The phone App
+now owns a single authenticated session and can complete the first real
+draw/discard/claim loop without storing debug message history or other players'
+snapshots.
 
 ## Architecture
 
 ```text
 Authoritative Node WebSocket server
   -> per-session roomSnapshot
-  -> ClientVisibleRoomState + legalActions
-  -> shared client-core view model / transport contract
+  -> full server redacted room snapshot
+  -> strict client-core parser and reduced mobile DTO
+  -> legalActions + parameterized actionDescriptors
+  -> single-session MobileRoomTransport
   -> Expo mobile presentation
 
 Vite Web debug client
@@ -45,23 +58,23 @@ Ownership boundaries:
 | --- | --- |
 | `src/game` | Rules, hidden hands, wall, response choices, settlement, authoritative transitions |
 | `src/server` | WebSocket connections, heartbeat, session routing, deadline ticks |
-| `src/webSocketRoomTransport.ts` | Cross-platform WebSocket message delivery and action correlation |
-| `packages/client-core` | Mobile-safe view projection, labels, sorting, shared transport/session interfaces |
+| `src/webSocketRoomTransport.ts` | Multi-client browser experiment transport and debug history |
+| `packages/client-core` | Standalone client DTOs, strict parser, view model, single-session transport, labels, sorting |
 | `src/App.tsx` | Browser debug and portfolio surface |
 | `apps/mobile` | Phone layout, SecureStore, AppState recovery, user commands |
 
 The mobile app must not import `RoomState`, `RoundState`, `roomService`,
 `roomSocketAdapter`, or `localRoomTransport` into presentation components. Its
 business input is the redacted `ClientVisibleRoomState`. The first shared
-package still references the existing public TypeScript DTO definitions by
-type-only imports; extracting a fully standalone protocol package with runtime
-message validation is a later hardening step.
+package has no imports from `src/game`, `RoomState`, `roomService`, or the socket
+adapter. Server internals may structurally produce the wire DTO, but the mobile
+runtime accepts it only after exact-key parsing and a fresh safe projection.
 
 ## Privacy Contract
 
-The mobile view model copies a fixed safe field set. It does not retain raw
-WebSocket messages, session tokens, shuffle seeds, wall order, opponent hands,
-private claim arrays, or concealed an-gang tiles.
+The mobile parser and view model copy a fixed safe field set. They do not retain
+raw WebSocket messages, multi-player snapshot maps, shuffle seeds, wall order,
+opponent hands, private claim arrays, or concealed an-gang tiles.
 
 - Local seat: `hand` is visible and sorted for display.
 - Other seats: `hand` remains `null`; only `handCount` is rendered as tile backs.
@@ -69,8 +82,11 @@ private claim arrays, or concealed an-gang tiles.
   `responseByMe` cross the view-model boundary.
 - Session token: kept in the transport closure and Expo SecureStore, never
   rendered in the UI.
-- Commands: seat, ready, start, and dingque buttons are gated by server
-  `legalActions`; the server still performs final validation.
+- Commands: every visible button is gated by server `legalActions`.
+- Discard: selectable tiles come only from the server's `discardTile`
+  descriptor; the server still performs final validation.
+- Server messages: malformed envelopes, unknown extra fields, hidden wall/seed
+  fields, and non-null opponent hands are rejected before state changes.
 
 ## Run Locally
 
@@ -112,9 +128,9 @@ npm run smoke:server
 ## Android And iOS Roadmap
 
 1. Validate the current shell in Expo Go on one Android phone and one iPhone.
-2. Replace the read-only hand with touch selection and discard confirmation,
-   still gated by `legalActions`.
-3. Add foreground reconnect backoff and network-change handling.
+2. Add active an-gang/ba-gang selection and richer settlement presentation.
+3. Add foreground reconnect backoff, network-change handling, and an out-of-turn
+   action id on commands for stronger replay protection.
 4. Add vibration/audio settings and accessibility labels for real tile artwork.
 5. Move the in-memory server to a `wss://` deployment with durable room/session
    storage.

@@ -101,7 +101,11 @@ export async function createRoomSocketDevServer(options: RoomSocketDevServerOpti
       }
 
       for (const error of result.errors) {
-        socket.send(JSON.stringify(error));
+        socket.send(JSON.stringify({
+          protocolVersion: 1,
+          type: error.type,
+          payload: error.payload,
+        }));
       }
 
       for (const undelivered of result.undelivered) {

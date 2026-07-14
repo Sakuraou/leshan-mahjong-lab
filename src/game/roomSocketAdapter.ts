@@ -9,7 +9,6 @@ import {
   tickRoomDeadlines,
   type NowFactory,
   type RoomAction,
-  type RoomServiceError,
   type RoomServiceState,
   type SessionTokenFactory,
 } from "./roomService.ts";
@@ -19,7 +18,6 @@ import {
   type ClientVisibleRoomState,
   type RoomEvent,
 } from "./room.ts";
-import type { PlayerId, Suit, Tile } from "./types.ts";
 
 export type RoomSocketAdapterState = {
   rooms: RoomSocketRoomState[];
@@ -43,156 +41,7 @@ export type RoomSocketRoomState = {
   service: RoomServiceState;
 };
 
-export type RoomSocketClientMessage =
-  | {
-      protocolVersion: 1;
-      clientMessageId: string;
-      type: "createRoom";
-      payload: { roomId: string; displayName: string };
-    }
-  | {
-      protocolVersion: 1;
-      clientMessageId: string;
-      roomId: string;
-      type: "joinRoom";
-      payload: { displayName: string };
-    }
-  | {
-      protocolVersion: 1;
-      clientMessageId: string;
-      roomId: string;
-      sessionToken: string;
-      type: "takeSeat";
-      payload: { seatId: PlayerId };
-    }
-  | {
-      protocolVersion: 1;
-      clientMessageId: string;
-      roomId: string;
-      sessionToken: string;
-      type: "toggleReady";
-      payload: Record<string, never>;
-    }
-  | {
-      protocolVersion: 1;
-      clientMessageId: string;
-      roomId: string;
-      sessionToken: string;
-      type: "startRound";
-      payload: { dealer?: PlayerId };
-    }
-  | {
-      protocolVersion: 1;
-      clientMessageId: string;
-      roomId: string;
-      sessionToken: string;
-      type: "chooseMissingSuit";
-      payload: { suit: Suit };
-    }
-  | {
-      protocolVersion: 1;
-      clientMessageId: string;
-      roomId: string;
-      sessionToken: string;
-      type: "drawTile";
-      payload: Record<string, never>;
-    }
-  | {
-      protocolVersion: 1;
-      clientMessageId: string;
-      roomId: string;
-      sessionToken: string;
-      type: "drawGangTile";
-      payload: Record<string, never>;
-    }
-  | {
-      protocolVersion: 1;
-      clientMessageId: string;
-      roomId: string;
-      sessionToken: string;
-      type: "discardTile";
-      payload: { tile: Tile };
-    }
-  | {
-      protocolVersion: 1;
-      clientMessageId: string;
-      roomId: string;
-      sessionToken: string;
-      type: "passClaim";
-      payload: Record<string, never>;
-    }
-  | {
-      protocolVersion: 1;
-      clientMessageId: string;
-      roomId: string;
-      sessionToken: string;
-      type: "claimHu";
-      payload: Record<string, never>;
-    }
-  | {
-      protocolVersion: 1;
-      clientMessageId: string;
-      roomId: string;
-      sessionToken: string;
-      type: "claimSelfDrawHu";
-      payload: Record<string, never>;
-    }
-  | {
-      protocolVersion: 1;
-      clientMessageId: string;
-      roomId: string;
-      sessionToken: string;
-      type: "claimPeng";
-      payload: Record<string, never>;
-    }
-  | {
-      protocolVersion: 1;
-      clientMessageId: string;
-      roomId: string;
-      sessionToken: string;
-      type: "claimMingGang";
-      payload: Record<string, never>;
-    }
-  | {
-      protocolVersion: 1;
-      clientMessageId: string;
-      roomId: string;
-      sessionToken: string;
-      type: "claimAnGang";
-      payload: { tile: Tile };
-    }
-  | {
-      protocolVersion: 1;
-      clientMessageId: string;
-      roomId: string;
-      sessionToken: string;
-      type: "claimBaGang";
-      payload: { tile: Tile };
-    }
-  | {
-      protocolVersion: 1;
-      clientMessageId: string;
-      roomId: string;
-      sessionToken: string;
-      type: "passQiangGang";
-      payload: Record<string, never>;
-    }
-  | {
-      protocolVersion: 1;
-      clientMessageId: string;
-      roomId: string;
-      sessionToken: string;
-      type: "claimQiangGangHu";
-      payload: Record<string, never>;
-    }
-  | {
-      protocolVersion: 1;
-      clientMessageId: string;
-      roomId: string;
-      sessionToken: string;
-      type: "resumeSession";
-      payload: { lastSeenEventId?: number };
-    };
+export type RoomSocketClientMessage = ClientContractMessage;
 
 export type RoomSocketServerMessage =
   | {
@@ -227,7 +76,7 @@ export type RoomSnapshotPayload = {
   events: ClientRoomEvent[];
 };
 
-export type RoomSocketErrorCode = "roomNotFound" | "roomAlreadyExists" | RoomServiceError;
+export type RoomSocketErrorCode = ClientContractErrorCode;
 
 export type RoomSocketAdapterResult = {
   adapter: RoomSocketAdapterState;
@@ -715,3 +564,7 @@ function upsertRoom(adapter: RoomSocketAdapterState, service: RoomServiceState):
 function createSecureRoomSeed(): string {
   return `round-${globalThis.crypto.randomUUID()}`;
 }
+import type {
+  RoomSocketClientMessage as ClientContractMessage,
+  RoomSocketErrorCode as ClientContractErrorCode,
+} from "@leshan-mahjong/client-core";

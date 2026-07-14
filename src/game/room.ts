@@ -1,3 +1,4 @@
+import type { ClientActionDescriptor, ClientLegalAction } from "@leshan-mahjong/client-core";
 import {
   discardTile as discardRoundTile,
   drawTile as drawRoundTile,
@@ -48,23 +49,7 @@ export type RoomStatus = "waiting" | "dingque" | "playing" | "ended";
 
 export type RoundPhase = "dingque" | "draw" | "discard" | "claim" | "gangDraw" | "qiangGang" | "ended";
 
-export type ClientLegalAction =
-  | "takeSeat"
-  | "toggleReady"
-  | "startRound"
-  | "chooseMissingSuit"
-  | "drawTile"
-  | "drawGangTile"
-  | "discardTile"
-  | "passClaim"
-  | "claimHu"
-  | "claimSelfDrawHu"
-  | "claimPeng"
-  | "claimMingGang"
-  | "claimAnGang"
-  | "claimBaGang"
-  | "passQiangGang"
-  | "claimQiangGangHu";
+export type { ClientActionDescriptor, ClientLegalAction } from "@leshan-mahjong/client-core";
 
 export type ClaimWindow = ResponseWindowMetadata & {
   discardedBySeatId: PlayerId;
@@ -371,6 +356,7 @@ export type ClientVisibleRoomState = {
   status: RoomStatus;
   phase: RoundPhase | null;
   legalActions: ClientLegalAction[];
+  actionDescriptors: ClientActionDescriptor[];
   localSeatId: PlayerId | null;
   members: Array<RoomMember & { seatId: PlayerId | null }>;
   seats: SeatState[];
@@ -1655,12 +1641,14 @@ export function toClientVisibleRoomState(
   now = Date.now(),
 ): ClientVisibleRoomState {
   const localSeatId = room.seats.find((seat) => seat.playerId === playerId)?.seatId ?? null;
+  const legalActions = clientLegalActions(room, localSeatId);
 
   return {
     id: room.id,
     status: room.status,
     phase: room.phase,
-    legalActions: clientLegalActions(room, localSeatId),
+    legalActions,
+    actionDescriptors: clientActionDescriptors(room, localSeatId, legalActions),
     localSeatId,
     members: room.members.map((member) => ({
       ...member,
@@ -1995,6 +1983,80 @@ function clientLegalActions(room: RoomState, localSeatId: PlayerId | null): Clie
   }
 
   return actions;
+}
+
+function clientActionDescriptors(
+  room: RoomState,
+  localSeatId: PlayerId | null,
+  actions: ClientLegalAction[],
+): ClientActionDescriptor[] {
+  return actions.map((action) => {
+    const actionId = clientActionId(room, localSeatId, action);
+
+    if (action === "takeSeat") {
+      return {
+        action,
+        actionId,
+        seatIds: room.seats.filter((seat) => seat.playerId === null).map((seat) => seat.seatId),
+      };
+    }
+
+    if (action === "chooseMissingSuit") {
+      return { action, actionId, suits: ["bamboos", "dots", "characters"] };
+    }
+
+    if (action === "discardTile") {
+      const round = room.round;
+      const player = localSeatId === null || round === null ? null : round.players[localSeatId];
+      const tiles = player === null || round === null || localSeatId === null
+        ? []
+        : uniqueTiles(player.hand).filter((candidate) => discardRoundTile(round, localSeatId, candidate).ok);
+      return { action, actionId, tiles };
+    }
+
+    if (action === "claimAnGang") {
+      const player = localSeatId === null || room.round === null ? null : room.round.players[localSeatId];
+      const tiles = player === null
+        ? []
+        : uniqueTiles(player.hand).filter((candidate) => chooseActiveGangTiles(player.hand, candidate, 4) !== null);
+      return { action, actionId, tiles };
+    }
+
+    if (action === "claimBaGang") {
+      const player = localSeatId === null || room.round === null ? null : room.round.players[localSeatId];
+      const tiles = player === null
+        ? []
+        : player.melds
+            .filter((meld) => meld.type === "peng" && chooseActiveGangTiles(player.hand, meld.tile, 1) !== null)
+            .map((meld) => meld.tile);
+      return { action, actionId, tiles: uniqueTiles(tiles) };
+    }
+
+    return { action, actionId };
+  });
+}
+
+function clientActionId(room: RoomState, localSeatId: PlayerId | null, action: ClientLegalAction): string {
+  if (action === "drawTile" && room.round !== null) {
+    return `${room.id}:${room.roundNumber}:draw:${room.round.currentPlayer}:${room.round.wall.length}`;
+  }
+
+  if ((action === "passClaim" || action === "claimHu" || action === "claimPeng" || action === "claimMingGang") && room.claimWindow !== null) {
+    return `${room.claimWindow.windowId}:${action}`;
+  }
+
+  if ((action === "passQiangGang" || action === "claimQiangGangHu") && room.baGangClaimWindow !== null) {
+    return `${room.baGangClaimWindow.windowId}:${action}`;
+  }
+
+  const phaseVersion = room.round === null
+    ? `${room.status}:${room.seats.map((seat) => `${seat.playerId ?? "-"}:${seat.ready ? 1 : 0}`).join(",")}`
+    : `${room.roundNumber}:${room.phase}:${room.round.currentPlayer}:${room.round.wall.length}`;
+  return `${room.id}:${phaseVersion}:${localSeatId ?? "observer"}:${action}`;
+}
+
+function uniqueTiles(tiles: Tile[]): Tile[] {
+  return tiles.filter((candidate, index) => tiles.findIndex((value) => sameTile(value, candidate)) === index);
 }
 
 function createClaimWindow(

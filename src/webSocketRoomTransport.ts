@@ -6,7 +6,6 @@ import type {
   Suit,
   Tile,
 } from "./game/index.ts";
-import type { RoomClientTransport } from "@leshan-mahjong/client-core";
 
 export type WebSocketRoomTransportState = {
   url: string;
@@ -49,11 +48,6 @@ export type WebSocketRoomTransport = {
   getState: () => WebSocketRoomTransportState;
   close: () => void;
 };
-
-type AssertSharedTransport<T extends true> = T;
-type WebSocketTransportMatchesSharedContract = AssertSharedTransport<
-  WebSocketRoomTransport extends RoomClientTransport ? true : false
->;
 
 export type WebSocketRoomTransportActionResult =
   | {
