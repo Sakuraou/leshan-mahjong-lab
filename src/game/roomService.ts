@@ -85,22 +85,23 @@ export type RoomAction =
   | { type: "toggleReady" }
   | { type: "startRound"; dealer?: PlayerId }
   | { type: "chooseMissingSuit"; suit: Suit }
-  | { type: "drawTile" }
-  | { type: "drawGangTile" }
-  | { type: "discardTile"; tile: Tile }
-  | { type: "passClaim" }
-  | { type: "claimHu" }
-  | { type: "claimSelfDrawHu" }
-  | { type: "claimPeng" }
-  | { type: "claimMingGang" }
-  | { type: "claimAnGang"; tile: Tile }
-  | { type: "claimBaGang"; tile: Tile }
-  | { type: "passQiangGang" }
-  | { type: "claimQiangGangHu" };
+  | { type: "drawTile"; expectedActionId?: string }
+  | { type: "drawGangTile"; expectedActionId?: string }
+  | { type: "discardTile"; tile: Tile; expectedActionId?: string }
+  | { type: "passClaim"; expectedActionId?: string }
+  | { type: "claimHu"; expectedActionId?: string }
+  | { type: "claimSelfDrawHu"; expectedActionId?: string }
+  | { type: "claimPeng"; expectedActionId?: string }
+  | { type: "claimMingGang"; expectedActionId?: string }
+  | { type: "claimAnGang"; tile: Tile; expectedActionId?: string }
+  | { type: "claimBaGang"; tile: Tile; expectedActionId?: string }
+  | { type: "passQiangGang"; expectedActionId?: string }
+  | { type: "claimQiangGangHu"; expectedActionId?: string };
 
 export type RoomServiceError =
   | "invalidSession"
   | "sessionDisconnected"
+  | "staleAction"
   | ResultFailureReason<JoinRoomResult>
   | ResultFailureReason<TakeSeatResult>
   | ResultFailureReason<ToggleReadyResult>
@@ -256,17 +257,32 @@ export function handleRoomAction(
   }
 
   const now = service.nowFactory();
-  const result = applyRoomAction(service, session.playerId, action, now);
+  const deadlineResult = tickRoomStateDeadlines(service.room, now);
+  const currentService = deadlineResult.changed
+    ? {
+        ...service,
+        room: deadlineResult.room,
+        lastEventId: advanceEventId(service, deadlineResult.room),
+      }
+    : service;
+  if ("expectedActionId" in action && action.expectedActionId !== undefined) {
+    const view = toClientVisibleRoomState(currentService.room, session.playerId, now);
+    const descriptor = view.actionDescriptors.find((value) => value.action === action.type);
+    if (descriptor?.actionId !== action.expectedActionId) {
+      return { ok: false, reason: "staleAction", service: currentService };
+    }
+  }
+  const result = applyRoomAction(currentService, session.playerId, action, now);
 
   if (!result.ok) {
-    return { ok: false, reason: result.reason, service };
+    return { ok: false, reason: result.reason, service: currentService };
   }
 
-  const nextLastEventId = advanceEventId(service, result.room);
+  const nextLastEventId = advanceEventId(currentService, result.room);
   const nextService: RoomServiceState = {
-    ...service,
+    ...currentService,
     room: result.room,
-    sessions: updateSessionLastEventId(service.sessions, sessionToken, nextLastEventId),
+    sessions: updateSessionLastEventId(currentService.sessions, sessionToken, nextLastEventId),
     lastEventId: nextLastEventId,
   };
 

@@ -75,6 +75,21 @@ test("rejects invalid JSON before calling the room adapter", () => {
   ]);
 });
 
+test("rejects malformed expected action identifiers at the protocol boundary", () => {
+  const server = createConnectedServer(["conn-host"]);
+  const result = handleRoomSocketRawMessage(server, "conn-host", JSON.stringify({
+    protocolVersion: 1,
+    clientMessageId: "m-invalid-action-id",
+    roomId: "server-room",
+    sessionToken: "session-1",
+    type: "drawTile",
+    payload: { expectedActionId: 42 },
+  }));
+
+  assert.equal(result.state, server);
+  assert.deepEqual(result.errors.map((error) => error.payload.code), ["invalidMessage"]);
+});
+
 test("returns action rejections to the requesting connection", () => {
   let server = createConnectedServer(["conn-host", "conn-guest"]);
   server = handleRoomSocketRawMessage(

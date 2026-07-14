@@ -511,6 +511,44 @@ uses the `discardTile.tiles` list and does not duplicate dingque priority or the
 no-active-yaoji-discard rule. `drawTile.actionId` is stable for the current draw
 state and lets the App suppress duplicate automatic requests after recovery.
 
+### Action preconditions and active gang commands
+
+Production phone commands echo the descriptor id as `expectedActionId`:
+
+```ts
+type GuardedTurnPayload = {
+  expectedActionId?: string; // optional only for legacy Web debug messages
+};
+
+type GuardedTilePayload = GuardedTurnPayload & {
+  tile: Tile;
+};
+```
+
+`drawTile`, `drawGangTile`, all discard/qiang-gang response commands, and
+`claimAnGang` / `claimBaGang` use this precondition. The Expo transport always
+sends it; protocol-v1 Web debug messages may omit it temporarily. If a supplied
+id does not match the requesting session's current descriptor, the service
+returns `actionRejected` with code `staleAction`, publishes the current safe
+snapshot to that session, and does not apply the delayed command.
+
+The service advances expired response deadlines before comparing the id. A new
+turn opportunity, candidate set, or response window receives a new id, while a
+repeated snapshot of the same opportunity keeps the same id. This prevents an
+old discard or pass/hu/peng/gang click from landing in a later turn or window.
+
+Active gang parameter rules:
+
+- `claimAnGang.payload.tile` and `claimBaGang.payload.tile` must be selected
+  from the corresponding session-scoped descriptor.
+- The server still validates the physical hand/meld, phase, player, and laizi
+  sources. The client does not derive candidates.
+- An accepted an-gang enters `gangDraw` immediately.
+- An accepted ba-gang first enters `qiangGang`; only an uncontested committed
+  ba-gang reaches `gangDraw`.
+- The phone automatically sends the guarded `drawGangTile` once. Hu is never
+  automatic and always remains an explicit player command.
+
 ## Production Client Parsing Boundary
 
 The phone client imports its DTOs, protocol messages, stable error codes, and

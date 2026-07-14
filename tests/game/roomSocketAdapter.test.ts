@@ -5,6 +5,7 @@ import {
   createRoomSocketAdapterState as createRoomSocketAdapterStateBase,
   handleRoomSocketMessage,
   tickRoomSocketDeadlines,
+  toClientVisibleRoomState,
   type RoomSocketAdapterState,
   type RoomSocketClientMessage,
   type RoomSocketServerMessage,
@@ -231,6 +232,81 @@ test("maps drawTile and broadcasts redacted snapshots to every session", () => {
     assert.equal(message.payload.view.legalActions.includes("discardTile"), index === 1);
   });
   assert.deepEqual(snapshots[1].payload.events, [{ type: "tileDrawn", seatId: 1, playerId: "player-2" }]);
+});
+
+test("rejects a stale discard descriptor without mutating the turn", () => {
+  const prepared = prepareAdapterForDealerDiscard("socket-room-stale-discard");
+  const service = prepared.adapter.rooms[0].service;
+  const beforeEvents = service.room.eventLog.length;
+  const result = dispatch(prepared.adapter, {
+    protocolVersion: 1,
+    clientMessageId: "m-stale-discard",
+    roomId: service.room.id,
+    sessionToken: prepared.sessions[0],
+    type: "discardTile",
+    payload: { tile: prepared.discard, expectedActionId: "old-discard-action" },
+  });
+
+  assert.equal(result.messages[0].type, "actionRejected");
+  if (result.messages[0].type === "actionRejected") {
+    assert.equal(result.messages[0].payload.code, "staleAction");
+  }
+  assert.equal(result.adapter.rooms[0].service.room.eventLog.length, beforeEvents);
+  assert.equal(result.adapter.rooms[0].service.room.phase, "discard");
+  assert.equal(snapshotMessages(result.messages).length, 1);
+});
+
+test("rejects a response descriptor after that player already answered", () => {
+  const prepared = prepareAdapterForDealerDiscard("socket-room-stale-claim");
+  const service = prepared.adapter.rooms[0].service;
+  const dealerView = toClientVisibleRoomState(service.room, "player-1", service.nowFactory());
+  const discardActionId = dealerView.actionDescriptors.find(
+    (descriptor) => descriptor.action === "discardTile",
+  )?.actionId;
+  assert.notEqual(discardActionId, undefined);
+
+  const discarded = dispatch(prepared.adapter, {
+    protocolVersion: 1,
+    clientMessageId: "m-current-discard",
+    roomId: service.room.id,
+    sessionToken: prepared.sessions[0],
+    type: "discardTile",
+    payload: { tile: prepared.discard, expectedActionId: discardActionId },
+  });
+  const claimService = discarded.adapter.rooms[0].service;
+  const responderView = toClientVisibleRoomState(
+    claimService.room,
+    "player-2",
+    claimService.nowFactory(),
+  );
+  const passActionId = responderView.actionDescriptors.find(
+    (descriptor) => descriptor.action === "passClaim",
+  )?.actionId;
+  assert.notEqual(passActionId, undefined);
+
+  const passed = dispatch(discarded.adapter, {
+    protocolVersion: 1,
+    clientMessageId: "m-current-pass",
+    roomId: service.room.id,
+    sessionToken: prepared.sessions[1],
+    type: "passClaim",
+    payload: { expectedActionId: passActionId },
+  });
+  const beforeReplayEvents = passed.adapter.rooms[0].service.room.eventLog.length;
+  const replayed = dispatch(passed.adapter, {
+    protocolVersion: 1,
+    clientMessageId: "m-old-pass",
+    roomId: service.room.id,
+    sessionToken: prepared.sessions[1],
+    type: "passClaim",
+    payload: { expectedActionId: passActionId },
+  });
+
+  assert.equal(replayed.messages[0].type, "actionRejected");
+  if (replayed.messages[0].type === "actionRejected") {
+    assert.equal(replayed.messages[0].payload.code, "staleAction");
+  }
+  assert.equal(replayed.adapter.rooms[0].service.room.eventLog.length, beforeReplayEvents);
 });
 
 test("maps discardTile and broadcasts redacted snapshots to every session", () => {

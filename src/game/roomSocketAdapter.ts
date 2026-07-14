@@ -317,9 +317,21 @@ function handleRoomServiceAction(
   const result = handleRoomAction(service, message.sessionToken, action);
 
   if (!result.ok) {
+    const serviceChanged = result.service !== service;
+    const snapshotMessages = serviceChanged
+      ? snapshotMessagesForSessions(
+          result.service,
+          result.service.room.eventLog.slice(service.lastEventId),
+        )
+      : result.reason === "staleAction"
+        ? [snapshotMessage(result.service, message.sessionToken, [])]
+        : [];
     return {
-      adapter,
-      messages: [rejectedMessage(message, service.room.id, message.sessionToken, result.reason)],
+      adapter: serviceChanged ? upsertRoom(adapter, result.service) : adapter,
+      messages: [
+        rejectedMessage(message, result.service.room.id, message.sessionToken, result.reason),
+        ...snapshotMessages,
+      ],
     };
   }
 
@@ -377,51 +389,51 @@ function clientMessageToRoomAction(
   }
 
   if (message.type === "drawTile") {
-    return { type: "drawTile" };
+    return { type: "drawTile", expectedActionId: message.payload.expectedActionId };
   }
 
   if (message.type === "drawGangTile") {
-    return { type: "drawGangTile" };
+    return { type: "drawGangTile", expectedActionId: message.payload.expectedActionId };
   }
 
   if (message.type === "discardTile") {
-    return { type: "discardTile", tile: message.payload.tile };
+    return { type: "discardTile", tile: message.payload.tile, expectedActionId: message.payload.expectedActionId };
   }
 
   if (message.type === "passClaim") {
-    return { type: "passClaim" };
+    return { type: "passClaim", expectedActionId: message.payload.expectedActionId };
   }
 
   if (message.type === "claimHu") {
-    return { type: "claimHu" };
+    return { type: "claimHu", expectedActionId: message.payload.expectedActionId };
   }
 
   if (message.type === "claimSelfDrawHu") {
-    return { type: "claimSelfDrawHu" };
+    return { type: "claimSelfDrawHu", expectedActionId: message.payload.expectedActionId };
   }
 
   if (message.type === "claimPeng") {
-    return { type: "claimPeng" };
+    return { type: "claimPeng", expectedActionId: message.payload.expectedActionId };
   }
 
   if (message.type === "claimMingGang") {
-    return { type: "claimMingGang" };
+    return { type: "claimMingGang", expectedActionId: message.payload.expectedActionId };
   }
 
   if (message.type === "claimAnGang") {
-    return { type: "claimAnGang", tile: message.payload.tile };
+    return { type: "claimAnGang", tile: message.payload.tile, expectedActionId: message.payload.expectedActionId };
   }
 
   if (message.type === "claimBaGang") {
-    return { type: "claimBaGang", tile: message.payload.tile };
+    return { type: "claimBaGang", tile: message.payload.tile, expectedActionId: message.payload.expectedActionId };
   }
 
   if (message.type === "passQiangGang") {
-    return { type: "passQiangGang" };
+    return { type: "passQiangGang", expectedActionId: message.payload.expectedActionId };
   }
 
   if (message.type === "claimQiangGangHu") {
-    return { type: "claimQiangGangHu" };
+    return { type: "claimQiangGangHu", expectedActionId: message.payload.expectedActionId };
   }
 
   return { type: "chooseMissingSuit", suit: message.payload.suit };
@@ -534,6 +546,7 @@ function errorMessage(code: RoomSocketErrorCode): string {
     claimAlreadyResponded: "This player has already responded to the claim window.",
     cannotAnGang: "This player cannot claim an gang with this tile.",
     cannotBaGang: "This player cannot claim ba gang with this tile.",
+    staleAction: "This action is stale; refresh the room snapshot before trying again.",
     cannotHu: "This player cannot claim hu on the discarded tile.",
     cannotPeng: "This player cannot claim peng on the discarded tile.",
     cannotMingGang: "This player cannot claim ming gang on the discarded tile.",

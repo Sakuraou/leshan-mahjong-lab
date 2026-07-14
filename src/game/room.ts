@@ -2051,7 +2051,7 @@ function clientActionId(room: RoomState, localSeatId: PlayerId | null, action: C
 
   const phaseVersion = room.round === null
     ? `${room.status}:${room.seats.map((seat) => `${seat.playerId ?? "-"}:${seat.ready ? 1 : 0}`).join(",")}`
-    : `${room.roundNumber}:${room.phase}:${room.round.currentPlayer}:${room.round.wall.length}`;
+    : `${room.roundNumber}:${room.phase}:${room.round.currentPlayer}:${room.round.wall.length}:${room.eventLog.length}`;
   return `${room.id}:${phaseVersion}:${localSeatId ?? "observer"}:${action}`;
 }
 

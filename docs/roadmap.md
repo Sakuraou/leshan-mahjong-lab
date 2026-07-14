@@ -181,7 +181,13 @@ phone-first product.
   support touch selection and server-authoritative discard confirmation
 - [x] Add private pass, hu, peng, and ming-gang response controls; hu remains a
   player decision
-- Add active an-gang/ba-gang selection and settlement detail surfaces
+- [x] Add `expectedActionId` to production phone turn/response commands and
+  reject delayed actions as `staleAction` in the authoritative service
+- [x] Add server-provided an-gang/ba-gang candidate selection, confirmation,
+  qiang-gang waiting, and one-shot automatic gang replacement draws
+- [x] Clear transient turn selections on recovery while preserving the last
+  completed automatic draw id
+- Add settlement detail surfaces and a compact phone event timeline
 - Add vibration/audio feedback and foreground network retry backoff
 - Test Android and iOS layouts plus weak-network reconnect behavior
 - Package an installable beta build

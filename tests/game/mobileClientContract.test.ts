@@ -4,6 +4,7 @@ import { WebSocket } from "ws";
 
 import {
   createMobileRoomTransport,
+  descriptorForAction,
   legalTilesForAction,
   nextAutomaticDrawActionId,
   parseMobileRoomServerMessage,
@@ -124,6 +125,111 @@ test("single-session mobile transport stores one snapshot and rejects another pl
   assert.match(transport.getState().lastError ?? "", /其他玩家/);
 });
 
+test("mobile transport always echoes the current action descriptor and blocks stale local choices", async () => {
+  const socket = new FakeSocket();
+  const transportPromise = createMobileRoomTransport({
+    url: "ws://example.test",
+    roomId: "ROOM",
+    socketFactory: () => socket,
+  });
+  socket.open();
+  const transport = await transportPromise;
+  const createPromise = transport.createRoomSession({ displayName: "手机玩家" });
+  const createRequest = JSON.parse(socket.sent[0]) as { clientMessageId: string };
+  socket.serverSend({
+    protocolVersion: 1,
+    serverEventId: 1,
+    roomId: "ROOM",
+    recipientSessionToken: "secure-token",
+    type: "actionAccepted",
+    payload: { clientMessageId: createRequest.clientMessageId, playerId: "p1" },
+  });
+  assert.equal((await createPromise).ok, true);
+
+  let room = startedRoom();
+  const candidate = room.round?.players[0].hand.find((value) =>
+    !(value.rank === 1 && (value.suit === "bamboos" || value.suit === "dots")));
+  assert.notEqual(candidate, undefined);
+  for (const [playerId, suit] of [
+    ["p1", candidate!.suit],
+    ["p2", "dots"],
+    ["p3", "characters"],
+    ["p4", "bamboos"],
+  ] as const) {
+    const chosen = chooseMissingSuit(room, playerId, suit);
+    assert.equal(chosen.ok, true);
+    if (chosen.ok) room = chosen.room;
+  }
+  const view = toClientVisibleRoomState(room, "p1");
+  socket.serverSend(snapshotMessage(view, "p1"));
+  const descriptor = descriptorForAction(view, "discardTile");
+  const discard = legalTilesForAction(view, "discardTile")[0];
+  assert.notEqual(descriptor, null);
+  assert.notEqual(discard, undefined);
+
+  const sentBeforeStale = socket.sent.length;
+  const stale = await transport.discardTile(discard!, "old-action-id");
+  assert.deepEqual(stale, {
+    ok: false,
+    kind: "action",
+    code: "staleAction",
+    reason: "staleAction",
+  });
+  assert.equal(socket.sent.length, sentBeforeStale);
+
+  const discardPromise = transport.discardTile(discard!, descriptor!.actionId);
+  const request = JSON.parse(socket.sent.at(-1)!) as {
+    clientMessageId: string;
+    payload: { expectedActionId: string };
+  };
+  assert.equal(request.payload.expectedActionId, descriptor!.actionId);
+  socket.serverSend({
+    protocolVersion: 1,
+    serverEventId: 2,
+    roomId: "ROOM",
+    recipientSessionToken: "secure-token",
+    type: "actionRejected",
+    payload: { clientMessageId: request.clientMessageId, code: "staleAction", message: "stale" },
+  });
+  assert.equal((await discardPromise).ok, false);
+
+  const activeGangView: ClientVisibleRoomState = {
+    ...view,
+    legalActions: ["claimAnGang", "claimBaGang"],
+    actionDescriptors: [
+      { action: "claimAnGang", actionId: "an-gang-action", tiles: [discard!] },
+      { action: "claimBaGang", actionId: "ba-gang-action", tiles: [discard!] },
+    ],
+  };
+  socket.serverSend(snapshotMessage(activeGangView, "p1"));
+  for (const [action, actionId] of [
+    ["claimAnGang", "an-gang-action"],
+    ["claimBaGang", "ba-gang-action"],
+  ] as const) {
+    const actionPromise = action === "claimAnGang"
+      ? transport.claimAnGang(discard!, actionId)
+      : transport.claimBaGang(discard!, actionId);
+    const gangRequest = JSON.parse(socket.sent.at(-1)!) as {
+      clientMessageId: string;
+      type: string;
+      payload: { expectedActionId: string; tile: unknown };
+    };
+    assert.equal(gangRequest.type, action);
+    assert.equal(gangRequest.payload.expectedActionId, actionId);
+    assert.deepEqual(gangRequest.payload.tile, discard);
+    socket.serverSend({
+      protocolVersion: 1,
+      serverEventId: 3,
+      roomId: "ROOM",
+      recipientSessionToken: "secure-token",
+      type: "actionRejected",
+      payload: { clientMessageId: gangRequest.clientMessageId, code: "staleAction", message: "stale" },
+    });
+    assert.equal((await actionPromise).ok, false);
+  }
+  transport.close();
+});
+
 test("single-session mobile transport consumes real WebSocket server snapshots", async () => {
   const server = await createRoomSocketDevServer({ port: 0 });
   const host = await createMobileRoomTransport({
@@ -180,12 +286,17 @@ test("mobile transports complete a real authoritative draw and discard turn", as
     const hostDiscardView = await waitForTransport(transports[0], (state) =>
       state.snapshot?.phase === "discard" ? state.snapshot : null);
     const hostDiscard = legalTilesForAction(hostDiscardView, "discardTile")[0];
+    const hostDiscardActionId = descriptorForAction(hostDiscardView, "discardTile")?.actionId;
     assert.notEqual(hostDiscard, undefined);
-    assert.equal((await transports[0].discardTile(hostDiscard)).ok, true);
+    assert.notEqual(hostDiscardActionId, undefined);
+    assert.equal((await transports[0].discardTile(hostDiscard, hostDiscardActionId!)).ok, true);
 
     for (const transport of transports.slice(1)) {
-      await waitForTransport(transport, (state) => state.snapshot?.legalActions.includes("passClaim") ? true : null);
-      assert.equal((await transport.passClaim()).ok, true);
+      const claimView = await waitForTransport(transport, (state) =>
+        state.snapshot?.legalActions.includes("passClaim") ? state.snapshot : null);
+      const passActionId = descriptorForAction(claimView, "passClaim")?.actionId;
+      assert.notEqual(passActionId, undefined);
+      assert.equal((await transport.passClaim(passActionId!)).ok, true);
     }
 
     const drawView = await waitForTransport(transports[1], (state) =>
@@ -193,15 +304,17 @@ test("mobile transports complete a real authoritative draw and discard turn", as
     const wallBefore = drawView.round?.wallCount ?? 0;
     const drawActionId = nextAutomaticDrawActionId(drawView, null, null);
     assert.notEqual(drawActionId, null);
-    assert.equal((await transports[1].drawTile()).ok, true);
+    assert.equal((await transports[1].drawTile(drawActionId!)).ok, true);
     const discardView = await waitForTransport(transports[1], (state) =>
       state.snapshot?.phase === "discard" ? state.snapshot : null);
     assert.equal(discardView.round?.wallCount, wallBefore - 1);
     assert.equal(nextAutomaticDrawActionId(discardView, null, drawActionId), null);
 
     const discard = legalTilesForAction(discardView, "discardTile")[0];
+    const discardActionId = descriptorForAction(discardView, "discardTile")?.actionId;
     assert.notEqual(discard, undefined);
-    assert.equal((await transports[1].discardTile(discard)).ok, true);
+    assert.notEqual(discardActionId, undefined);
+    assert.equal((await transports[1].discardTile(discard, discardActionId!)).ok, true);
   } finally {
     transports.forEach((transport) => transport.close());
     await server.close();
@@ -232,6 +345,16 @@ test("automatic draw guard emits once and stays quiet after resume", () => {
   assert.notEqual(first, null);
   assert.equal(nextAutomaticDrawActionId(view, first, null), null);
   assert.equal(nextAutomaticDrawActionId(view, null, first), null);
+
+  const gangDrawView: ClientVisibleRoomState = {
+    ...view,
+    phase: "gangDraw",
+    legalActions: ["drawGangTile"],
+    actionDescriptors: [{ action: "drawGangTile", actionId: "gang-draw-1" }],
+  };
+  assert.equal(nextAutomaticDrawActionId(gangDrawView, null, null), "gang-draw-1");
+  assert.equal(nextAutomaticDrawActionId(gangDrawView, "gang-draw-1", null), null);
+  assert.equal(nextAutomaticDrawActionId(gangDrawView, null, "gang-draw-1"), null);
 });
 
 test("authoritative discard descriptor exposes only actually legal tiles", () => {

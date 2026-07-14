@@ -96,16 +96,18 @@ export async function createMobileRoomTransport(
     toggleReady: () => sendSessionAction("toggleReady", {}),
     startRound: (dealer) => sendSessionAction("startRound", dealer === undefined ? {} : { dealer }),
     chooseMissingSuit: (suit) => sendSessionAction("chooseMissingSuit", { suit }),
-    drawTile: () => sendSessionAction("drawTile", {}),
-    drawGangTile: () => sendSessionAction("drawGangTile", {}),
-    discardTile: (tile) => sendSessionAction("discardTile", { tile }),
-    passClaim: () => sendSessionAction("passClaim", {}),
-    claimHu: () => sendSessionAction("claimHu", {}),
-    claimSelfDrawHu: () => sendSessionAction("claimSelfDrawHu", {}),
-    claimPeng: () => sendSessionAction("claimPeng", {}),
-    claimMingGang: () => sendSessionAction("claimMingGang", {}),
-    passQiangGang: () => sendSessionAction("passQiangGang", {}),
-    claimQiangGangHu: () => sendSessionAction("claimQiangGangHu", {}),
+    drawTile: (expectedActionId) => sendGuardedSessionAction("drawTile", {}, expectedActionId),
+    drawGangTile: (expectedActionId) => sendGuardedSessionAction("drawGangTile", {}, expectedActionId),
+    discardTile: (tile, expectedActionId) => sendGuardedSessionAction("discardTile", { tile }, expectedActionId),
+    passClaim: (expectedActionId) => sendGuardedSessionAction("passClaim", {}, expectedActionId),
+    claimHu: (expectedActionId) => sendGuardedSessionAction("claimHu", {}, expectedActionId),
+    claimSelfDrawHu: (expectedActionId) => sendGuardedSessionAction("claimSelfDrawHu", {}, expectedActionId),
+    claimPeng: (expectedActionId) => sendGuardedSessionAction("claimPeng", {}, expectedActionId),
+    claimMingGang: (expectedActionId) => sendGuardedSessionAction("claimMingGang", {}, expectedActionId),
+    claimAnGang: (tile, expectedActionId) => sendGuardedSessionAction("claimAnGang", { tile }, expectedActionId),
+    claimBaGang: (tile, expectedActionId) => sendGuardedSessionAction("claimBaGang", { tile }, expectedActionId),
+    passQiangGang: (expectedActionId) => sendGuardedSessionAction("passQiangGang", {}, expectedActionId),
+    claimQiangGangHu: (expectedActionId) => sendGuardedSessionAction("claimQiangGangHu", {}, expectedActionId),
     getState: () => state,
     subscribe(listener) {
       listeners.add(listener);
@@ -156,6 +158,39 @@ export async function createMobileRoomTransport(
       type,
       payload,
     } as RoomSocketClientMessage);
+  }
+
+  function sendGuardedSessionAction(
+    type: Extract<
+      RoomSocketClientMessage["type"],
+      | "drawTile"
+      | "drawGangTile"
+      | "discardTile"
+      | "passClaim"
+      | "claimHu"
+      | "claimSelfDrawHu"
+      | "claimPeng"
+      | "claimMingGang"
+      | "claimAnGang"
+      | "claimBaGang"
+      | "passQiangGang"
+      | "claimQiangGangHu"
+    >,
+    payload: Record<string, unknown>,
+    expectedActionId: string,
+  ): Promise<ClientTransportActionResult> {
+    const currentDescriptor = state.snapshot?.actionDescriptors.find(
+      (descriptor) => descriptor.action === type,
+    );
+    if (currentDescriptor?.actionId !== expectedActionId) {
+      return Promise.resolve({
+        ok: false,
+        kind: "action",
+        code: "staleAction",
+        reason: "staleAction",
+      });
+    }
+    return sendSessionAction(type, { ...payload, expectedActionId });
   }
 
   function send(message: RoomSocketClientMessage): Promise<ClientTransportActionResult> {

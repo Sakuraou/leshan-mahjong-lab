@@ -17,6 +17,9 @@ export function nextAutomaticDrawAction(
     entry.action === "drawTile" || entry.action === "drawGangTile");
   if (descriptor === undefined ||
       (descriptor.action !== "drawTile" && descriptor.action !== "drawGangTile") ||
+      !snapshot?.legalActions.includes(descriptor.action) ||
+      (descriptor.action === "drawTile" && snapshot.phase !== "draw") ||
+      (descriptor.action === "drawGangTile" && snapshot.phase !== "gangDraw") ||
       descriptor.actionId === inFlightActionId || descriptor.actionId === lastCompletedActionId) {
     return null;
   }

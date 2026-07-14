@@ -23,8 +23,15 @@ The first Expo/React Native client lives in `apps/mobile`. It currently covers:
 - Letting the local player select only server-provided discard candidates and
   confirm the discard. Dingque priority and the active yaoji restriction are
   never recalculated by React Native.
+- Showing server-provided an-gang and ba-gang candidates, with target selection
+  and a second confirmation before submission. A declared ba-gang enters the
+  qiang-gang response view; after an uncontested commit, the App automatically
+  requests exactly one gang-replacement draw.
 - Showing private pass, hu, peng, and ming-gang actions during a response
   window. Hu remains an explicit player decision; the App never auto-hu.
+- Echoing the current `actionId` as `expectedActionId` on every turn, response,
+  and active-gang command. The mobile transport refuses an old local selection,
+  and the authoritative service rejects a delayed command with `staleAction`.
 - Showing only the window deadline summary, remaining responder count, and the
   local player's submitted choice before the server atomically closes it.
 - Saving a small versioned session record with Expo SecureStore.
@@ -85,6 +92,12 @@ opponent hands, private claim arrays, or concealed an-gang tiles.
 - Commands: every visible button is gated by server `legalActions`.
 - Discard: selectable tiles come only from the server's `discardTile`
   descriptor; the server still performs final validation.
+- Active gangs: target tiles come only from the session-scoped `claimAnGang`
+  and `claimBaGang` descriptors. An-gang candidates and tiles are never copied
+  into another session's view.
+- Recovery: transient discard/gang selections are cleared, the latest snapshot
+  rebuilds the action area, and the persisted completed auto-draw id prevents
+  the same replacement draw from being submitted twice.
 - Server messages: malformed envelopes, unknown extra fields, hidden wall/seed
   fields, and non-null opponent hands are rejected before state changes.
 
@@ -128,9 +141,9 @@ npm run smoke:server
 ## Android And iOS Roadmap
 
 1. Validate the current shell in Expo Go on one Android phone and one iPhone.
-2. Add active an-gang/ba-gang selection and richer settlement presentation.
-3. Add foreground reconnect backoff, network-change handling, and an out-of-turn
-   action id on commands for stronger replay protection.
+2. Add foreground reconnect backoff and network-change handling around the
+   completed action-id replay protection.
+3. Add richer settlement presentation and a compact in-game event timeline.
 4. Add vibration/audio settings and accessibility labels for real tile artwork.
 5. Move the in-memory server to a `wss://` deployment with durable room/session
    storage.

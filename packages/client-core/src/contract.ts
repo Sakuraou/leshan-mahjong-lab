@@ -140,16 +140,18 @@ export type RoomSocketErrorCode =
   | "cannotPeng"
   | "cannotMingGang"
   | "cannotAnGang"
-  | "cannotBaGang";
+  | "cannotBaGang"
+  | "staleAction";
 
 export type ProtocolErrorCode = "invalidJson" | "invalidMessage" | "unknownConnection" | "sessionNotBound";
 
 type EmptyPayload = Record<string, never>;
-type EmptySessionAction<TAction extends string> = TAction extends string
-  ? { protocolVersion: 1; clientMessageId: string; roomId: string; sessionToken: string; type: TAction; payload: EmptyPayload }
+type GuardedEmptyPayload = { expectedActionId?: string };
+type GuardedEmptySessionAction<TAction extends string> = TAction extends string
+  ? { protocolVersion: 1; clientMessageId: string; roomId: string; sessionToken: string; type: TAction; payload: GuardedEmptyPayload }
   : never;
-type TileSessionAction<TAction extends string> = TAction extends string
-  ? { protocolVersion: 1; clientMessageId: string; roomId: string; sessionToken: string; type: TAction; payload: { tile: Tile } }
+type GuardedTileSessionAction<TAction extends string> = TAction extends string
+  ? { protocolVersion: 1; clientMessageId: string; roomId: string; sessionToken: string; type: TAction; payload: { tile: Tile; expectedActionId?: string } }
   : never;
 
 export type RoomSocketClientMessage =
@@ -159,8 +161,8 @@ export type RoomSocketClientMessage =
   | { protocolVersion: 1; clientMessageId: string; roomId: string; sessionToken: string; type: "toggleReady"; payload: EmptyPayload }
   | { protocolVersion: 1; clientMessageId: string; roomId: string; sessionToken: string; type: "startRound"; payload: { dealer?: SeatId } }
   | { protocolVersion: 1; clientMessageId: string; roomId: string; sessionToken: string; type: "chooseMissingSuit"; payload: { suit: Suit } }
-  | EmptySessionAction<"drawTile" | "drawGangTile" | "passClaim" | "claimHu" | "claimSelfDrawHu" | "claimPeng" | "claimMingGang" | "passQiangGang" | "claimQiangGangHu">
-  | TileSessionAction<"discardTile" | "claimAnGang" | "claimBaGang">
+  | GuardedEmptySessionAction<"drawTile" | "drawGangTile" | "passClaim" | "claimHu" | "claimSelfDrawHu" | "claimPeng" | "claimMingGang" | "passQiangGang" | "claimQiangGangHu">
+  | GuardedTileSessionAction<"discardTile" | "claimAnGang" | "claimBaGang">
   | { protocolVersion: 1; clientMessageId: string; roomId: string; sessionToken: string; type: "resumeSession"; payload: { lastSeenEventId?: number } };
 
 export type MobileRoomServerMessage =
@@ -216,6 +218,7 @@ const errorCodes = new Set<RoomSocketErrorCode>([
   "tileNotInHand", "mustDiscardMissingSuitFirst", "cannotDiscardYaoJi", "noClaimWindow",
   "noQiangGangWindow", "claimNotAllowed", "claimAlreadyResponded", "cannotHu", "cannotPeng",
   "cannotMingGang", "cannotAnGang", "cannotBaGang",
+  "staleAction",
 ]);
 const protocolErrorCodes = new Set<ProtocolErrorCode>([
   "invalidJson", "invalidMessage", "unknownConnection", "sessionNotBound",

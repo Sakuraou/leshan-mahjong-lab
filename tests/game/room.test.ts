@@ -1540,6 +1540,15 @@ test("lets the current player claim an gang after drawing", () => {
     melds: [],
   });
 
+  const ownerBefore = toClientVisibleRoomState(room, "p1");
+  const opponentBefore = toClientVisibleRoomState(room, "p2");
+  const anGangDescriptor = ownerBefore.actionDescriptors.find(
+    (descriptor) => descriptor.action === "claimAnGang",
+  );
+  assert.ok(anGangDescriptor !== undefined && "tiles" in anGangDescriptor);
+  assert.deepEqual(anGangDescriptor.tiles, [gangTile]);
+  assert.equal(opponentBefore.actionDescriptors.some((descriptor) => descriptor.action === "claimAnGang"), false);
+
   const claimed = claimAnGang(room, "p1", gangTile);
   assert.equal(claimed.ok, true);
 
@@ -1719,6 +1728,15 @@ test("declares ba gang, keeps peng pending, and commits after every player passe
     ],
     melds: [{ type: "peng", tile: gangTile, tiles: [gangTile, gangTile, gangTile], fromPlayer: 2 }],
   });
+
+  const ownerBefore = toClientVisibleRoomState(room, "p1");
+  const opponentBefore = toClientVisibleRoomState(room, "p2");
+  const baGangDescriptor = ownerBefore.actionDescriptors.find(
+    (descriptor) => descriptor.action === "claimBaGang",
+  );
+  assert.ok(baGangDescriptor !== undefined && "tiles" in baGangDescriptor);
+  assert.deepEqual(baGangDescriptor.tiles, [gangTile]);
+  assert.equal(opponentBefore.actionDescriptors.some((descriptor) => descriptor.action === "claimBaGang"), false);
 
   const claimed = claimBaGang(room, "p1", gangTile, { now: 1_000, timeoutMs: 5_000 });
   assert.equal(claimed.ok, true);

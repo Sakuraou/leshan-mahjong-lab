@@ -12,6 +12,7 @@ import type {
 } from "@leshan-mahjong/client-core";
 import {
   canUseAction,
+  descriptorForAction,
   legalTilesForAction,
   nextAutomaticDrawAction,
   suitLabel,
@@ -41,6 +42,12 @@ import { TileFace } from "./TileFace";
 
 type ConnectionStatus = "idle" | "connecting" | "online" | "background" | "offline" | "error";
 type Identity = { playerId: string; sessionToken: string };
+type SelectedDiscard = { tile: Tile; actionId: string };
+type SelectedGang = {
+  action: "claimAnGang" | "claimBaGang";
+  tile: Tile;
+  actionId: string;
+};
 
 const seatIds: PlayerId[] = [0, 1, 2, 3];
 const suits: Suit[] = ["bamboos", "dots", "characters"];
@@ -55,7 +62,8 @@ export function MobileApp() {
   const [identity, setIdentity] = useState<Identity | null>(null);
   const [snapshot, setSnapshot] = useState<ClientVisibleRoomState | null>(null);
   const [storedSession, setStoredSession] = useState<PersistedRoomSession | null>(null);
-  const [selectedDiscard, setSelectedDiscard] = useState<Tile | null>(null);
+  const [selectedDiscard, setSelectedDiscard] = useState<SelectedDiscard | null>(null);
+  const [selectedGang, setSelectedGang] = useState<SelectedGang | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const gatewayRef = useRef<MobileRoomGateway | null>(null);
   const sessionRef = useRef<PersistedRoomSession | null>(null);
@@ -96,6 +104,7 @@ export function MobileApp() {
           activeGateway.close();
           gatewayRef.current = null;
           setGateway(null);
+          resetTransientTurnState();
           setConnectionStatus("background");
           setStatusText("应用已进入后台，会话已安全保存");
         }
@@ -143,7 +152,9 @@ export function MobileApp() {
     const actionId = drawAction.actionId;
     autoDrawInFlight.current = actionId;
     setStatusText(drawAction.action === "drawGangTile" ? "系统正在发放杠后补牌" : "轮到你了，系统正在自动摸牌");
-    const request = drawAction.action === "drawGangTile" ? gateway.drawGangTile() : gateway.drawTile();
+    const request = drawAction.action === "drawGangTile"
+      ? gateway.drawGangTile(actionId)
+      : gateway.drawTile(actionId);
     void request.then(async (result) => {
       if (!result.ok) {
         setStatusText(actionFailureText(result.reason));
@@ -166,11 +177,25 @@ export function MobileApp() {
     if (selectedDiscard === null) {
       return;
     }
-    const stillLegal = legalTilesForAction(snapshot, "discardTile").some((tile) => sameTile(tile, selectedDiscard));
+    const descriptor = descriptorForAction(snapshot, "discardTile");
+    const stillLegal = descriptor?.actionId === selectedDiscard.actionId
+      && legalTilesForAction(snapshot, "discardTile").some((tile) => sameTile(tile, selectedDiscard.tile));
     if (!stillLegal) {
       setSelectedDiscard(null);
     }
   }, [selectedDiscard, snapshot]);
+
+  useEffect(() => {
+    if (selectedGang === null) {
+      return;
+    }
+    const descriptor = descriptorForAction(snapshot, selectedGang.action);
+    const stillLegal = descriptor?.actionId === selectedGang.actionId
+      && legalTilesForAction(snapshot, selectedGang.action).some((tile) => sameTile(tile, selectedGang.tile));
+    if (!stillLegal) {
+      setSelectedGang(null);
+    }
+  }, [selectedGang, snapshot]);
 
   async function createOrJoinRoom(mode: "create" | "join") {
     if (serverUrl.trim() === "" || roomId.trim() === "" || displayName.trim() === "") {
@@ -263,12 +288,16 @@ export function MobileApp() {
     sessionToken: string,
   ) {
     const nextSnapshot = await nextGateway.waitForSnapshot();
+    const previousRecord = sessionRef.current;
     const record: PersistedRoomSession = {
       serverUrl: nextGateway.getState().url,
       roomId: nextGateway.getState().roomId,
       playerId,
       sessionToken,
       lastEventId: latestServerEventId(nextGateway),
+      lastCompletedAutoDrawActionId: previousRecord?.sessionToken === sessionToken
+        ? previousRecord.lastCompletedAutoDrawActionId
+        : undefined,
     };
 
     gatewayRef.current = nextGateway;
@@ -278,6 +307,7 @@ export function MobileApp() {
     setSnapshot(nextSnapshot);
     setStoredSession(record);
     setConnectionStatus("online");
+    resetTransientTurnState();
     await mobileRoomSessionStore.save(record);
     lastPersistedEventId.current = record.lastEventId;
   }
@@ -320,9 +350,20 @@ export function MobileApp() {
     if (selectedDiscard === null) {
       return;
     }
-    const tile = selectedDiscard;
-    await runRoomAction("discardTile", (activeGateway) => activeGateway.discardTile(tile));
+    const { tile, actionId } = selectedDiscard;
+    await runRoomAction("discardTile", (activeGateway) => activeGateway.discardTile(tile, actionId));
     setSelectedDiscard(null);
+  }
+
+  async function confirmGang() {
+    if (selectedGang === null) {
+      return;
+    }
+    const { action, tile, actionId } = selectedGang;
+    await runRoomAction(action, (activeGateway) => action === "claimAnGang"
+      ? activeGateway.claimAnGang(tile, actionId)
+      : activeGateway.claimBaGang(tile, actionId));
+    setSelectedGang(null);
   }
 
   async function clearStoredSession() {
@@ -332,7 +373,7 @@ export function MobileApp() {
     setStoredSession(null);
     setIdentity(null);
     setSnapshot(null);
-    setSelectedDiscard(null);
+    resetTransientTurnState();
     setConnectionStatus("idle");
     setStatusText("已清除本机保存的会话");
     await mobileRoomSessionStore.clear();
@@ -342,6 +383,13 @@ export function MobileApp() {
     gatewayRef.current?.close();
     gatewayRef.current = null;
     setGateway(null);
+    resetTransientTurnState();
+  }
+
+  function resetTransientTurnState() {
+    setSelectedDiscard(null);
+    setSelectedGang(null);
+    autoDrawInFlight.current = null;
   }
 
   return (
@@ -431,17 +479,23 @@ export function MobileApp() {
                   key={seat.seatId}
                   seat={seat}
                   legalDiscardTiles={seat.isLocal ? legalTilesForAction(viewModel, "discardTile") : []}
-                  selectedDiscard={seat.isLocal ? selectedDiscard : null}
-                  onSelectDiscard={seat.isLocal ? setSelectedDiscard : undefined}
+                  selectedDiscard={seat.isLocal ? selectedDiscard?.tile ?? null : null}
+                  onSelectDiscard={seat.isLocal ? (tile) => {
+                    const descriptor = descriptorForAction(viewModel, "discardTile");
+                    if (descriptor !== null) {
+                      setSelectedGang(null);
+                      setSelectedDiscard({ tile, actionId: descriptor.actionId });
+                    }
+                  } : undefined}
                 />
               ))}
               {canUseAction(viewModel, "discardTile") ? (
                 <View style={styles.turnActionBand}>
                   <Text style={styles.turnActionTitle}>
-                    {selectedDiscard === null ? "请选择亮起的手牌" : `准备打出 ${tileLabel(selectedDiscard)}`}
+                    {selectedDiscard === null ? "请选择亮起的手牌" : `准备打出 ${tileLabel(selectedDiscard.tile)}`}
                   </Text>
                   <CommandButton
-                    label={selectedDiscard === null ? "确认出牌" : `打出 ${tileLabel(selectedDiscard)}`}
+                    label={selectedDiscard === null ? "确认出牌" : `打出 ${tileLabel(selectedDiscard.tile)}`}
                     onPress={() => void confirmDiscard()}
                     disabled={selectedDiscard === null || actionBusy}
                   />
@@ -450,6 +504,16 @@ export function MobileApp() {
               {viewModel.phase === "draw" && canUseAction(viewModel, "drawTile") ? (
                 <View style={styles.turnNotice}><Text style={styles.turnNoticeText}>系统正在自动摸牌，无需手动点击</Text></View>
               ) : null}
+              <ActiveGangActions
+                viewModel={viewModel}
+                selected={selectedGang}
+                busy={actionBusy}
+                onSelect={(selection) => {
+                  setSelectedDiscard(null);
+                  setSelectedGang(selection);
+                }}
+                onConfirm={() => void confirmGang()}
+              />
               {viewModel.responseWindow === null ? null : (
                 <View style={styles.responseBand}>
                   <Text style={styles.responseTitle}>
@@ -666,17 +730,22 @@ function ResponseActions({
     action: ClientLegalAction;
     label: string;
     tone?: "primary" | "secondary" | "quiet" | "danger";
-    callback: (gateway: MobileRoomGateway) => Promise<ClientTransportActionResult>;
+    callback: (gateway: MobileRoomGateway, actionId: string) => Promise<ClientTransportActionResult>;
   }> = [
-    { action: "passClaim", label: "过", tone: "quiet", callback: (gateway) => gateway.passClaim() },
-    { action: "claimPeng", label: "碰", tone: "secondary", callback: (gateway) => gateway.claimPeng() },
-    { action: "claimMingGang", label: "杠", tone: "secondary", callback: (gateway) => gateway.claimMingGang() },
-    { action: "claimHu", label: "胡", callback: (gateway) => gateway.claimHu() },
-    { action: "claimSelfDrawHu", label: "自摸胡", callback: (gateway) => gateway.claimSelfDrawHu() },
-    { action: "passQiangGang", label: "过", tone: "quiet", callback: (gateway) => gateway.passQiangGang() },
-    { action: "claimQiangGangHu", label: "抢杠胡", callback: (gateway) => gateway.claimQiangGangHu() },
+    { action: "passClaim", label: "过", tone: "quiet", callback: (gateway, actionId) => gateway.passClaim(actionId) },
+    { action: "claimPeng", label: "碰", tone: "secondary", callback: (gateway, actionId) => gateway.claimPeng(actionId) },
+    { action: "claimMingGang", label: "杠", tone: "secondary", callback: (gateway, actionId) => gateway.claimMingGang(actionId) },
+    { action: "claimHu", label: "胡", callback: (gateway, actionId) => gateway.claimHu(actionId) },
+    { action: "claimSelfDrawHu", label: "自摸胡", callback: (gateway, actionId) => gateway.claimSelfDrawHu(actionId) },
+    { action: "passQiangGang", label: "过", tone: "quiet", callback: (gateway, actionId) => gateway.passQiangGang(actionId) },
+    { action: "claimQiangGangHu", label: "抢杠胡", callback: (gateway, actionId) => gateway.claimQiangGangHu(actionId) },
   ];
-  const visible = actions.filter((entry) => canUseAction(viewModel, entry.action));
+  const visible = actions.flatMap((entry) => {
+    const descriptor = descriptorForAction(viewModel, entry.action);
+    return canUseAction(viewModel, entry.action) && descriptor !== null
+      ? [{ ...entry, actionId: descriptor.actionId }]
+      : [];
+  });
   if (visible.length === 0) {
     return null;
   }
@@ -688,9 +757,68 @@ function ResponseActions({
           label={entry.label}
           tone={entry.tone}
           disabled={busy}
-          onPress={() => run(entry.action, entry.callback)}
+          onPress={() => run(entry.action, (gateway) => entry.callback(gateway, entry.actionId))}
         />
       ))}
+    </View>
+  );
+}
+
+function ActiveGangActions({
+  viewModel,
+  selected,
+  busy,
+  onSelect,
+  onConfirm,
+}: {
+  viewModel: ClientRoomViewModel;
+  selected: SelectedGang | null;
+  busy: boolean;
+  onSelect: (selection: SelectedGang) => void;
+  onConfirm: () => void;
+}) {
+  const candidates = (["claimAnGang", "claimBaGang"] as const).flatMap((action) => {
+    const descriptor = descriptorForAction(viewModel, action);
+    if (descriptor === null || !("tiles" in descriptor)) {
+      return [];
+    }
+    return descriptor.tiles.map((tile) => ({ action, actionId: descriptor.actionId, tile }));
+  });
+  if (candidates.length === 0) {
+    return null;
+  }
+  return (
+    <View style={styles.turnActionBand}>
+      <Text style={styles.turnActionTitle}>服务端可用杠牌</Text>
+      <View style={styles.responseActionRow}>
+        {candidates.map((candidate) => {
+          const active = selected?.action === candidate.action && sameTile(selected.tile, candidate.tile);
+          const label = `${candidate.action === "claimAnGang" ? "暗杠" : "巴杠"} ${tileLabel(candidate.tile)}`;
+          return (
+            <CommandButton
+              key={`${candidate.action}-${candidate.tile.suit}-${candidate.tile.rank}`}
+              label={active ? `已选 ${label}` : label}
+              tone={active ? "primary" : "secondary"}
+              disabled={busy}
+              onPress={() => onSelect(candidate)}
+            />
+          );
+        })}
+      </View>
+      {selected === null ? null : (
+        <>
+          <Text style={styles.turnNoticeText}>
+            {selected.action === "claimBaGang"
+              ? "确认后会进入抢杠胡等待；无人抢杠时系统自动补牌。"
+              : "暗杠牌面只会向你本人显示，其他玩家仅看到安全摘要。"}
+          </Text>
+          <CommandButton
+            label={`确认${selected.action === "claimAnGang" ? "暗杠" : "巴杠"} ${tileLabel(selected.tile)}`}
+            onPress={onConfirm}
+            disabled={busy}
+          />
+        </>
+      )}
     </View>
   );
 }
@@ -781,6 +909,7 @@ function actionFailureText(reason: string): string {
     missingSessionToken: "会话已失效，请重新加入房间",
     timeout: "服务器响应超时",
     closed: "连接已关闭",
+    staleAction: "这个操作已经过期，已按服务器最新牌局刷新",
   };
   return labels[reason] ?? `操作失败：${reason}`;
 }

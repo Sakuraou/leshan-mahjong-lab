@@ -431,11 +431,12 @@ function isRoomSocketClientMessage(value: unknown): value is RoomSocketClientMes
   }
 
   if (value.type === "drawTile") {
-    return isSessionRoomMessage(value) && isRecord(value.payload);
+    return isSessionRoomMessage(value) && isRecord(value.payload) && hasValidExpectedActionId(value.payload);
   }
 
   if (value.type === "discardTile" || value.type === "claimAnGang" || value.type === "claimBaGang") {
-    return isSessionRoomMessage(value) && isRecord(value.payload) && isTile(value.payload.tile);
+    return isSessionRoomMessage(value) && isRecord(value.payload) &&
+      isTile(value.payload.tile) && hasValidExpectedActionId(value.payload);
   }
 
   if (
@@ -448,7 +449,7 @@ function isRoomSocketClientMessage(value: unknown): value is RoomSocketClientMes
     value.type === "claimQiangGangHu" ||
     value.type === "drawGangTile"
   ) {
-    return isSessionRoomMessage(value) && isRecord(value.payload);
+    return isSessionRoomMessage(value) && isRecord(value.payload) && hasValidExpectedActionId(value.payload);
   }
 
   if (value.type === "resumeSession") {
@@ -460,6 +461,11 @@ function isRoomSocketClientMessage(value: unknown): value is RoomSocketClientMes
   }
 
   return false;
+}
+
+function hasValidExpectedActionId(payload: Record<string, unknown>): boolean {
+  return payload.expectedActionId === undefined ||
+    (typeof payload.expectedActionId === "string" && payload.expectedActionId.length > 0);
 }
 
 function isRoomMessage(value: Record<string, unknown>): value is Record<string, unknown> & { roomId: string } {
