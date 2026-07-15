@@ -153,8 +153,9 @@ server authoritative.
   another player's hu opportunity
 - [x] Prevent superseded WebSocket connections from reclaiming a session with a
   delayed resume message
-- Wrap `roomSocketAdapter` with a production-ready WebSocket server entry
-- Connect table UI to WebSocket room snapshots
+- [x] Wrap `roomSocketAdapter` with a local Node `ws` development server,
+  heartbeat, connection health checks, and deadline ticking
+- [x] Connect the Expo table UI to real per-session WebSocket room snapshots
 - [x] Add reconnect with a local session token
 
 ## Phase 5: Mobile App Client
@@ -167,7 +168,7 @@ phone-first product.
 - [x] Add a shared `client-core` view model, transport contract, tile labels,
   and session-storage contract
 - [x] Build the first phone room shell for server config, create/join, seats,
-  ready, start, dingque, and a redacted read-only table
+  ready, start, dingque, and a redacted table foundation
 - [x] Gate lobby and dingque commands with authoritative `legalActions`
 - [x] Save session recovery data with Expo SecureStore and resume after an
   AppState background/foreground transition
@@ -197,7 +198,18 @@ phone-first product.
   then rebuild controls from the latest authoritative snapshot and action id
 - [x] Verify real WebSocket session/seat recovery, one-shot automatic draws,
   safe missed-event handling, and deterministic reconnect timing
-- Add settlement detail surfaces and a compact phone event timeline
+- [x] Auto-select heavenly missing suits after dealing while excluding physical
+  one-bamboo and one-dot laizi from ordinary suit counts
+- [x] Add strict terminal DTOs for round end, final scores, and safe hu/chicken/
+  gang/cha-jiao settlement summaries
+- [x] Add a whitelisted public event contract, event-id deduplication, bounded
+  resume merging, and a compact phone timeline
+- [x] Add the first complete single-round result screen without inventing a
+  next-round rule
+- [x] Add GitHub Actions checks for TypeScript, tests, Web build, and mobile
+  TypeScript
+- Confirm dealer rotation, cumulative score, match length, and next-round ready
+  rules before implementing a multi-round loop
 - Add vibration/audio feedback
 - Test Android and iOS layouts on physical devices
 - Package an installable beta build

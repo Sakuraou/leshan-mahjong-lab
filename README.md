@@ -15,7 +15,7 @@ after the GitHub repository is imported in Vercel.
 - Case study: [docs/case-study.md](docs/case-study.md)
 - Release notes: [docs/release-notes.md](docs/release-notes.md)
 - Multiplayer design: [docs/multiplayer-design.md](docs/multiplayer-design.md)
-- Real-time protocol draft: [docs/realtime-protocol.md](docs/realtime-protocol.md)
+- Real-time protocol: [docs/realtime-protocol.md](docs/realtime-protocol.md)
 - Room service interface: [docs/room-service.md](docs/room-service.md)
 - Socket adapter interface: [docs/socket-adapter.md](docs/socket-adapter.md)
 - WebSocket server core: [docs/websocket-server.md](docs/websocket-server.md)
@@ -73,9 +73,14 @@ and AI-assisted development.
 - Current-player draw and discard flow
 - Dingque-aware discard validation
 - No-active-yao-ji-discard MVP rule
-- Laizi-aware standard hu decomposition for `4 melds + 1 pair`
-- Self-draw and discard hu checks with the local minimum-score rule
-- Basic score helpers for ping hu, wu ji, qing yi se, gen, and caps
+- Explainable laizi-aware hu search for standard hands and seven-pairs dragon
+  variants, with highest-scoring decomposition selection
+- Self-draw, discard, and rob-kong hu checks with the local minimum-score rule
+- Server-authoritative fan detection and score settlement for hu, chicken,
+  gang, rob-kong chicken liability, and wall-empty cha jiao
+- Heavenly missing-suit detection after dealing: physical `1 bamboo` and
+  `1 dot` do not count as ordinary suit tiles, and exactly one missing suit is
+  selected automatically
 - Frontend multiplayer-table prototype with seat-limited player control,
   self-selected dingque, automatic system draws, hidden opponent hands, Chinese
   tile faces, current-player highlight, wall count, discard areas, action hints,
@@ -91,9 +96,9 @@ and AI-assisted development.
 - Real multiplayer room design covering room creation, joining, seat assignment,
   readiness, dingque, server dealing, turn actions, reconnect, and
   server-authoritative validation
-- First WebSocket protocol draft for the next server-authoritative room step,
-  including client actions, server broadcasts, error codes, reconnect recovery,
-  legal actions, and client-visible state payloads
+- Implemented WebSocket protocol for server-authoritative room lifecycle,
+  dingque, draw/discard, response windows, hu/peng/gang, deadlines, reconnect,
+  legal actions, and redacted client-visible state payloads
 - Pure TypeScript server-authoritative room service with session tokens,
   `lastEventId`, reconnect recovery, and redacted client views before adding
   the WebSocket adapter
@@ -109,10 +114,9 @@ and AI-assisted development.
   started
 - Real local WebSocket dev server powered by `ws`, plus a smoke client that
   verifies `createRoom` and `joinRoom` over actual WebSocket connections
-- Frontend WebSocket transport wrapper that can connect to
-  `ws://127.0.0.1:8787`, send room lifecycle and dingque messages, and maintain
-  each session's latest redacted snapshot without replacing the current mock UI
-  flow
+- Frontend WebSocket transports that connect to `ws://127.0.0.1:8787`, submit
+  the complete authoritative single-round action flow, and maintain one
+  redacted snapshot per authenticated session
 - Real WebSocket experiment panel that can run a full four-client room flow:
   host/guest/helper clients join, take seats, ready up, start the round, and
   display per-client redacted snapshot summaries while the mock table remains
@@ -123,15 +127,18 @@ and AI-assisted development.
 - Limited WebSocket table preview mode in the main table: it consumes real
   `roomSnapshot` data to show room status, seats, readiness, wall count, and
   redacted hand counts after start while keeping the mock table as the default
-- WebSocket-backed dingque path in the table preview: players can submit
-  `chooseMissingSuit` after the real server starts the round, and the server
-  validates seat ownership, round state, and duplicate submissions before
-  broadcasting redacted snapshots
+- WebSocket-backed table actions now cover dingque, automatic draws,
+  authoritative discard candidates, private claim responses, active gangs,
+  rob-kong windows, blood-battle continuation, deadlines, and terminal scoring
 - Expo/React Native mobile App workspace with server configuration,
-  create/join, seat, ready, start, dingque, a redacted read-only table,
-  SecureStore session persistence, and AppState reconnect recovery
+  create/join, seat, ready, start, heavenly/manual dingque, playable turns,
+  private claim controls, automatic replacement draws, weak-network recovery,
+  a safe public timeline, and a complete single-round result breakdown
 - Shared client-core package for mobile-safe room view models, tile display
-  helpers, transport contracts, and authoritative `legalActions` consumption
+  helpers, strict runtime contracts, event deduplication, result presentation,
+  transport contracts, and authoritative `legalActions` consumption
+- GitHub Actions runs TypeScript checks, the test suite, the Web build, and the
+  mobile TypeScript check on every push and pull request
 
 ## Screenshots
 
@@ -154,6 +161,8 @@ Planned portfolio shots:
 | WebSocket session recovery | Pending | Simulated refresh, restored host/guest sessions, resumed redacted snapshots, and missed-event count |
 | WebSocket table preview | Pending | Main table preview consuming real `roomSnapshot` with redacted hand counts |
 | WebSocket dingque | Pending | Preview client cards submit server-authoritative `chooseMissingSuit` and receive updated redacted snapshots |
+| Mobile round result | Pending | Expo client showing end reason, four final scores, and hu/chicken/gang/cha-jiao transfers |
+| Mobile public timeline | Pending | Deduplicated safe events after reconnect without hidden draws or response choices |
 | Portfolio context | Pending | README/case-study view showing the multi-agent workflow and tested rule engine |
 
 ## Run Locally
@@ -181,6 +190,7 @@ npm run mobile:export
 npm run dev:server
 npm run dev:server:lan
 npm run smoke:server
+npm run check:all
 ```
 
 ## Tech Stack
@@ -197,8 +207,8 @@ npm run smoke:server
 ## Architecture
 
 The game logic is framework-independent. The React app imports pure TypeScript
-functions from `src/game`, which keeps rule tests fast and makes future mobile
-reuse possible.
+functions from `src/game`, which keeps rule tests fast while the Expo client
+reuses only the independent safe contracts in `packages/client-core`.
 
 ```text
 src/
@@ -216,11 +226,12 @@ src/
     round.ts        Seeded shuffle, dealing, draw/discard state transitions
     win.ts          Self-draw and discard hu checks
   server/
-    roomSocketServerCore.ts Testable WebSocket server core without a live port
+    roomSocketServerCore.ts Testable WebSocket server core
+    devServer.ts         Local Node ws runtime with heartbeat and deadline ticks
 apps/
-  mobile/               Expo phone client and SecureStore/AppState integration
+  mobile/               Expo phone client, reconnect flow, timeline, result UI
 packages/
-  client-core/          Mobile-safe view model and shared transport contracts
+  client-core/          Strict mobile DTOs, transport, events, presentation
 tests/
   game/             Rule, round, hu, and win tests
   docs/
@@ -229,7 +240,7 @@ tests/
     agent-workflow.md AI collaboration log
     case-study.md     Portfolio write-up
     multiplayer-design.md Real-time room product and technical plan
-    realtime-protocol.md WebSocket room protocol and server interface draft
+    realtime-protocol.md Implemented WebSocket protocol and safe client contract
     room-service.md Server-authoritative room service interface
     socket-adapter.md Pure socket adapter interface and frontend integration plan
     websocket-server.md Testable server core and real WebSocket wrapper plan
@@ -255,19 +266,19 @@ recovery by saving host/guest sessions locally, reconnecting after a simulated
 refresh, and calling `resumeSession` for fresh redacted snapshots. The default
 playable table still uses the local mock transport for a stable portfolio demo.
 
-The first mobile client is now available under `apps/mobile`. It uses the same
-real WebSocket transport and per-session redacted snapshots as the browser
-experiment, while keeping session tokens in Expo SecureStore and closing and
-resuming the socket across AppState transitions. See
+The phone client under `apps/mobile` now completes one authoritative round: it
+uses server legal actions for every command, auto-requests eligible draws,
+keeps hu as a player choice, survives weak-network reconnects, merges a bounded
+public event timeline, and renders final scores plus hu/chicken/gang/cha-jiao
+payments. Session tokens stay in Expo SecureStore and sockets are closed and
+resumed across AppState transitions. See
 [docs/mobile-app-plan.md](docs/mobile-app-plan.md) for run addresses, privacy
 boundaries, and the Android/iOS roadmap.
 
-The main table now has a limited "真实 WebSocket 桌面预览" mode that consumes the
-experiment panel's latest real `roomSnapshot` data and renders room, seat,
-ready, wall, and redacted hand-count summaries without enabling real draw or
-discard actions yet. The preview now also sends the first real
-server-authoritative table action, `chooseMissingSuit`; real draw and discard
-remain planned rather than implemented.
+The browser keeps a limited "真实 WebSocket 桌面预览" and the original mock table
+as debugging and portfolio surfaces. The production-oriented playable path is
+the single-session Expo client; the browser's multi-client experiment remains
+useful for privacy and protocol inspection.
 
 ## AI-Assisted Workflow
 
@@ -284,7 +295,7 @@ roles were used to split work into reviewable concerns:
 
 ## Resume Pitch
 
-**Leshan Mahjong Lab | Local Mahjong Multiplayer Table Prototype**
+**Leshan Mahjong Lab | Phone-First Real-Time Mahjong App**
 
 - Built a frontend multiplayer-table prototype for Leshan eight-chicken Mahjong,
   supporting a local simulated room flow, seeded rounds, seat-limited control,
@@ -292,30 +303,26 @@ roles were used to split work into reviewable concerns:
   validation, and basic hu checks.
 - Modeled local Mahjong rules as tested TypeScript modules, separating tile
   modeling, laizi-aware hand decomposition, scoring helpers, round state, and UI.
-- Designed the next real-time room architecture, including room creation,
-  joining, seat ownership, readiness, reconnect, redacted state, and
-  server-authoritative validation.
-- Drafted the WebSocket protocol and service interface for the next milestone:
-  a server-authoritative real-time room that sends each client only its own
-  legal, redacted state.
-- Implemented and documented a pure TypeScript room service as the future
-  WebSocket adapter's authoritative state layer.
+- Implemented a server-authoritative real-time room covering room lifecycle,
+  explicit turn phases, response deadlines, blood-battle continuation,
+  reconnect, heartbeat, redacted snapshots, and session-scoped legal actions.
+- Implemented and documented a pure TypeScript room service as the WebSocket
+  adapter's authoritative state layer.
 - Added a tested pure-function socket adapter, preparing the frontend to consume
   server-shaped room snapshots through either a local mock transport or a real
   WebSocket server.
 - Connected the room UI to a local mock transport, proving the frontend can
   consume server-shaped snapshots before a real WebSocket server exists.
-- Added a tested WebSocket server core that is ready to be wrapped by a local
-  Node `ws` development server.
+- Added a tested WebSocket server core and local Node `ws` development server.
 - Added a real WebSocket experiment panel that demonstrates the full room
   lifecycle across four clients without replacing the default mock table.
 - Added a session recovery demo using `sessionToken`, `lastEventId`,
   `localStorage`, and server-side rebinding to the latest connection.
 - Added a main-table WebSocket preview mode that reads real room snapshots while
   leaving the mock table as the default gameplay surface.
-- Added the first WebSocket-backed table action: server-authoritative dingque
-  submission from the preview path, with redacted snapshot updates for every
-  connected client.
+- Built an Expo/React Native single-session client that can complete one round,
+  recover across weak networks, retain a bounded safe event timeline, and show
+  authoritative final scores with hu, chicken, gang, and cha-jiao details.
 - Used a multi-agent AI-assisted workflow to split product planning, rule
   modeling, implementation, test-case design, and review.
 - Prepared the repository as a portfolio case study with rule documentation,

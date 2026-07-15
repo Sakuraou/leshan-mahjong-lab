@@ -6,8 +6,11 @@ import {
   createMobileRoomTransport,
   descriptorForAction,
   legalTilesForAction,
+  mergeMobilePublicEvents,
   nextAutomaticDrawActionId,
   parseMobileRoomServerMessage,
+  toMobileRoundResultViewModel,
+  type MobilePublicEvent,
   type MobileRoomTransport,
   type MobileWebSocketLike,
 } from "@leshan-mahjong/client-core";
@@ -78,13 +81,26 @@ test("strict mobile parser projects a safe snapshot and rejects hidden fields", 
   });
 
   const withPublicMissedEvent = structuredClone(message) as unknown as {
-    payload: { events: Array<{ type: string; playerId: string; connected: boolean }> };
+    payload: { events: Array<{ type: string; playerId: string; seatId: number; connected: boolean; reason: string }> };
   };
-  withPublicMissedEvent.payload.events = [{ type: "presenceChanged", playerId: "p1", connected: true }];
+  withPublicMissedEvent.payload.events = [{
+    type: "presenceChanged",
+    playerId: "p1",
+    seatId: 0,
+    connected: true,
+    reason: "sessionResumed",
+  }];
   const publicEventParsed = parseMobileRoomServerMessage(withPublicMissedEvent);
   assert.equal(publicEventParsed.ok, true);
   if (publicEventParsed.ok && publicEventParsed.message.type === "roomSnapshot") {
-    assert.equal("events" in publicEventParsed.message.payload, false);
+    assert.deepEqual(publicEventParsed.message.payload.events, [{
+      eventId: 1,
+      type: "presenceChanged",
+      playerId: "p1",
+      seatId: 0,
+      connected: true,
+      reason: "sessionResumed",
+    }]);
   }
 });
 
@@ -109,6 +125,143 @@ test("strict mobile parser rejects malformed message envelopes", () => {
     type: "protocolError",
     payload: { code: "sessionNotBound", message: "Resume on this connection first." },
   }).ok, false);
+});
+
+test("mobile terminal DTO exposes final scores and safe settlement summaries", () => {
+  const room = startedRoom();
+  const view = {
+    ...toClientVisibleRoomState(room, "p1"),
+    status: "ended" as const,
+    phase: "ended" as const,
+    roundEnd: { reason: "wallEmpty" as const, remainingPlayerIds: [0 as const, 1 as const, 2 as const, 3 as const] },
+    scores: [
+      { seatId: 0 as const, playerId: "p1", points: 24 },
+      { seatId: 1 as const, playerId: "p2", points: -8 },
+      { seatId: 2 as const, playerId: "p3", points: -8 },
+      { seatId: 3 as const, playerId: "p4", points: -8 },
+    ],
+    settlementLedger: [
+      {
+        id: 1,
+        batchId: 1,
+        winnerSeatId: 0 as const,
+        winnerPlayerId: "p1",
+        loserSeatId: 1 as const,
+        loserPlayerId: "p2",
+        reason: "selfDrawHu" as const,
+        sourceWindowId: null,
+        basePoints: 1 as const,
+        rawPoints: 8,
+        finalPoints: 8,
+        relatedEvent: { type: "selfDrawHuClaimed" as const, seatId: 0 as const },
+      },
+      {
+        id: 2,
+        batchId: 2,
+        winnerSeatId: 0 as const,
+        winnerPlayerId: "p1",
+        loserSeatId: 2 as const,
+        loserPlayerId: "p3",
+        reason: "sanJi" as const,
+        chickenSuit: "bamboos" as const,
+        chickenCount: 3 as const,
+        sourceWindowId: null,
+        sourceSettlementId: "chicken:1",
+        basePoints: 16 as const,
+        rawPoints: 16 as const,
+        finalPoints: 16 as const,
+        relatedEvent: { type: "roundEnded" as const, reason: "wallEmpty" as const },
+      },
+      {
+        id: 3,
+        batchId: 3,
+        winnerSeatId: 0 as const,
+        winnerPlayerId: "p1",
+        loserSeatId: 3 as const,
+        loserPlayerId: "p4",
+        reason: "anGang" as const,
+        targetTile: null,
+        usesLaizi: true,
+        sourceWindowId: null,
+        sourceSettlementId: "gang:1",
+        basePoints: 4 as const,
+        rawPoints: 2 as const,
+        finalPoints: 2 as const,
+        relatedEvent: { type: "anGangClaimed" as const, seatId: 0 as const },
+      },
+      {
+        id: 4,
+        batchId: 4,
+        winnerSeatId: 1 as const,
+        winnerPlayerId: "p2",
+        loserSeatId: 3 as const,
+        loserPlayerId: "p4",
+        reason: "chaJiao" as const,
+        patterns: ["qingYiSe" as const],
+        genCount: 1,
+        sourceWindowId: null,
+        sourceSettlementId: "cha-jiao:1",
+        basePoints: 1 as const,
+        rawPoints: 8,
+        finalPoints: 8,
+        relatedEvent: { type: "roundEnded" as const, reason: "wallEmpty" as const },
+      },
+    ],
+  };
+  const parsed = parseMobileRoomServerMessage(snapshotMessage(view, "p1"));
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok || parsed.message.type !== "roomSnapshot") return;
+
+  assert.deepEqual(parsed.message.payload.view.roundEnd, {
+    reason: "wallEmpty",
+    remainingPlayerIds: [0, 1, 2, 3],
+  });
+  assert.deepEqual(parsed.message.payload.view.settlementLedger[0], {
+    winnerSeatId: 0,
+    winnerPlayerId: "p1",
+    loserSeatId: 1,
+    loserPlayerId: "p2",
+    reason: "selfDrawHu",
+    basePoints: 1,
+    rawPoints: 8,
+    finalPoints: 8,
+  });
+  assert.deepEqual(
+    parsed.message.payload.view.settlementLedger.map((entry) => entry.reason),
+    ["selfDrawHu", "sanJi", "anGang", "chaJiao"],
+  );
+  const serialized = JSON.stringify(parsed.message.payload.view);
+  assert.equal(serialized.includes("sourceWindowId"), false);
+  assert.equal(serialized.includes("batchId"), false);
+  assert.equal(serialized.includes("relatedEvent"), false);
+
+  const result = toMobileRoundResultViewModel(parsed.message.payload.view);
+  assert.equal(result?.reasonLabel, "牌墙已空，流局并完成查叫");
+  assert.equal(result?.scores[0].points, 24);
+  assert.deepEqual(result?.settlements.map((entry) => entry.label), [
+    "自摸",
+    "一条三鸡",
+    "暗杠（含幺鸡）",
+    "查叫",
+  ]);
+});
+
+test("public event merging deduplicates, sorts, and keeps only the newest items", () => {
+  const event = (eventId: number, connected: boolean): MobilePublicEvent => ({
+    eventId,
+    type: "presenceChanged",
+    playerId: `p${eventId}`,
+    seatId: (eventId % 4) as 0 | 1 | 2 | 3,
+    connected,
+    reason: connected ? "sessionResumed" : "connectionClosed",
+  });
+  const merged = mergeMobilePublicEvents(
+    [event(3, true), event(1, true)],
+    [event(2, false), event(3, true), event(4, true)],
+    3,
+  );
+  assert.deepEqual(merged.map((entry) => entry.eventId), [2, 3, 4]);
+  assert.throws(() => mergeMobilePublicEvents([event(3, true)], [event(3, false)]), /Conflicting/);
 });
 
 test("single-session mobile transport stores one snapshot and rejects another player view", async () => {
@@ -142,6 +295,52 @@ test("single-session mobile transport stores one snapshot and rejects another pl
   socket.serverSend(snapshotMessage(toClientVisibleRoomState(room, "p2"), "p2"));
   assert.equal(transport.getState().status, "error");
   assert.match(transport.getState().lastError ?? "", /其他玩家/);
+});
+
+test("mobile transport merges filtered resume events without duplicates", async () => {
+  const socket = new FakeSocket();
+  const transportPromise = createMobileRoomTransport({
+    url: "ws://example.test",
+    roomId: "ROOM",
+    eventLimit: 2,
+    socketFactory: () => socket,
+  });
+  socket.open();
+  const transport = await transportPromise;
+  const createPromise = transport.createRoomSession({ displayName: "手机玩家" });
+  const request = JSON.parse(socket.sent[0]) as { clientMessageId: string };
+  socket.serverSend({
+    protocolVersion: 1,
+    serverEventId: 2,
+    roomId: "ROOM",
+    recipientSessionToken: "secure-token",
+    type: "actionAccepted",
+    payload: { clientMessageId: request.clientMessageId, playerId: "p1" },
+  });
+  assert.equal((await createPromise).ok, true);
+
+  const view = toClientVisibleRoomState(createRoom({ id: "ROOM", seed: "server-only" }), "p1");
+  const first = snapshotMessage(view, "p1");
+  first.serverEventId = 2;
+  first.payload.lastEventId = 2;
+  first.payload.events = [
+    { type: "roomCreated", roomId: "ROOM" },
+    { type: "playerJoined", playerId: "p1", displayName: "手机玩家" },
+  ];
+  socket.serverSend(first);
+  assert.deepEqual(transport.getState().events.map((event) => event.eventId), [2]);
+
+  const resumed = snapshotMessage(view, "p1");
+  resumed.serverEventId = 4;
+  resumed.payload.lastEventId = 4;
+  resumed.payload.events = [
+    { type: "tileDrawn", seatId: 0, playerId: "p1" },
+    { type: "readyChanged", seatId: 0, playerId: "p1", ready: true },
+  ];
+  socket.serverSend(resumed);
+  socket.serverSend(resumed);
+  assert.deepEqual(transport.getState().events.map((event) => event.eventId), [2, 4]);
+  transport.close();
 });
 
 test("mobile transport always echoes the current action descriptor and blocks stale local choices", async () => {
@@ -543,7 +742,7 @@ function snapshotMessage(view: ReturnType<typeof toClientVisibleRoomState>, play
     serverEventId: 1,
     roomId: view.id,
     type: "roomSnapshot" as const,
-    payload: { view, playerId, lastEventId: 1, serverNow: 1_000, events: [] },
+    payload: { view, playerId, lastEventId: 1, serverNow: 1_000, events: [] as unknown[] },
   };
 }
 

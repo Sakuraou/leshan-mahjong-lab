@@ -1,5 +1,6 @@
 import type {
   ClientVisibleRoomState,
+  MobilePublicEvent,
   PlayerId,
   ProtocolErrorCode,
   RoomSocketErrorCode,
@@ -30,6 +31,7 @@ export type MobileRoomTransportState = {
   snapshot: ClientVisibleRoomState | null;
   lastEventId: number;
   serverNow: number | null;
+  events: MobilePublicEvent[];
   lastError: string | null;
 };
 

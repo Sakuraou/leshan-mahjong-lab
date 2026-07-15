@@ -1,11 +1,9 @@
-# Real-Time WebSocket Protocol Draft
+# Real-Time WebSocket Protocol
 
-This document defines the first WebSocket protocol draft for the future
-server-authoritative Leshan Mahjong room. It is a design contract only. The
-current app has a local `ws` development server, a WebSocket experiment panel,
-session recovery, a main-table WebSocket preview, and server-authoritative
-`chooseMissingSuit`, `drawTile`, and `discardTile` paths. Those actions
-are specified below but are not implemented yet.
+This document describes the implemented local WebSocket protocol and the
+remaining production-hardening work. The browser keeps a local mock table and
+multi-client experiment surface, while the Expo client consumes the real
+server-authoritative single-round flow.
 
 ## Goals
 
@@ -215,20 +213,26 @@ are occupied and ready.
 The server validates that the player is seated, the round is in dingque phase,
 and the player has not already chosen a missing suit.
 
+Immediately after dealing, the authoritative room counts ordinary
+bamboo/dot/character tiles for each hand. Physical one-bamboo and one-dot are
+laizi and do not count toward ordinary suit presence. If exactly one suit is
+absent, the server sets it automatically and publishes a safe heavenly-dingque
+event; otherwise the player receives `chooseMissingSuit` in `legalActions`.
+If all four players are heavenly missing, the dealer enters `discard` directly.
+
 Current implementation status:
 
 - Implemented in `room.ts`, `roomService.ts`, `roomSocketAdapter.ts`,
   `roomSocketServerCore.ts`, and `webSocketRoomTransport.ts`.
-- Exposed in the main WebSocket table preview as the first
-  server-authoritative table action.
+- Consumed by both the browser preview and the Expo gameplay client.
 - Broadcasts a fresh redacted `roomSnapshot` to every connected session after
   success.
 
 ### Draw Tile
 
-`drawTile` is the next planned WebSocket table action. It should model system
-dealing, not a human "draw" button in the final UI. The browser may request the
-action in the prototype, but the server remains authoritative.
+`drawTile` models system dealing, not a human "draw" button in the phone UI.
+The Expo client automatically submits it only when the latest session-scoped
+action descriptor permits the draw; the server remains authoritative.
 
 ```json
 {
@@ -241,7 +245,7 @@ action in the prototype, but the server remains authoritative.
 }
 ```
 
-Server validation draft:
+Implemented server validation:
 
 - `sessionToken` must identify a known session in the room.
 - The session must belong to a seated player.
@@ -251,17 +255,17 @@ Server validation draft:
 - It must be that player's turn.
 - The player must not already have won.
 - The wall must not be empty.
-- The player's hand count must indicate a draw phase; the server should reject
-  a second draw before discard.
+- The explicit room phase must be `draw`; a second draw before discard is
+  rejected without relying on hand-count modulo arithmetic.
 
-State transition draft:
+State transition:
 
 1. Call the existing `drawTile(round)` rule helper on the authoritative round.
 2. Append a `tileDrawn` event.
 3. Keep `currentPlayer` unchanged and move that player into discard phase.
 4. Send each session a redacted `roomSnapshot`.
 
-Broadcast/redaction draft:
+Broadcast/redaction:
 
 - The drawing player receives their updated `hand` in the snapshot.
 - Other players receive only the drawing player's updated `handCount`.
@@ -288,7 +292,7 @@ Broadcast/redaction draft:
 The server validates turn ownership, tile ownership, dingque constraints, and
 the no-active-yao-ji-discard MVP rule.
 
-Server validation draft:
+Implemented server validation:
 
 - `sessionToken` must identify a known session in the room.
 - The session must belong to a seated player.
@@ -303,30 +307,31 @@ Server validation draft:
 - Active discard of yao ji (`1 bamboo` or `1 dot`) remains rejected in the MVP.
 - The player must not already have won.
 
-State transition draft:
+State transition:
 
 1. Call the existing `discardTile(round, seatId, tile)` rule helper on the
    authoritative round.
 2. Append a `tileDiscarded` event.
 3. Recompute discard-hu candidates with `checkDiscardHu` for other active
    players.
-4. If no claim window is opened in the MVP, advance `currentPlayer` to the next
+4. Open a private response window. Hu has priority, one discard can have
+   multiple winners, and an uncontested peng/ming-gang may take control.
+5. When all eligible players pass or the deadline expires, advance to the next
    active player and expose that player's `drawTile` legal action.
-5. Send redacted `roomSnapshot` messages to every connected session.
+6. Send redacted `roomSnapshot` messages to every connected session.
 
-Broadcast/redaction draft:
+Broadcast/redaction:
 
 - The discarded tile is public and appears in the discarding player's discard
   list for every client.
 - The discarding player's updated hand is visible only to that player.
 - Other clients see the discarding player's updated `handCount`.
-- If hu candidates exist, the first implementation can either send a
-  `huAvailable` event or include a `declareHu` legal action only in eligible
-  winner snapshots.
+- Hu/peng/ming-gang/pass actions appear only in the eligible session's
+  `legalActions`; unresolved choices are not broadcast to other clients.
 - The server should not trust the browser's local hand sorting or local
   suggested discard list.
 
-### Declare Hu
+### Claim Hu
 
 ```json
 {
@@ -334,16 +339,16 @@ Broadcast/redaction draft:
   "clientMessageId": "c-009",
   "roomId": "L8J4K2",
   "sessionToken": "<token>",
-  "type": "declareHu",
-  "payload": {
-    "source": "selfDraw"
-  }
+  "type": "claimSelfDrawHu",
+  "payload": { "expectedActionId": "action:..." }
 }
 ```
 
-The first implementation can support self-draw and discard hu. Peng, gang,
-rob-gang hu, gang-shang-hua, and gang-shang-pao can be layered in after claim
-windows are modeled.
+The implemented actions are `claimSelfDrawHu`, `claimHu`, and
+`claimQiangGangHu`. Hu remains a player decision: an eligible session receives
+the action descriptor and may choose hu or continue playing. Discard and
+rob-kong windows support multiple winners and publish results only when the
+window closes.
 
 ## Server Broadcasts
 
@@ -364,10 +369,16 @@ decides a full state replacement is simpler than replaying events.
 ```ts
 type RoomSnapshotPayload = {
   view: ClientVisibleRoomState;
+  playerId: string;
   lastEventId: number;
   serverNow: number;
+  events: ClientRoomEvent[];
 };
 ```
+
+The production mobile parser rebuilds this broad redacted view as an
+independent safe DTO. It retains `roundEnd`, the authoritative score balances,
+minimal settlement summaries, and only whitelisted `MobilePublicEvent` items.
 
 ### Room Event
 
@@ -580,6 +591,28 @@ Visibility rule:
   counts.
 - The server never sends the full wall to any browser.
 
+Terminal mobile view fields:
+
+```ts
+type MobileRoundEndState = {
+  reason: "onePlayerLeft" | "wallEmpty";
+  remainingPlayerIds: Array<0 | 1 | 2 | 3>;
+};
+
+type MobileClientVisibleRoomState = {
+  roundEnd: MobileRoundEndState | null;
+  scores: Array<{ seatId: 0 | 1 | 2 | 3; playerId: string | null; points: number }>;
+  settlementLedger: MobileSettlementSummary[];
+};
+```
+
+The mobile public-event whitelist covers player join/seat, ready, dingque,
+discard, public peng/gang, hu, presence, and round end. It deliberately omits
+draw events, unresolved pass/hu/peng/gang choices, response arrays, concealed
+an-gang faces, wall/seed data, decomposition candidates, and internal fact ids.
+The event stream is presentation-only; actions are always rebuilt from the
+latest authoritative snapshot and `actionDescriptors`.
+
 ### Authoritative Score Ledger
 
 Every client receives the same public score balances and settlement ledger.
@@ -592,6 +625,12 @@ one 48-point transfer from the ba-gang declarer to an eligible robbing winner
 and links to the safe qiang-gang window identity. Entries contain no hands,
 wall order, shuffle seed, decomposition search data, source-tile arrays, or
 pre-claim chicken counts.
+
+The Expo contract projects those entries again before storing them. It removes
+`id`, `batchId`, source window/settlement identifiers, related internal events,
+physical tile arrays, and decomposition data. The phone keeps only payer,
+recipient, reason, point amounts, and the minimum public chicken/gang/cha-jiao
+detail needed for the result page. An-gang target tiles remain `null`.
 
 ```ts
 type ClientVisibleSettlementLedgerEntry =
@@ -796,8 +835,8 @@ the existing server action ordering and is committed at resolution.
 `legalActions` is also session-scoped. A player's own peng/ming-gang action is
 not removed merely because another session can hu or has privately claimed hu;
 this prevents button availability from becoming a hidden-response side channel.
-The same DTO can be consumed unchanged by the current Web client and a future
-mobile App.
+The Web debug client consumes the broad redacted DTO; the current Expo client
+projects it through the stricter independent mobile contract before rendering.
 
 ## Authoritative Response Deadlines
 
@@ -951,18 +990,20 @@ type ReconnectPhase =
 - `drawTile` and `drawGangTile` are the only automatic commands. They may be
   sent after recovery only when the latest snapshot still carries the same
   legal descriptor and its `actionId` is not stored as completed.
-- Resume payload events are screened for forbidden private fields. The first
-  mobile milestone intentionally drops event bodies after validation and
-  stores only the reduced snapshot plus `lastEventId`; a later public-event DTO
-  will be required before the App renders a missed-event timeline.
+- Resume payload events are converted to the `MobilePublicEvent` whitelist.
+  Each retained item receives the original room-log cursor as `eventId`; gaps
+  are expected when draw, private response, or window-internal events are
+  filtered. `MobileRoomTransport` merges, sorts, deduplicates, and keeps only
+  the newest 100 items. Duplicate resumes and stale connections cannot append
+  the same event twice.
 
-## Server Interface Draft
+## Server Interface
 
-The repository now includes a first pure TypeScript implementation in
-`src/game/roomService.ts`. It is not connected to WebSocket yet, but it already
-owns `RoomState`, `sessionToken`, `playerId`, `lastEventId`, reconnect recovery,
-and redacted client views. The WebSocket backend should be a thin adapter around
-that service.
+The repository includes the authoritative pure TypeScript implementation in
+`src/game/roomService.ts`, connected through `roomSocketAdapter`, the testable
+server core, and the local Node `ws` development runtime. The service owns
+`RoomState`, `sessionToken`, `playerId`, `lastEventId`, reconnect recovery,
+deadlines, and redacted client views.
 
 ```ts
 type RoomService = {
@@ -995,7 +1036,7 @@ Validation should call the same rule modules that power the current tests:
 - `canHuWithLaizi`, `checkCurrentPlayerHu`, and `checkDiscardHu` for win logic.
 - `toClientVisibleRoomState` or a server equivalent for redaction.
 
-## First Implementation Order
+## Implemented Order
 
 1. Add shared protocol and DTO types under `src/game` or `src/realtime`.
 2. Build an in-memory `RoomService` with unit tests. Done in

@@ -10,6 +10,110 @@ export type Tile = {
   rank: Rank;
 };
 
+export type ScorePattern =
+  | "pingHu"
+  | "daDui"
+  | "danDiao"
+  | "qingYiSe"
+  | "xiaoQiDui"
+  | "longQiDui"
+  | "shuangLongQiDui"
+  | "sanLongQiDui"
+  | "wuJi";
+
+export type RoundEndReason = "onePlayerLeft" | "wallEmpty";
+
+export type MobileRoundEndState = {
+  reason: RoundEndReason;
+  remainingPlayerIds: SeatId[];
+};
+
+type MobileSettlementSummaryBase = {
+  winnerSeatId: SeatId;
+  winnerPlayerId: string;
+  loserSeatId: SeatId;
+  loserPlayerId: string;
+  basePoints: number;
+  rawPoints: number;
+  finalPoints: number;
+};
+
+export type MobileSettlementSummary =
+  | (MobileSettlementSummaryBase & {
+      reason: "selfDrawHu" | "discardHu" | "qiangGangHu";
+    })
+  | (MobileSettlementSummaryBase & {
+      reason: "sanJi" | "siJi" | "qiangGangSanJiLiability";
+      chickenSuit: "bamboos" | "dots";
+      chickenCount: 3 | 4;
+    })
+  | (MobileSettlementSummaryBase & {
+      reason: "mingGang" | "anGang" | "baGang";
+      targetTile: Tile | null;
+      usesLaizi: boolean;
+    })
+  | (MobileSettlementSummaryBase & {
+      reason: "chaJiao";
+      patterns: ScorePattern[];
+      genCount: number;
+    });
+
+export type MobilePublicEvent =
+  | { eventId: number; type: "playerJoined"; playerId: string; displayName: string }
+  | { eventId: number; type: "seatTaken"; seatId: SeatId; playerId: string }
+  | { eventId: number; type: "readyChanged"; seatId: SeatId; playerId: string; ready: boolean }
+  | {
+      eventId: number;
+      type: "missingSuitChosen";
+      seatId: SeatId;
+      playerId: string;
+      suit: Suit;
+      automatic: boolean;
+    }
+  | { eventId: number; type: "tileDiscarded"; seatId: SeatId; playerId: string; tile: Tile }
+  | { eventId: number; type: "pengClaimed" | "mingGangClaimed" | "baGangClaimed"; seatId: SeatId; playerId: string; tile: Tile }
+  | { eventId: number; type: "anGangClaimed"; seatId: SeatId; playerId: string; usesLaizi: boolean }
+  | {
+      eventId: number;
+      type: "huClaimed";
+      seatId: SeatId;
+      playerId: string;
+      tile: Tile;
+      patterns: ScorePattern[];
+      genCount: number;
+      points: number;
+    }
+  | {
+      eventId: number;
+      type: "selfDrawHuClaimed";
+      seatId: SeatId;
+      playerId: string;
+      patterns: ScorePattern[];
+      genCount: number;
+      points: number;
+    }
+  | {
+      eventId: number;
+      type: "qiangGangHuClaimed";
+      seatId: SeatId;
+      playerId: string;
+      responsibleSeatId: SeatId;
+      responsiblePlayerId: string;
+      tile: Tile;
+      patterns: ScorePattern[];
+      genCount: number;
+      points: number;
+    }
+  | {
+      eventId: number;
+      type: "presenceChanged";
+      playerId: string;
+      seatId: SeatId | null;
+      connected: boolean;
+      reason: "connectionClosed" | "sessionResumed";
+    }
+  | { eventId: number; type: "roundEnded"; reason: RoundEndReason; remainingPlayerIds: SeatId[] };
+
 export type RoomStatus = "waiting" | "dingque" | "playing" | "ended";
 export type RoundPhase = "dingque" | "draw" | "discard" | "claim" | "gangDraw" | "qiangGang" | "ended";
 export type ClientResponseChoice = "pass" | "hu" | "peng" | "mingGang";
@@ -102,6 +206,8 @@ export type ClientVisibleRoomState = {
   };
   responseWindow: ClientVisibleResponseWindow | null;
   scores: Array<{ seatId: SeatId; playerId: string | null; points: number }>;
+  roundEnd: MobileRoundEndState | null;
+  settlementLedger: MobileSettlementSummary[];
 };
 
 export type RoomSocketErrorCode =
@@ -176,6 +282,7 @@ export type MobileRoomServerMessage =
         playerId: string;
         lastEventId: number;
         serverNow: number;
+        events: MobilePublicEvent[];
       };
     }
   | {
@@ -292,6 +399,11 @@ export function parseMobileRoomServerMessage(input: unknown): MobileServerMessag
     return view;
   }
 
+  const events = parseMobilePublicEvents(value.payload.events, value.payload.lastEventId);
+  if (!events.ok) {
+    return events;
+  }
+
   return {
     ok: true,
     message: {
@@ -304,6 +416,7 @@ export function parseMobileRoomServerMessage(input: unknown): MobileServerMessag
         playerId: value.payload.playerId,
         lastEventId: value.payload.lastEventId,
         serverNow: value.payload.serverNow,
+        events: events.value,
       },
     },
   };
@@ -344,6 +457,12 @@ function parseClientVisibleRoomState(value: unknown): { ok: true; value: ClientV
     return invalid("响应窗口公开视图结构不合法");
   }
 
+  const roundEnd = value.roundEnd === null ? null : parseRoundEnd(value.roundEnd);
+  const settlementLedger = parseSettlementLedger(value.settlementLedger);
+  if (roundEnd === undefined || settlementLedger === null) {
+    return invalid("终局或结算公开视图结构不合法");
+  }
+
   return {
     ok: true,
     value: {
@@ -357,6 +476,8 @@ function parseClientVisibleRoomState(value: unknown): { ok: true; value: ClientV
       round,
       responseWindow,
       scores: scores as Array<{ seatId: SeatId; playerId: string | null; points: number }>,
+      roundEnd,
+      settlementLedger,
     },
   };
 }
@@ -482,6 +603,315 @@ function parseResponseWindow(value: unknown): ClientVisibleResponseWindow | unde
   };
 }
 
+function parseRoundEnd(value: unknown): MobileRoundEndState | undefined {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["reason", "remainingPlayerIds"]) ||
+      !isRoundEndReason(value.reason) || !Array.isArray(value.remainingPlayerIds) ||
+      !value.remainingPlayerIds.every(isSeatId)) {
+    return undefined;
+  }
+
+  return {
+    reason: value.reason,
+    remainingPlayerIds: [...value.remainingPlayerIds],
+  };
+}
+
+function parseSettlementLedger(value: unknown): MobileSettlementSummary[] | null {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+
+  const entries = value.map(parseSettlementEntry);
+  return entries.some((entry) => entry === null)
+    ? null
+    : entries as MobileSettlementSummary[];
+}
+
+function parseSettlementEntry(value: unknown): MobileSettlementSummary | null {
+  if (!isRecord(value) || !isSettlementBase(value) || typeof value.reason !== "string") {
+    return null;
+  }
+
+  const base = {
+    winnerSeatId: value.winnerSeatId,
+    winnerPlayerId: value.winnerPlayerId,
+    loserSeatId: value.loserSeatId,
+    loserPlayerId: value.loserPlayerId,
+    basePoints: value.basePoints,
+    rawPoints: value.rawPoints,
+    finalPoints: value.finalPoints,
+  };
+
+  if (value.reason === "selfDrawHu" || value.reason === "discardHu" || value.reason === "qiangGangHu") {
+    return hasOnlyKeys(value, [
+      "id", "batchId", "winnerSeatId", "winnerPlayerId", "loserSeatId", "loserPlayerId",
+      "reason", "sourceWindowId", "basePoints", "rawPoints", "finalPoints", "relatedEvent",
+    ]) ? { ...base, reason: value.reason } : null;
+  }
+
+  if (value.reason === "sanJi" || value.reason === "siJi" || value.reason === "qiangGangSanJiLiability") {
+    if (!hasOnlyKeys(value, [
+      "id", "batchId", "winnerSeatId", "winnerPlayerId", "loserSeatId", "loserPlayerId",
+      "reason", "chickenSuit", "chickenCount", "sourceWindowId", "sourceSettlementId",
+      "basePoints", "rawPoints", "finalPoints", "relatedEvent",
+    ]) || !(value.chickenSuit === "bamboos" || value.chickenSuit === "dots") ||
+        !(value.chickenCount === 3 || value.chickenCount === 4)) {
+      return null;
+    }
+
+    return {
+      ...base,
+      reason: value.reason,
+      chickenSuit: value.chickenSuit,
+      chickenCount: value.chickenCount,
+    };
+  }
+
+  if (value.reason === "mingGang" || value.reason === "anGang" || value.reason === "baGang") {
+    if (!hasOnlyKeys(value, [
+      "id", "batchId", "winnerSeatId", "winnerPlayerId", "loserSeatId", "loserPlayerId",
+      "reason", "targetTile", "usesLaizi", "sourceWindowId", "sourceSettlementId",
+      "basePoints", "rawPoints", "finalPoints", "relatedEvent",
+    ]) || typeof value.usesLaizi !== "boolean" ||
+        !(value.targetTile === null || isTile(value.targetTile)) ||
+        (value.reason !== "anGang" && value.targetTile === null)) {
+      return null;
+    }
+
+    return {
+      ...base,
+      reason: value.reason,
+      targetTile: value.targetTile === null ? null : cloneTile(value.targetTile),
+      usesLaizi: value.usesLaizi,
+    };
+  }
+
+  if (value.reason === "chaJiao") {
+    if (!hasOnlyKeys(value, [
+      "id", "batchId", "winnerSeatId", "winnerPlayerId", "loserSeatId", "loserPlayerId",
+      "reason", "patterns", "genCount", "sourceWindowId", "sourceSettlementId",
+      "basePoints", "rawPoints", "finalPoints", "relatedEvent",
+    ]) || !Array.isArray(value.patterns) || !value.patterns.every(isScorePattern) ||
+        !isSafeInteger(value.genCount)) {
+      return null;
+    }
+
+    return {
+      ...base,
+      reason: "chaJiao",
+      patterns: [...value.patterns],
+      genCount: value.genCount,
+    };
+  }
+
+  return null;
+}
+
+function isSettlementBase(value: Record<string, unknown>): value is Record<string, unknown> & {
+  winnerSeatId: SeatId;
+  winnerPlayerId: string;
+  loserSeatId: SeatId;
+  loserPlayerId: string;
+  basePoints: number;
+  rawPoints: number;
+  finalPoints: number;
+} {
+  return isSeatId(value.winnerSeatId) && isNonEmptyString(value.winnerPlayerId) &&
+    isSeatId(value.loserSeatId) && isNonEmptyString(value.loserPlayerId) &&
+    isFiniteNumber(value.basePoints) && isFiniteNumber(value.rawPoints) &&
+    isFiniteNumber(value.finalPoints);
+}
+
+function parseMobilePublicEvents(
+  value: unknown,
+  lastEventId: number,
+): { ok: true; value: MobilePublicEvent[] } | { ok: false; reason: string } {
+  if (!Array.isArray(value)) {
+    return invalid("公开事件结构不合法");
+  }
+
+  const firstEventId = lastEventId - value.length + 1;
+  if (firstEventId < 1 && value.length > 0) {
+    return invalid("公开事件游标不合法");
+  }
+
+  const events: MobilePublicEvent[] = [];
+  for (const [index, entry] of value.entries()) {
+    const parsed = parseMobilePublicEvent(entry, firstEventId + index);
+    if (parsed === undefined) {
+      return invalid("公开事件结构不合法");
+    }
+    if (parsed !== null) {
+      events.push(parsed);
+    }
+  }
+
+  return { ok: true, value: events };
+}
+
+function parseMobilePublicEvent(value: unknown, eventId: number): MobilePublicEvent | null | undefined {
+  if (!isRecord(value) || typeof value.type !== "string") {
+    return undefined;
+  }
+
+  if (value.type === "playerJoined") {
+    return hasOnlyKeys(value, ["type", "playerId", "displayName"]) &&
+      isNonEmptyString(value.playerId) && typeof value.displayName === "string"
+      ? { eventId, type: value.type, playerId: value.playerId, displayName: value.displayName }
+      : undefined;
+  }
+
+  if (value.type === "seatTaken") {
+    return hasOnlyKeys(value, ["type", "seatId", "playerId"]) && isSeatId(value.seatId) && isNonEmptyString(value.playerId)
+      ? { eventId, type: value.type, seatId: value.seatId, playerId: value.playerId }
+      : undefined;
+  }
+
+  if (value.type === "readyChanged") {
+    return hasOnlyKeys(value, ["type", "seatId", "playerId", "ready"]) && isSeatId(value.seatId) &&
+      isNonEmptyString(value.playerId) && typeof value.ready === "boolean"
+      ? { eventId, type: value.type, seatId: value.seatId, playerId: value.playerId, ready: value.ready }
+      : undefined;
+  }
+
+  if (value.type === "missingSuitChosen") {
+    const allowed = hasAllowedKeys(value, ["type", "seatId", "playerId", "suit", "source"]);
+    return allowed && isSeatId(value.seatId) && isNonEmptyString(value.playerId) && isSuit(value.suit) &&
+      (value.source === undefined || value.source === "heavenly")
+      ? {
+          eventId,
+          type: value.type,
+          seatId: value.seatId,
+          playerId: value.playerId,
+          suit: value.suit,
+          automatic: value.source === "heavenly",
+        }
+      : undefined;
+  }
+
+  if (value.type === "tileDiscarded") {
+    return hasOnlyKeys(value, ["type", "seatId", "playerId", "tile"]) && isSeatId(value.seatId) &&
+      isNonEmptyString(value.playerId) && isTile(value.tile)
+      ? { eventId, type: value.type, seatId: value.seatId, playerId: value.playerId, tile: cloneTile(value.tile) }
+      : undefined;
+  }
+
+  if (value.type === "pengClaimed" || value.type === "mingGangClaimed" || value.type === "baGangClaimed") {
+    return hasOnlyKeys(value, ["type", "seatId", "playerId", "tile", "usedTiles"]) && isSeatId(value.seatId) &&
+      isNonEmptyString(value.playerId) && isTile(value.tile) && Array.isArray(value.usedTiles) && value.usedTiles.every(isTile)
+      ? { eventId, type: value.type, seatId: value.seatId, playerId: value.playerId, tile: cloneTile(value.tile) }
+      : undefined;
+  }
+
+  if (value.type === "anGangClaimed") {
+    return hasOnlyKeys(value, ["type", "seatId", "playerId", "usesLaizi"]) && isSeatId(value.seatId) &&
+      isNonEmptyString(value.playerId) && typeof value.usesLaizi === "boolean"
+      ? { eventId, type: value.type, seatId: value.seatId, playerId: value.playerId, usesLaizi: value.usesLaizi }
+      : undefined;
+  }
+
+  if (value.type === "huClaimed") {
+    return parseHuPublicEvent(value, eventId);
+  }
+
+  if (value.type === "selfDrawHuClaimed") {
+    return parseSelfDrawPublicEvent(value, eventId);
+  }
+
+  if (value.type === "qiangGangHuClaimed") {
+    return parseQiangGangHuPublicEvent(value, eventId);
+  }
+
+  if (value.type === "presenceChanged") {
+    return hasOnlyKeys(value, ["type", "playerId", "seatId", "connected", "reason"]) &&
+      isNonEmptyString(value.playerId) && isSeatIdOrNull(value.seatId) && typeof value.connected === "boolean" &&
+      (value.reason === "connectionClosed" || value.reason === "sessionResumed")
+      ? {
+          eventId,
+          type: value.type,
+          playerId: value.playerId,
+          seatId: value.seatId,
+          connected: value.connected,
+          reason: value.reason,
+        }
+      : undefined;
+  }
+
+  if (value.type === "roundEnded") {
+    return hasOnlyKeys(value, ["type", "reason", "remainingPlayerIds"]) && isRoundEndReason(value.reason) &&
+      Array.isArray(value.remainingPlayerIds) && value.remainingPlayerIds.every(isSeatId)
+      ? { eventId, type: value.type, reason: value.reason, remainingPlayerIds: [...value.remainingPlayerIds] }
+      : undefined;
+  }
+
+  // Draws, response choices and window internals are intentionally not part of the mobile event contract.
+  return null;
+}
+
+function parseHuPublicEvent(
+  value: Record<string, unknown>,
+  eventId: number,
+): Extract<MobilePublicEvent, { type: "huClaimed" }> | undefined {
+  return hasOnlyKeys(value, ["type", "seatId", "playerId", "tile", "patterns", "genCount", "points"]) &&
+    isSeatId(value.seatId) && isNonEmptyString(value.playerId) && isTile(value.tile) &&
+    Array.isArray(value.patterns) && value.patterns.every(isScorePattern) && isSafeInteger(value.genCount) &&
+    isFiniteNumber(value.points)
+    ? {
+        eventId,
+        type: "huClaimed",
+        seatId: value.seatId,
+        playerId: value.playerId,
+        tile: cloneTile(value.tile),
+        patterns: [...value.patterns],
+        genCount: value.genCount,
+        points: value.points,
+      }
+    : undefined;
+}
+
+function parseSelfDrawPublicEvent(
+  value: Record<string, unknown>,
+  eventId: number,
+): Extract<MobilePublicEvent, { type: "selfDrawHuClaimed" }> | undefined {
+  return hasOnlyKeys(value, ["type", "seatId", "playerId", "patterns", "genCount", "points"]) &&
+    isSeatId(value.seatId) && isNonEmptyString(value.playerId) && Array.isArray(value.patterns) &&
+    value.patterns.every(isScorePattern) && isSafeInteger(value.genCount) && isFiniteNumber(value.points)
+    ? {
+        eventId,
+        type: "selfDrawHuClaimed",
+        seatId: value.seatId,
+        playerId: value.playerId,
+        patterns: [...value.patterns],
+        genCount: value.genCount,
+        points: value.points,
+      }
+    : undefined;
+}
+
+function parseQiangGangHuPublicEvent(
+  value: Record<string, unknown>,
+  eventId: number,
+): Extract<MobilePublicEvent, { type: "qiangGangHuClaimed" }> | undefined {
+  return hasOnlyKeys(value, [
+    "type", "seatId", "playerId", "responsibleSeatId", "responsiblePlayerId", "tile", "patterns", "genCount", "points",
+  ]) && isSeatId(value.seatId) && isNonEmptyString(value.playerId) && isSeatId(value.responsibleSeatId) &&
+    isNonEmptyString(value.responsiblePlayerId) && isTile(value.tile) && Array.isArray(value.patterns) &&
+    value.patterns.every(isScorePattern) && isSafeInteger(value.genCount) && isFiniteNumber(value.points)
+    ? {
+        eventId,
+        type: "qiangGangHuClaimed",
+        seatId: value.seatId,
+        playerId: value.playerId,
+        responsibleSeatId: value.responsibleSeatId,
+        responsiblePlayerId: value.responsiblePlayerId,
+        tile: cloneTile(value.tile),
+        patterns: [...value.patterns],
+        genCount: value.genCount,
+        points: value.points,
+      }
+    : undefined;
+}
+
 function decodeJson(input: unknown): { ok: true; value: unknown } | { ok: false; reason: string } {
   if (typeof input !== "string") {
     return { ok: true, value: input };
@@ -508,6 +938,11 @@ function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]): b
   return Object.keys(value).every((key) => allowed.has(key)) && keys.every((key) => key in value || key === "events");
 }
 
+function hasAllowedKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const allowed = new Set(keys);
+  return Object.keys(value).every((key) => allowed.has(key));
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -528,6 +963,14 @@ function isSeatIdOrNull(value: unknown): value is SeatId | null {
 }
 function isSuit(value: unknown): value is Suit {
   return value === "characters" || value === "dots" || value === "bamboos";
+}
+function isRoundEndReason(value: unknown): value is RoundEndReason {
+  return value === "onePlayerLeft" || value === "wallEmpty";
+}
+function isScorePattern(value: unknown): value is ScorePattern {
+  return value === "pingHu" || value === "daDui" || value === "danDiao" || value === "qingYiSe" ||
+    value === "xiaoQiDui" || value === "longQiDui" || value === "shuangLongQiDui" ||
+    value === "sanLongQiDui" || value === "wuJi";
 }
 function isRank(value: unknown): value is Rank {
   return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 9;

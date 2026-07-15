@@ -4,7 +4,7 @@ The final product is a phone-first Leshan Mahjong App. The Vite Web client stays
 in the repository as a rule, protocol, privacy, and portfolio validation tool;
 it is not the final gameplay shell.
 
-## First Interactive Mobile Milestone
+## First Complete Single-Round Mobile Milestone
 
 The first Expo/React Native client lives in `apps/mobile`. It currently covers:
 
@@ -14,6 +14,9 @@ The first Expo/React Native client lives in `apps/mobile`. It currently covers:
 - Taking a seat, toggling ready, and starting a full room only when those
   actions appear in the server-provided `legalActions` list.
 - Submitting dingque through the same authoritative WebSocket action.
+- Accepting a server-selected heavenly missing suit immediately after dealing
+  when exactly one ordinary suit is absent; physical one-bamboo and one-dot do
+  not count toward ordinary suit presence.
 - Rendering a table with the local hand, opponent concealed counts,
   public melds, discards, current player, wall count, and score.
 - Automatically requesting normal and gang-replacement draws when the server
@@ -45,11 +48,17 @@ The first Expo/React Native client lives in `apps/mobile`. It currently covers:
 - Marking an interrupted discard, hu, peng, or gang request as "result pending
   confirmation" instead of replaying it. Recovery clears old selections and
   rebuilds controls from the fresh server `actionId`.
+- Parsing only whitelisted public events, assigning stable event ids from the
+  authoritative cursor, and merging/deduplicating a maximum of 100 timeline
+  items across reconnects.
+- Showing the terminal reason, four authoritative final scores, and each hu,
+  chicken, gang, rob-kong liability, and cha-jiao transfer. The App does not
+  recalculate settlement totals.
 
 The Vite Web preview remains the multi-client debugging surface. The phone App
-now owns a single authenticated session and can complete the first real
-draw/discard/claim loop without storing debug message history or other players'
-snapshots.
+now owns a single authenticated session and can complete one real round from
+room creation through terminal settlement without storing debug message
+history or other players' snapshots.
 
 ## Architecture
 
@@ -59,6 +68,7 @@ Authoritative Node WebSocket server
   -> full server redacted room snapshot
   -> strict client-core parser and reduced mobile DTO
   -> legalActions + parameterized actionDescriptors
+  -> bounded MobilePublicEvent timeline + safe settlement summaries
   -> single-session MobileRoomTransport
   -> injectable reconnect coordinator
   -> Expo mobile presentation
@@ -114,9 +124,14 @@ opponent hands, private claim arrays, or concealed an-gang tiles.
 - Connection ownership: both authenticated and not-yet-authenticated sockets
   carry a local generation. Late callbacks from superseded generations are
   closed and ignored; the server independently enforces latest binding.
-- Missed events: the parser scans the event envelope for forbidden private
-  fields, then discards it in this milestone. The App stores only the reduced
-  snapshot and event cursor, never raw event history or private responses.
+- Missed events: the parser converts only joined/ready/dingque/discard/public
+  meld/hu/presence/round-end events into `MobilePublicEvent`. Draw events,
+  unresolved responses, concealed an-gang faces, wall/seed data, decomposition
+  candidates, and internal fact ids are never retained. Events are sorted,
+  deduplicated by `eventId`, and bounded to the newest 100 items.
+- Terminal state: `roundEnd`, current/final scores, and minimal settlement
+  summaries are safe DTOs. Internal batch/window/fact identifiers and physical
+  source arrays are not copied into the phone state.
 - Server messages: malformed envelopes, unknown extra fields, hidden wall/seed
   fields, and non-null opponent hands are rejected before state changes.
 
@@ -159,14 +174,14 @@ npm run smoke:server
 
 ## Android And iOS Roadmap
 
-1. Validate the current shell in Expo Go on one Android phone and one iPhone.
-2. Add a client-safe public event contract, event-id deduplication, and a
-   compact in-game timeline without retaining private recovery payloads.
-3. Add richer settlement presentation and final-score breakdowns.
-4. Add vibration/audio settings and accessibility labels for real tile artwork.
-5. Move the in-memory server to a `wss://` deployment with durable room/session
+1. Confirm dealer rotation, cumulative score, round-count, and next-round ready
+   rules, then add a multi-round room loop.
+2. Validate the complete single-round flow in Expo Go on one Android phone and
+   one iPhone.
+3. Add vibration/audio settings and accessibility labels for real tile artwork.
+4. Move the in-memory server to a `wss://` deployment with durable room/session
    storage.
-6. Produce internal Android and iOS beta builds with EAS Build.
+5. Produce internal Android and iOS beta builds with EAS Build.
 
 The Web client remains useful throughout this sequence because it can expose
 debug timelines and multi-client snapshots that should not appear in the

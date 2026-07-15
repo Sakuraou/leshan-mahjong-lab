@@ -7,7 +7,7 @@ import {
   type DrawTileResult,
 } from "./round.ts";
 import { huDecompositionSignature, type HuDecomposition } from "./hu.ts";
-import { isYaoJi, sameTile, tile, tileKey } from "./tiles.ts";
+import { isYaoJi, sameTile, SUITS, tile, tileKey } from "./tiles.ts";
 import { checkCurrentPlayerHu, checkDiscardHu, type WinCheckResult } from "./win.ts";
 import {
   applyChaJiaoSettlementBatch,
@@ -224,7 +224,13 @@ export type RoomEvent =
       reason: PresenceChangeReason;
     }
   | { type: "roundStarted"; dealer: PlayerId }
-  | { type: "missingSuitChosen"; seatId: PlayerId; playerId: string; suit: Suit }
+  | {
+      type: "missingSuitChosen";
+      seatId: PlayerId;
+      playerId: string;
+      suit: Suit;
+      source?: "heavenly";
+    }
   | { type: "tileDrawn"; seatId: PlayerId; playerId: string }
   | { type: "tileDiscarded"; seatId: PlayerId; playerId: string; tile: Tile }
   | { type: "claimWindowOpened"; discardedBySeatId: PlayerId; tile: Tile; pendingResponderCount: number }
@@ -280,7 +286,7 @@ export type RoomEvent =
 
 export type ClientRoomEvent =
   | Exclude<RoomEvent, { type: "anGangClaimed" }>
-  | { type: "anGangClaimed"; seatId: PlayerId; playerId: string };
+  | { type: "anGangClaimed"; seatId: PlayerId; playerId: string; usesLaizi: boolean };
 
 export type ClientVisibleGangDrawState = Omit<GangDrawState, "tile"> & {
   tile: Tile | null;
@@ -769,15 +775,36 @@ export function startRoomRound(room: RoomState, dealer: PlayerId = 0): StartRoom
     return { ok: false, reason: "notAllPlayersReady" };
   }
 
+  const startedRound = startRound({ seed: room.seed, dealer });
+  const players = startedRound.players.map((player) => ({
+    ...player,
+    missingSuit: detectHeavenlyMissingSuit(player.hand),
+  }));
+  const allMissingSuitsChosen = players.every((player) => player.missingSuit !== null);
+  const heavenlyMissingSuitEvents: RoomEvent[] = players.flatMap((player) => {
+    if (player.missingSuit === null) {
+      return [];
+    }
+
+    const seat = room.seats[player.id];
+    return [{
+      type: "missingSuitChosen" as const,
+      seatId: player.id,
+      playerId: seat.playerId!,
+      suit: player.missingSuit,
+      source: "heavenly" as const,
+    }];
+  });
+
   return {
     ok: true,
     room: {
       ...room,
       roundNumber: room.roundNumber + 1,
-      status: "dingque",
-      phase: "dingque",
+      status: allMissingSuitsChosen ? "playing" : "dingque",
+      phase: allMissingSuitsChosen ? "discard" : "dingque",
       selfDrawEligible: true,
-      round: startRound({ seed: room.seed, dealer }),
+      round: { ...startedRound, players },
       claimWindow: null,
       baGangClaimWindow: null,
       gangDraw: null,
@@ -785,9 +812,26 @@ export function startRoomRound(room: RoomState, dealer: PlayerId = 0): StartRoom
       chaJiao: null,
       gangSettlementFacts: [],
       chaJiaoSettlementFacts: [],
-      eventLog: [...room.eventLog, { type: "roundStarted", dealer }],
+      eventLog: [
+        ...room.eventLog,
+        { type: "roundStarted", dealer },
+        ...heavenlyMissingSuitEvents,
+      ],
     },
   };
+}
+
+export function detectHeavenlyMissingSuit(hand: readonly Tile[]): Suit | null {
+  const ordinarySuitCounts = new Map<Suit, number>(SUITS.map((suit) => [suit, 0]));
+
+  for (const value of hand) {
+    if (!isYaoJi(value)) {
+      ordinarySuitCounts.set(value.suit, ordinarySuitCounts.get(value.suit)! + 1);
+    }
+  }
+
+  const missingSuits = SUITS.filter((suit) => ordinarySuitCounts.get(suit) === 0);
+  return missingSuits.length === 1 ? missingSuits[0] : null;
 }
 
 export function chooseMissingSuit(room: RoomState, playerId: string, suit: Suit): ChooseMissingSuitResult {
@@ -1856,9 +1900,9 @@ function hasResponse(window: ClaimWindow | BaGangClaimWindow, seatId: PlayerId):
 
 export function toClientVisibleRoomEvent(
   event: RoomEvent,
-  localSeatId: PlayerId | null,
+  _localSeatId: PlayerId | null,
 ): ClientRoomEvent {
-  if (event.type !== "anGangClaimed" || event.seatId === localSeatId) {
+  if (event.type !== "anGangClaimed") {
     return event;
   }
 
@@ -1866,6 +1910,7 @@ export function toClientVisibleRoomEvent(
     type: "anGangClaimed",
     seatId: event.seatId,
     playerId: event.playerId,
+    usesLaizi: event.usedTiles.some(isYaoJi),
   };
 }
 

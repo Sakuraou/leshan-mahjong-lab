@@ -36,6 +36,10 @@ After dingque:
   them before discarding other suits.
 - `1 bamboo` and `1 dot` are laizi, so their original printed suit does not
   force them to be treated as bamboo or dot for dingque.
+- Immediately after dealing, if a hand has ordinary tiles from exactly two
+  suits, the absent suit is selected automatically as heavenly dingque. Printed
+  `1 bamboo` and `1 dot` do not count as ordinary bamboo/dot for this check. If
+  zero or two suits are absent, the player still chooses manually.
 - A laizi may resolve to any suit/value during hand formation.
 - If qing yi se is claimed, each laizi used in the winning structure must resolve
   into that pure suit.

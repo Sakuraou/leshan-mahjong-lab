@@ -5,6 +5,7 @@ import type {
   ClientTransportActionResult,
   ClientVisibleMeld,
   ClientVisibleRoomState,
+  MobilePublicEvent,
   PersistedRoomSession,
   PlayerId,
   ReconnectAttemptContext,
@@ -44,6 +45,8 @@ import {
   type MobileRoomGateway,
 } from "./roomGateway";
 import { mobileRoomSessionStore } from "./sessionStore";
+import { RoundResultSection } from "./RoundResultSection";
+import { RoundTimelineSection } from "./RoundTimelineSection";
 import { TileFace } from "./TileFace";
 
 type ConnectionStatus =
@@ -90,6 +93,7 @@ export function MobileApp() {
   const [gateway, setGateway] = useState<MobileRoomGateway | null>(null);
   const [identity, setIdentity] = useState<Identity | null>(null);
   const [snapshot, setSnapshot] = useState<ClientVisibleRoomState | null>(null);
+  const [publicEvents, setPublicEvents] = useState<MobilePublicEvent[]>([]);
   const [storedSession, setStoredSession] = useState<PersistedRoomSession | null>(null);
   const [selectedDiscard, setSelectedDiscard] = useState<SelectedDiscard | null>(null);
   const [selectedGang, setSelectedGang] = useState<SelectedGang | null>(null);
@@ -101,6 +105,7 @@ export function MobileApp() {
   const gatewayRef = useRef<MobileRoomGateway | null>(null);
   const pendingGatewayRef = useRef<MobileRoomGateway | null>(null);
   const sessionRef = useRef<PersistedRoomSession | null>(null);
+  const publicEventsRef = useRef<MobilePublicEvent[]>([]);
   const connectionGeneration = useRef(0);
   const pendingConfirmationRef = useRef<PendingActionConfirmation | null>(null);
   const activeActionRef = useRef<PendingActionConfirmation | null>(null);
@@ -247,6 +252,8 @@ export function MobileApp() {
       }
       if (transportState.snapshot !== null) {
         setSnapshot(transportState.snapshot);
+        publicEventsRef.current = transportState.events;
+        setPublicEvents(transportState.events);
         const record = sessionRef.current;
         if (record !== null && transportState.lastEventId !== lastPersistedEventId.current) {
           void persistSession(gateway, record);
@@ -347,12 +354,14 @@ export function MobileApp() {
     setReconnectActive(false);
     const generation = ++connectionGeneration.current;
     closeCurrentGateway();
+    publicEventsRef.current = [];
+    setPublicEvents([]);
     setConnectionStatus("connecting");
     setStatusText(mode === "create" ? "正在创建房间" : "正在加入房间");
 
     let nextGateway: MobileRoomGateway | null = null;
     try {
-      nextGateway = await connectMobileRoomGateway({ serverUrl, roomId });
+      nextGateway = await connectMobileRoomGateway({ serverUrl, roomId, initialEvents: [] });
       if (generation !== connectionGeneration.current) {
         nextGateway.close();
         return;
@@ -426,7 +435,10 @@ export function MobileApp() {
     closeCurrentGateway();
     let nextGateway: MobileRoomGateway | null = null;
     try {
-      nextGateway = await connectMobileRoomGateway(record);
+      nextGateway = await connectMobileRoomGateway({
+        ...record,
+        initialEvents: publicEventsRef.current,
+      });
       if (!context.isCurrent() || generation !== connectionGeneration.current) {
         nextGateway.close();
         return { ok: false, reason: "supersededReconnect", terminal: true };
@@ -500,6 +512,7 @@ export function MobileApp() {
       return false;
     }
     const previousRecord = sessionRef.current;
+    const nextEvents = nextGateway.getState().events;
     const record: PersistedRoomSession = {
       serverUrl: nextGateway.getState().url,
       roomId: nextGateway.getState().roomId,
@@ -517,6 +530,8 @@ export function MobileApp() {
     setGateway(nextGateway);
     setIdentity({ playerId, sessionToken });
     setSnapshot(nextSnapshot);
+    publicEventsRef.current = nextEvents;
+    setPublicEvents(nextEvents);
     setStoredSession(record);
     setConnectionStatus("online");
     clearPendingConfirmation();
@@ -613,6 +628,8 @@ export function MobileApp() {
     setStoredSession(null);
     setIdentity(null);
     setSnapshot(null);
+    publicEventsRef.current = [];
+    setPublicEvents([]);
     clearPendingConfirmation();
     resetTransientTurnState();
     setConnectionStatus("idle");
@@ -625,6 +642,8 @@ export function MobileApp() {
     setStoredSession(null);
     setIdentity(null);
     setSnapshot(null);
+    publicEventsRef.current = [];
+    setPublicEvents([]);
     clearPendingConfirmation();
     resetTransientTurnState();
     await mobileRoomSessionStore.clear();
@@ -722,6 +741,8 @@ export function MobileApp() {
             </Text>
           </View>
         )}
+
+        <RoundResultSection snapshot={snapshot} />
 
         <Section title="服务器与房间">
           <Field label="服务器地址" value={serverUrl} onChangeText={setServerUrl} autoCapitalize="none" />
@@ -866,6 +887,7 @@ export function MobileApp() {
             </>
           )}
         </Section>
+        <RoundTimelineSection events={publicEvents} snapshot={snapshot} />
       </ScrollView>
     </SafeAreaView>
   );

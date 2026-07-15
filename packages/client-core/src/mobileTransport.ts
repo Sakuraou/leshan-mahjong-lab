@@ -1,6 +1,7 @@
 import {
   parseMobileRoomServerMessage,
   type MobileRoomServerMessage,
+  type MobilePublicEvent,
   type PlayerId,
   type ProtocolErrorCode,
   type RoomSocketClientMessage,
@@ -12,6 +13,10 @@ import type {
   MobileRoomTransport,
   MobileRoomTransportState,
 } from "./transport.ts";
+import {
+  DEFAULT_MOBILE_EVENT_LIMIT,
+  mergeMobilePublicEvents,
+} from "./mobilePublicEvents.ts";
 
 export type MobileWebSocketLike = {
   readyState: number;
@@ -25,6 +30,8 @@ export type MobileRoomTransportOptions = {
   roomId: string;
   actionTimeoutMs?: number;
   socketFactory?: (url: string) => MobileWebSocketLike;
+  initialEvents?: MobilePublicEvent[];
+  eventLimit?: number;
 };
 
 type ActionWaiter = {
@@ -56,6 +63,7 @@ export async function createMobileRoomTransport(
     snapshot: null,
     lastEventId: 0,
     serverNow: null,
+    events: mergeMobilePublicEvents([], options.initialEvents ?? [], options.eventLimit ?? DEFAULT_MOBILE_EVENT_LIMIT),
     lastError: null,
   };
 
@@ -235,11 +243,24 @@ export async function createMobileRoomTransport(
         socket.close();
         return;
       }
+      let events: MobilePublicEvent[];
+      try {
+        events = mergeMobilePublicEvents(
+          state.events,
+          message.payload.events,
+          options.eventLimit ?? DEFAULT_MOBILE_EVENT_LIMIT,
+        );
+      } catch {
+        failTransport("malformedServerMessage", "服务端返回了冲突的公开事件");
+        socket.close();
+        return;
+      }
       updateState({
         ...state,
         snapshot: message.payload.view,
         lastEventId: message.payload.lastEventId,
         serverNow: message.payload.serverNow,
+        events,
         lastError: null,
       });
       for (const waiter of snapshotWaiters) {

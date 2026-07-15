@@ -142,7 +142,7 @@ test("broadcasts each session its own redacted view after startRound", () => {
     assert.equal(message.payload.playerId, `player-${index + 1}`);
     assert.equal(message.payload.view.localSeatId, index);
     assert.equal(message.payload.view.phase, "dingque");
-    assert.deepEqual(message.payload.view.legalActions, ["chooseMissingSuit"]);
+    assert.deepEqual(message.payload.view.legalActions, index === 0 ? [] : ["chooseMissingSuit"]);
     assert.deepEqual(message.payload.view.scores.map((score) => score.points), [0, 0, 0, 0]);
     assert.deepEqual(message.payload.view.settlementLedger, []);
 
@@ -156,6 +156,16 @@ test("broadcasts each session its own redacted view after startRound", () => {
     assert.deepEqual(
       message.payload.events.find((event) => event.type === "roundStarted"),
       { type: "roundStarted", dealer: 0 },
+    );
+    assert.deepEqual(
+      message.payload.events.find((event) => event.type === "missingSuitChosen"),
+      {
+        type: "missingSuitChosen",
+        seatId: 0,
+        playerId: "player-1",
+        suit: "dots",
+        source: "heavenly",
+      },
     );
     assert.deepEqual(
       message.payload.view.eventLog.find((event) => event.type === "roundStarted"),

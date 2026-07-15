@@ -8,6 +8,9 @@ export type {
   ClientVisibleRoomState,
   ClientVisibleSeatState,
   MobileRoomServerMessage,
+  MobilePublicEvent,
+  MobileRoundEndState,
+  MobileSettlementSummary,
   MobileServerMessageParseResult,
   PlayerId,
   ProtocolErrorCode,
@@ -22,6 +25,19 @@ export type {
   Tile,
 } from "./contract.ts";
 export { parseMobileRoomServerMessage } from "./contract.ts";
+export {
+  DEFAULT_MOBILE_EVENT_LIMIT,
+  mergeMobilePublicEvents,
+} from "./mobilePublicEvents.ts";
+export {
+  toMobileRoundResultViewModel,
+  toMobileTimelineItems,
+} from "./mobilePresentation.ts";
+export type {
+  MobileRoundResultViewModel,
+  MobileSettlementItem,
+  MobileTimelineItem,
+} from "./mobilePresentation.ts";
 export {
   canUseAction,
   descriptorForAction,

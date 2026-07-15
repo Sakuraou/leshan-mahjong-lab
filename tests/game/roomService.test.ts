@@ -118,7 +118,16 @@ test("starts a round after four sessions are seated and ready", () => {
   assert.equal(started.service.room.status, "dingque");
   assert.equal(started.service.room.round?.players[0].hand.length, 14);
   assert.equal(started.service.room.round?.players[1].hand.length, 13);
-  assert.deepEqual(started.events, [{ type: "roundStarted", dealer: 0 }]);
+  assert.deepEqual(started.events, [
+    { type: "roundStarted", dealer: 0 },
+    {
+      type: "missingSuitChosen",
+      seatId: 0,
+      playerId: "player-1",
+      suit: "characters",
+      source: "heavenly",
+    },
+  ]);
 
   const playerTwoView = getClientRoomView(started.service, filled.sessions[1].sessionToken);
 
@@ -350,12 +359,12 @@ test("rejects missing suit choice before the round starts, without a seat, and a
 
   const filled = fillReadyService("svc-room-dingque-repeat");
   const started = handleOk(filled.service, filled.sessions[0].sessionToken, { type: "startRound" });
-  const chosen = handleOk(started.service, filled.sessions[0].sessionToken, {
+  const chosen = handleOk(started.service, filled.sessions[1].sessionToken, {
     type: "chooseMissingSuit",
     suit: "dots",
   });
 
-  assert.deepEqual(handleRoomAction(chosen.service, filled.sessions[0].sessionToken, { type: "chooseMissingSuit", suit: "bamboos" }), {
+  assert.deepEqual(handleRoomAction(chosen.service, filled.sessions[1].sessionToken, { type: "chooseMissingSuit", suit: "bamboos" }), {
     ok: false,
     reason: "missingSuitAlreadyChosen",
     service: chosen.service,
@@ -577,6 +586,9 @@ function prepareServiceForPlayerTwoDraw(roomId: string): { service: RoomServiceS
   const suits = ["bamboos", "dots", "characters", "bamboos"] as const;
 
   filled.sessions.forEach((session, index) => {
+    if (service.room.round?.players[index].missingSuit !== null) {
+      return;
+    }
     service = handleOk(service, session.sessionToken, { type: "chooseMissingSuit", suit: suits[index] }).service;
   });
 
@@ -603,6 +615,9 @@ function prepareServiceForDealerDiscard(roomId: string): { service: RoomServiceS
   const suits: Suit[] = [discard.suit, "dots", "characters", "bamboos"];
 
   filled.sessions.forEach((session, index) => {
+    if (service.room.round?.players[index].missingSuit !== null) {
+      return;
+    }
     service = handleOk(service, session.sessionToken, { type: "chooseMissingSuit", suit: suits[index] }).service;
   });
 

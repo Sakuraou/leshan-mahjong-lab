@@ -2,9 +2,9 @@
 
 ## MVP Snapshot
 
-The current build is a playable Web prototype for Leshan eight-chicken Mahjong.
-It focuses on a stable game-core foundation and a readable browser table rather
-than a complete production game.
+The current build has a phone-first Expo client that can complete one
+server-authoritative round. The Vite Web app remains the multi-client rule,
+privacy, protocol, and portfolio debugging surface.
 
 ### Current MVP Features
 
@@ -15,9 +15,11 @@ than a complete production game.
 - Current-player draw and discard state transitions
 - Dingque-aware discard validation
 - MVP rule that prevents actively discarding yao ji
-- Laizi-aware standard hu check for `4 melds + 1 pair`
-- Self-draw and discard hu checks with the local minimum-score rule
-- Basic scoring helpers for ping hu, wu ji, qing yi se, gen, and score caps
+- Explainable laizi-aware standard and seven-pairs hu search with highest-score
+  candidate selection
+- Self-draw, discard, and rob-kong hu with player-controlled hu confirmation
+- Authoritative score ledger for hu, chicken, gang, rob-kong chicken liability,
+  and wall-empty cha jiao
 - Chinese tile labels, current-player highlight, wall count, discards, action
   hints, and round log in the Web UI
 - Seat-limited interaction model: the local player can only operate their own
@@ -28,9 +30,8 @@ than a complete production game.
   mode, so opponent hands render from hand counts instead of hidden tile arrays.
 - Client perspective switching demonstrates the redacted state contract from
   each player's viewpoint while keeping gameplay execution local-only.
-- WebSocket room protocol draft documents the next server-authoritative room
-  step, including client actions, broadcasts, errors, reconnect, legal actions,
-  and client-visible state payloads.
+- WebSocket protocol documents the implemented authoritative actions,
+  broadcasts, errors, reconnect, legal actions, and client-visible payloads.
 - Real local WebSocket dev server powered by `ws`, with tested message routing
   through `roomSocketServerCore`, `roomSocketAdapter`, and `roomService`.
 - Frontend WebSocket experiment panel that can run a full four-client room
@@ -51,31 +52,33 @@ than a complete production game.
   main portfolio demo stable while the real WebSocket path is demonstrated
   separately.
 - Player-selected dingque with heavenly-missing-suit default when the local
-  hand naturally lacks exactly one ordinary suit.
+  hand naturally lacks exactly one ordinary suit; physical one-bamboo and
+  one-dot laizi do not count as ordinary suit tiles.
 - Automatic system draw at the start of draw phases.
 - Self-drawn tile faces for bamboos, dots, and characters, with the local hand
   sorted by bamboos, dots, then characters.
 - Vercel-ready build configuration
+- Expo client with authoritative discard/gang candidates, private response
+  controls, stale-action protection, 1/2/4/8-second reconnect, safe missed-event
+  merging, a compact timeline, and a final settlement screen.
+- GitHub Actions verification for TypeScript, tests, Web build, and mobile
+  TypeScript on push and pull request.
 
 ### Known Limits
 
-- Seven pairs, long seven pairs, double long seven pairs, and full fan stacking
-  are not fully connected to the round flow yet.
-- Peng, gang, robbing gang, gang-shang-hua, gang-shang-pao, and one-discard
-  multi-win are still planned.
-- Chicken settlement, gang settlement, and cha jiao settlement are modeled only
-  as helpers or rule notes, not as a complete end-of-round settlement screen.
-- The UI is a prototype table, not yet a polished multiplayer game interface.
+- The first mobile closure ends after one round. Dealer rotation, accumulated
+  match score, round count, and next-round readiness still need local-rule
+  confirmation.
+- Gang-shang-hua and gang-shang-pao do not yet have distinct scoring/event
+  labels beyond the existing authoritative hu flow.
+- The phone UI is functional but still needs real Mahjong artwork, audio,
+  vibration, accessibility review, and physical-device layout testing.
 - There is no login, persistence, replay system, or production deployment for
   the WebSocket server yet.
-- Remote turns are still simulated locally for demo progression until a
-  real-time room backend is added.
 - The main room/table mode is still powered by the local mock transport; the
-  real WebSocket path is currently an experiment panel plus a limited table
-  preview with server-authoritative dingque.
-- The WebSocket server currently covers room lifecycle and
-  server-authoritative dingque, not draw/discard, peng/gang, hu, settlement,
-  durable auth, or production persistence.
+  browser's real WebSocket path remains an experiment/preview. The Expo client
+  is the production-oriented single-session gameplay path.
+- Room/session state is still in memory; server restarts lose active rooms.
 - Screenshot assets are still pending until the first production deployment is
   captured.
 
@@ -95,13 +98,24 @@ than a complete production game.
 1. Paste the Vercel production URL into the README.
 2. Capture the first portfolio screenshots and replace the screenshot
    placeholders.
-3. Add peng/gang actions to the round state.
-4. Connect seven-pairs and advanced fan calculation to hu checks.
-5. Implement chicken, gang, and cha jiao settlement views.
-6. Add a clearer portfolio page or route for case-study presentation.
-7. Implement WebSocket-backed `drawTile` as a server-authoritative round action.
-8. Implement WebSocket-backed `discardTile` with dingque, yao ji, turn, and tile
-   ownership validation.
+3. Confirm dealer rotation, next-round readiness, match length, and cumulative
+   score rules, then implement the multi-round room lifecycle.
+4. Validate the Expo app on physical Android and iOS devices.
+5. Add production `wss://` hosting and durable room/session persistence.
+6. Add real tile artwork, sound/vibration controls, and accessibility polish.
+7. Add a clearer portfolio page or route for case-study presentation.
+
+## 2026-07-15
+
+- Added server-side heavenly missing-suit detection immediately after dealing.
+- Added strict mobile terminal DTOs for round end, final scores, and safe
+  settlement summaries.
+- Added a whitelisted `MobilePublicEvent` stream with stable event ids,
+  bounded deduplication, resume merging, and no draw/response/private payloads.
+- Added phone timeline and single-round result sections without a next-round
+  command.
+- Added GitHub Actions checks and refreshed the project documentation to match
+  the implemented authoritative round flow.
 
 ## 2026-06-30
 

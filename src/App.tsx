@@ -3238,7 +3238,7 @@ function roomEventText(event: RoomEvent, room: RoomState): string {
     case "roundStarted":
       return `房间开局，庄家是玩家 ${event.dealer + 1}。`;
     case "missingSuitChosen":
-      return `${roomPlayerName(room, event.playerId)} 定缺 ${suitText(event.suit)}。`;
+      return `${roomPlayerName(room, event.playerId)} ${event.source === "heavenly" ? "天缺自动定缺" : "定缺"} ${suitText(event.suit)}。`;
     case "tileDrawn":
       return `${roomPlayerName(room, event.playerId)} 已由服务端摸牌。`;
     case "gangTileDrawn":

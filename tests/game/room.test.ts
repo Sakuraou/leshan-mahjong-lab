@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   createRoom,
+  detectHeavenlyMissingSuit,
   claimAnGang,
   claimBaGang,
   claimHu,
@@ -38,6 +39,49 @@ import {
   type Suit,
   type Tile,
 } from "../../src/game/index.ts";
+
+test("detects exactly one heavenly missing suit while ignoring yao ji", () => {
+  assert.equal(detectHeavenlyMissingSuit([
+    tile("bamboos", 1),
+    tile("dots", 2),
+    tile("characters", 3),
+  ]), "bamboos");
+  assert.equal(detectHeavenlyMissingSuit([
+    tile("dots", 1),
+    tile("bamboos", 2),
+    tile("characters", 3),
+  ]), "dots");
+  assert.equal(detectHeavenlyMissingSuit([
+    tile("characters", 1),
+    tile("dots", 2),
+    tile("bamboos", 3),
+  ]), null);
+  assert.equal(detectHeavenlyMissingSuit([
+    tile("characters", 2),
+    tile("characters", 3),
+  ]), null);
+});
+
+test("auto-chooses heavenly missing suits immediately after dealing", () => {
+  const readyRoom = ["p1", "p2", "p3", "p4"].reduce(
+    (room, playerId) => readySeat(room, playerId),
+    seatPlayers(createRoom({ id: "room-heavenly", seed: "tianque-46" })),
+  );
+  const started = startRoomRound(readyRoom, 0);
+  assert.equal(started.ok, true);
+  if (!started.ok || started.room.round === null) return;
+
+  const expected = started.room.round.players.map((player) => detectHeavenlyMissingSuit(player.hand));
+  assert.deepEqual(started.room.round.players.map((player) => player.missingSuit), expected);
+  assert.equal(expected.some((suit) => suit !== null), true);
+  assert.equal(expected.some((suit) => suit === null), true);
+
+  const automaticEvents = started.room.eventLog.filter(
+    (event) => event.type === "missingSuitChosen" && event.source === "heavenly",
+  );
+  assert.equal(automaticEvents.length, expected.filter((suit) => suit !== null).length);
+  assert.equal(started.room.phase, "dingque");
+});
 
 test("creates a waiting room with four empty seats", () => {
   const room = createRoom({ id: "room-001", seed: "room-seed" });
@@ -1586,6 +1630,7 @@ test("lets the current player claim an gang after drawing", () => {
     type: "anGangClaimed",
     seatId: 0,
     playerId: "p1",
+    usesLaizi: false,
   });
   assert.equal(opponentView.gangSettlements[0].targetTile, null);
   assert.equal(JSON.stringify(opponentView).includes("gangId"), false);
