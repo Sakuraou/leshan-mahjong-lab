@@ -9,7 +9,11 @@ export type {
   ClientVisibleSeatState,
   MobileRoomServerMessage,
   MobilePublicEvent,
+  MobileGameEndState,
+  MobileNextDealerDecision,
+  MobileRoundHistoryEntry,
   MobileRoundEndState,
+  MobileRoundScoreDelta,
   MobileSettlementSummary,
   MobileServerMessageParseResult,
   PlayerId,
@@ -19,6 +23,8 @@ export type {
   RoomSocketClientMessage,
   RoomSocketErrorCode,
   RoomStatus,
+  GameStatus,
+  NextDealerReason,
   RoundPhase,
   SeatId,
   Suit,
@@ -30,11 +36,14 @@ export {
   mergeMobilePublicEvents,
 } from "./mobilePublicEvents.ts";
 export {
+  nextDealerReasonLabel,
+  toMobileIntermissionViewModel,
   toMobileRoundResultViewModel,
   toMobileTimelineItems,
 } from "./mobilePresentation.ts";
 export type {
   MobileRoundResultViewModel,
+  MobileIntermissionViewModel,
   MobileSettlementItem,
   MobileTimelineItem,
 } from "./mobilePresentation.ts";

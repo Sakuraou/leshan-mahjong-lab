@@ -4,7 +4,7 @@ The final product is a phone-first Leshan Mahjong App. The Vite Web client stays
 in the repository as a rule, protocol, privacy, and portfolio validation tool;
 it is not the final gameplay shell.
 
-## First Complete Single-Round Mobile Milestone
+## First Complete Multi-Round Mobile Milestone
 
 The first Expo/React Native client lives in `apps/mobile`. It currently covers:
 
@@ -54,11 +54,18 @@ The first Expo/React Native client lives in `apps/mobile`. It currently covers:
 - Showing the terminal reason, four authoritative final scores, and each hu,
   chicken, gang, rob-kong liability, and cha-jiao transfer. The App does not
   recalculate settlement totals.
+- Separating each completed round's score delta from the match-wide cumulative
+  score, and showing the server-frozen next dealer plus its reason.
+- Supporting the between-round loop through server descriptors only: four
+  players ready again, an allowed player starts the next round, or any member
+  ends the match.
+- Showing the final cumulative ranking and per-round score history after the
+  match is ended.
 
 The Vite Web preview remains the multi-client debugging surface. The phone App
-now owns a single authenticated session and can complete one real round from
-room creation through terminal settlement without storing debug message
-history or other players' snapshots.
+now owns a single authenticated session and can continue across authoritative
+round boundaries without storing debug message history or other players'
+snapshots.
 
 ## Architecture
 
@@ -132,6 +139,9 @@ opponent hands, private claim arrays, or concealed an-gang tiles.
 - Terminal state: `roundEnd`, current/final scores, and minimal settlement
   summaries are safe DTOs. Internal batch/window/fact identifiers and physical
   source arrays are not copied into the phone state.
+- Match state: round number, current dealer, frozen next-dealer reason,
+  cumulative scores, safe per-round deltas, readiness, and final ranking are
+  public. The phone never derives dealer rotation or reapplies ledger rows.
 - Server messages: malformed envelopes, unknown extra fields, hidden wall/seed
   fields, and non-null opponent hands are rejected before state changes.
 
@@ -174,14 +184,12 @@ npm run smoke:server
 
 ## Android And iOS Roadmap
 
-1. Confirm dealer rotation, cumulative score, round-count, and next-round ready
-   rules, then add a multi-round room loop.
-2. Validate the complete single-round flow in Expo Go on one Android phone and
+1. Validate the complete multi-round flow in Expo Go on one Android phone and
    one iPhone.
-3. Add vibration/audio settings and accessibility labels for real tile artwork.
-4. Move the in-memory server to a `wss://` deployment with durable room/session
+2. Add vibration/audio settings and accessibility labels for real tile artwork.
+3. Move the in-memory server to a `wss://` deployment with durable room/session
    storage.
-5. Produce internal Android and iOS beta builds with EAS Build.
+4. Produce internal Android and iOS beta builds with EAS Build.
 
 The Web client remains useful throughout this sequence because it can expose
 debug timelines and multi-client snapshots that should not appear in the

@@ -103,6 +103,9 @@ export async function createMobileRoomTransport(
     takeSeat: (seatId) => sendSessionAction("takeSeat", { seatId }),
     toggleReady: () => sendSessionAction("toggleReady", {}),
     startRound: (dealer) => sendSessionAction("startRound", dealer === undefined ? {} : { dealer }),
+    readyNextRound: (expectedActionId) => sendGuardedSessionAction("readyNextRound", {}, expectedActionId),
+    startNextRound: (expectedActionId) => sendGuardedSessionAction("startNextRound", {}, expectedActionId),
+    finishGame: (expectedActionId) => sendGuardedSessionAction("finishGame", {}, expectedActionId),
     chooseMissingSuit: (suit) => sendSessionAction("chooseMissingSuit", { suit }),
     drawTile: (expectedActionId) => sendGuardedSessionAction("drawTile", {}, expectedActionId),
     drawGangTile: (expectedActionId) => sendGuardedSessionAction("drawGangTile", {}, expectedActionId),
@@ -173,6 +176,9 @@ export async function createMobileRoomTransport(
       RoomSocketClientMessage["type"],
       | "drawTile"
       | "drawGangTile"
+      | "readyNextRound"
+      | "startNextRound"
+      | "finishGame"
       | "discardTile"
       | "passClaim"
       | "claimHu"

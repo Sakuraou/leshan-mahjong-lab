@@ -83,6 +83,8 @@ type RoomEvent =
   | { type: "seatTaken"; seatId: 0 | 1 | 2 | 3; playerId: string }
   | { type: "readyChanged"; seatId: 0 | 1 | 2 | 3; playerId: string; ready: boolean }
   | { type: "roundStarted"; dealer: 0 | 1 | 2 | 3 }
+  | { type: "nextDealerDecided"; completedRoundNumber: number; nextDealerSeatId: 0 | 1 | 2 | 3; reason: NextDealerReason }
+  | { type: "gameFinished"; finishedBySeatId: 0 | 1 | 2 | 3; completedRoundCount: number }
   | { type: "missingSuitChosen"; seatId: 0 | 1 | 2 | 3; suit: "bamboos" | "dots" | "characters" }
   | { type: "tileDrawn"; seatId: 0 | 1 | 2 | 3; tile?: Tile }
   | { type: "tileDiscarded"; seatId: 0 | 1 | 2 | 3; tile: Tile }
@@ -107,6 +109,9 @@ type ClientActionType =
   | "takeSeat"
   | "toggleReady"
   | "startRound"
+  | "readyNextRound"
+  | "startNextRound"
+  | "finishGame"
   | "chooseMissingSuit"
   | "drawTile"
   | "discardTile"
@@ -194,6 +199,34 @@ are occupied and ready.
   "payload": {}
 }
 ```
+
+### Between Rounds And Match End
+
+After terminal settlement, `gameStatus` becomes `betweenRounds`. Ready flags
+are reset and every action below carries the exact descriptor id from the
+requesting session's latest snapshot:
+
+```json
+{
+  "protocolVersion": 1,
+  "clientMessageId": "c-next-001",
+  "roomId": "L8J4K2",
+  "sessionToken": "<token>",
+  "type": "readyNextRound",
+  "payload": { "expectedActionId": "action:..." }
+}
+```
+
+- `readyNextRound` marks only the requesting seated member ready.
+- `startNextRound` succeeds only after all four players re-ready and always
+  uses the server-frozen `nextDealerDecision`; clients cannot submit a dealer.
+- `finishGame` is available to any member only during `betweenRounds`. It
+  freezes final cumulative scores and prevents any later ready/start action.
+- The authoritative dealer reason is `qiangGangDeclarer`,
+  `multipleHuDiscarder`, `firstWinner`, or `wallEmptyDealerKeeps`. Robbed
+  ba-gang declarers and ordinary multi-hu discarders override hu chronology.
+- Accepted round settlement, ready, start, and finish operations are
+  idempotent under reconnects and repeated messages.
 
 ### Choose Missing Suit
 
@@ -435,6 +468,9 @@ type ErrorCode =
   | "playerAlreadySeated"
   | "notEnoughPlayers"
   | "notAllPlayersReady"
+  | "roundNotFinished"
+  | "gameFinished"
+  | "nextDealerUnavailable"
   | "roundNotStarted"
   | "invalidPhase"
   | "notCurrentPlayer"
@@ -461,6 +497,7 @@ output:
 ```ts
 type ClientVisibleRoomState = {
   id: string;
+  gameStatus: "waiting" | "playingRound" | "betweenRounds" | "finished";
   status: "waiting" | "dingque" | "playing" | "ended";
   phase:
     | "dingque"
@@ -471,6 +508,12 @@ type ClientVisibleRoomState = {
     | "qiangGang"
     | "ended"
     | null;
+  roundNumber: number;
+  currentDealer: 0 | 1 | 2 | 3;
+  dealerHistory: Array<0 | 1 | 2 | 3>;
+  nextDealerDecision: MobileNextDealerDecision | null;
+  roundHistory: MobileRoundHistoryEntry[];
+  gameEnd: MobileGameEndState | null;
   legalActions: ClientLegalAction[];
   actionDescriptors: ClientActionDescriptor[];
   localSeatId: 0 | 1 | 2 | 3 | null;
@@ -599,7 +642,42 @@ type MobileRoundEndState = {
   remainingPlayerIds: Array<0 | 1 | 2 | 3>;
 };
 
+type MobileNextDealerDecision = {
+  roundId: string;
+  completedRoundNumber: number;
+  nextDealerSeatId: 0 | 1 | 2 | 3;
+  reason: "qiangGangDeclarer" | "multipleHuDiscarder" | "firstWinner" | "wallEmptyDealerKeeps";
+  firstWinnerSeatId: 0 | 1 | 2 | 3 | null;
+  multipleHuDiscarderSeatId: 0 | 1 | 2 | 3 | null;
+};
+
+type MobileRoundHistoryEntry = {
+  roundId: string;
+  roundNumber: number;
+  dealerSeatId: 0 | 1 | 2 | 3;
+  roundEnd: MobileRoundEndState;
+  nextDealerDecision: MobileNextDealerDecision;
+  scoreDeltas: Array<{
+    seatId: 0 | 1 | 2 | 3;
+    beforePoints: number;
+    delta: number;
+    afterPoints: number;
+  }>;
+};
+
+type MobileGameEndState = {
+  finishedBySeatId: 0 | 1 | 2 | 3;
+  completedRoundCount: number;
+  finalScores: Array<{ seatId: 0 | 1 | 2 | 3; points: number }>;
+};
+
 type MobileClientVisibleRoomState = {
+  gameStatus: "waiting" | "playingRound" | "betweenRounds" | "finished";
+  roundNumber: number;
+  currentDealer: 0 | 1 | 2 | 3;
+  nextDealerDecision: MobileNextDealerDecision | null;
+  roundHistory: MobileRoundHistoryEntry[];
+  gameEnd: MobileGameEndState | null;
   roundEnd: MobileRoundEndState | null;
   scores: Array<{ seatId: 0 | 1 | 2 | 3; playerId: string | null; points: number }>;
   settlementLedger: MobileSettlementSummary[];
@@ -1055,6 +1133,9 @@ Validation should call the same rule modules that power the current tests:
    Done.
 10. Add native ping/pong heartbeat, injectable-clock stale connection expiry,
     and latest-connection race protection. Done.
+11. Add server-authoritative multi-round lifecycle, responsibility-aware dealer
+    decisions, four-player re-ready, cumulative scores, and member-triggered
+    match finish. Done.
 
 The next networking milestone is persistent room recovery and deployment
 hardening. Offline kicking, bot takeover, room dissolution, and database

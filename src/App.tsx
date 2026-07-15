@@ -3277,6 +3277,10 @@ function roomEventText(event: RoomEvent, room: RoomState): string {
       return event.reason === "onePlayerLeft"
         ? `血战结束，只剩玩家 ${event.remainingPlayerIds.map((seatId) => seatId + 1).join("、")} 未胡。`
         : "血战结束，牌墙已摸完。";
+    case "nextDealerDecided":
+      return `下一局庄家已确定为玩家 ${event.nextDealerSeatId + 1}。`;
+    case "gameFinished":
+      return `${roomPlayerName(room, event.finishedByPlayerId)} 结束整场，共完成 ${event.completedRoundCount} 局。`;
     case "claimWindowClosed":
       return event.reason === "timeout"
         ? `响应窗口超时，轮到玩家 ${event.nextPlayer + 1} 摸牌。`

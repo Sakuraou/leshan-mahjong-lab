@@ -157,6 +157,13 @@ server authoritative.
   heartbeat, connection health checks, and deadline ticking
 - [x] Connect the Expo table UI to real per-session WebSocket room snapshots
 - [x] Add reconnect with a local session token
+- [x] Add a server-authoritative multi-round match lifecycle with cumulative
+  scores and safe completed-round history
+- [x] Freeze next dealer from formally settled outcomes: robbed ba-gang
+  declarer, ordinary multi-hu discarder, first winner, or no-win wall-empty
+  dealer keep
+- [x] Add four-player re-ready, next-round start, and any-member intermission
+  match finish actions with stale-action protection
 
 ## Phase 5: Mobile App Client
 
@@ -206,10 +213,11 @@ phone-first product.
   resume merging, and a compact phone timeline
 - [x] Add the first complete single-round result screen without inventing a
   next-round rule
+- [x] Add the multi-round intermission and match result flow: per-round delta,
+  cumulative score, next dealer reason, four ready states, final ranking, and
+  round history
 - [x] Add GitHub Actions checks for TypeScript, tests, Web build, and mobile
   TypeScript
-- Confirm dealer rotation, cumulative score, match length, and next-round ready
-  rules before implementing a multi-round loop
 - Add vibration/audio feedback
 - Test Android and iOS layouts on physical devices
 - Package an installable beta build

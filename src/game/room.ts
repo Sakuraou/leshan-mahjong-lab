@@ -47,6 +47,69 @@ type ResponseWindowMetadata = {
 
 export type RoomStatus = "waiting" | "dingque" | "playing" | "ended";
 
+export type GameStatus = "waiting" | "playingRound" | "betweenRounds" | "finished";
+
+export type NextDealerReason =
+  | "qiangGangDeclarer"
+  | "multipleHuDiscarder"
+  | "firstWinner"
+  | "wallEmptyDealerKeeps";
+
+export type NextDealerDecision = {
+  readonly roundId: string;
+  readonly completedRoundNumber: number;
+  readonly nextDealerSeatId: PlayerId;
+  readonly reason: NextDealerReason;
+  readonly firstWinnerSeatId: PlayerId | null;
+  readonly multipleHuDiscarderSeatId: PlayerId | null;
+};
+
+export type HuOutcomeFact = {
+  readonly roundId: string;
+  readonly outcomeId: string;
+  readonly method: "selfDraw" | "discard" | "qiangGang";
+  readonly winnerSeatIds: readonly PlayerId[];
+  readonly responsibleSeatId: PlayerId | null;
+};
+
+export type RoundScoreDelta = {
+  readonly seatId: PlayerId;
+  readonly playerId: string | null;
+  readonly beforePoints: number;
+  readonly delta: number;
+  readonly afterPoints: number;
+};
+
+export type RoundHistoryEntry = {
+  readonly roundId: string;
+  readonly roundNumber: number;
+  readonly dealerSeatId: PlayerId;
+  readonly roundEnd: RoundEndState;
+  readonly nextDealerDecision: NextDealerDecision;
+  readonly scoreDeltas: readonly RoundScoreDelta[];
+  readonly settlementLedger: readonly SettlementLedgerEntry[];
+};
+
+export type ClientVisibleRoundHistoryEntry = {
+  roundId: string;
+  roundNumber: number;
+  dealerSeatId: PlayerId;
+  roundEnd: RoundEndState;
+  nextDealerDecision: NextDealerDecision;
+  scoreDeltas: RoundScoreDelta[];
+};
+
+export type ClientVisibleGameEndState = Omit<GameEndState, "finalScores"> & {
+  finalScores: PlayerScoreBalance[];
+};
+
+export type GameEndState = {
+  readonly finishedBySeatId: PlayerId;
+  readonly finishedByPlayerId: string;
+  readonly completedRoundCount: number;
+  readonly finalScores: readonly PlayerScoreBalance[];
+};
+
 export type RoundPhase = "dingque" | "draw" | "discard" | "claim" | "gangDraw" | "qiangGang" | "ended";
 
 export type { ClientActionDescriptor, ClientLegalAction } from "@leshan-mahjong/client-core";
@@ -282,6 +345,18 @@ export type RoomEvent =
     }
   | { type: "gangTileDrawn"; seatId: PlayerId; playerId: string; gangType: GangDrawState["gangType"] }
   | { type: "roundEnded"; reason: RoundEndState["reason"]; remainingPlayerIds: PlayerId[] }
+  | {
+      type: "nextDealerDecided";
+      completedRoundNumber: number;
+      nextDealerSeatId: PlayerId;
+      reason: NextDealerReason;
+    }
+  | {
+      type: "gameFinished";
+      finishedBySeatId: PlayerId;
+      finishedByPlayerId: string;
+      completedRoundCount: number;
+    }
   | { type: "claimWindowClosed"; reason: "allPassed" | "timeout" | "claimed"; nextPlayer: PlayerId };
 
 export type ClientRoomEvent =
@@ -300,8 +375,18 @@ export type RoomState = {
   id: string;
   seed: string;
   roundNumber: number;
+  gameStatus: GameStatus;
   status: RoomStatus;
   phase: RoundPhase | null;
+  currentDealer: PlayerId;
+  dealerHistory: PlayerId[];
+  firstWinnerSeatId: PlayerId | null;
+  multipleHuDiscarderSeatId: PlayerId | null;
+  huOutcomeFacts: HuOutcomeFact[];
+  nextDealerDecision: NextDealerDecision | null;
+  roundStartScores: PlayerScoreBalance[];
+  roundHistory: RoundHistoryEntry[];
+  gameEnd: GameEndState | null;
   selfDrawEligible: boolean;
   members: RoomMember[];
   seats: SeatState[];
@@ -359,8 +444,15 @@ export type VisiblePlayerState = {
 
 export type ClientVisibleRoomState = {
   id: string;
+  gameStatus: GameStatus;
   status: RoomStatus;
   phase: RoundPhase | null;
+  roundNumber: number;
+  currentDealer: PlayerId;
+  dealerHistory: PlayerId[];
+  nextDealerDecision: NextDealerDecision | null;
+  roundHistory: ClientVisibleRoundHistoryEntry[];
+  gameEnd: ClientVisibleGameEndState | null;
   legalActions: ClientLegalAction[];
   actionDescriptors: ClientActionDescriptor[];
   localSeatId: PlayerId | null;
@@ -411,6 +503,21 @@ export type ToggleReadyResult =
 export type StartRoomRoundResult =
   | { ok: true; room: RoomState }
   | { ok: false; reason: "roomAlreadyStarted" | "notEnoughPlayers" | "notAllPlayersReady" };
+
+export type ReadyNextRoundResult =
+  | { ok: true; room: RoomState }
+  | { ok: false; reason: "playerNotSeated" | "roundNotFinished" | "gameFinished" };
+
+export type StartNextRoundResult =
+  | { ok: true; room: RoomState }
+  | {
+      ok: false;
+      reason: "roomAlreadyStarted" | "notEnoughPlayers" | "notAllPlayersReady" | "nextDealerUnavailable" | "gameFinished";
+    };
+
+export type FinishGameResult =
+  | { ok: true; room: RoomState }
+  | { ok: false; reason: "playerNotInRoom" | "roundNotFinished" };
 
 export type ChooseMissingSuitResult =
   | { ok: true; room: RoomState }
@@ -598,12 +705,24 @@ export type TickRoomDeadlinesResult = {
 };
 
 export function createRoom(input: CreateRoomInput): RoomState {
+  const scores = createInitialScoreBalances();
+
   return {
     id: input.id,
     seed: input.seed,
     roundNumber: 0,
+    gameStatus: "waiting",
     status: "waiting",
     phase: null,
+    currentDealer: 0,
+    dealerHistory: [],
+    firstWinnerSeatId: null,
+    multipleHuDiscarderSeatId: null,
+    huOutcomeFacts: [],
+    nextDealerDecision: null,
+    roundStartScores: cloneScores(scores),
+    roundHistory: [],
+    gameEnd: null,
     selfDrawEligible: false,
     members: [],
     seats: seatIds.map((seatId) => ({
@@ -619,7 +738,7 @@ export function createRoom(input: CreateRoomInput): RoomState {
     gangDraw: null,
     roundEnd: null,
     chaJiao: null,
-    scores: createInitialScoreBalances(),
+    scores,
     settlementLedger: [],
     gangSettlementFacts: [],
     chaJiaoSettlementFacts: [],
@@ -763,7 +882,7 @@ export function toggleReady(room: RoomState, playerId: string): ToggleReadyResul
 }
 
 export function startRoomRound(room: RoomState, dealer: PlayerId = 0): StartRoomRoundResult {
-  if (room.status !== "waiting") {
+  if (room.gameStatus !== "waiting" || room.status !== "waiting") {
     return { ok: false, reason: "roomAlreadyStarted" };
   }
 
@@ -775,7 +894,109 @@ export function startRoomRound(room: RoomState, dealer: PlayerId = 0): StartRoom
     return { ok: false, reason: "notAllPlayersReady" };
   }
 
-  const startedRound = startRound({ seed: room.seed, dealer });
+  return { ok: true, room: startRoundWithDealer(room, dealer) };
+}
+
+export function readyNextRound(room: RoomState, playerId: string): ReadyNextRoundResult {
+  const seat = room.seats.find((value) => value.playerId === playerId);
+
+  if (seat === undefined) {
+    return { ok: false, reason: "playerNotSeated" };
+  }
+
+  if (room.gameStatus === "finished") {
+    return { ok: false, reason: "gameFinished" };
+  }
+
+  if (room.gameStatus !== "betweenRounds") {
+    return { ok: false, reason: "roundNotFinished" };
+  }
+
+  if (seat.ready) {
+    return { ok: true, room };
+  }
+
+  return {
+    ok: true,
+    room: {
+      ...room,
+      seats: replaceSeat(room.seats, seat.seatId, { ...seat, ready: true }),
+      eventLog: [...room.eventLog, { type: "readyChanged", seatId: seat.seatId, playerId, ready: true }],
+    },
+  };
+}
+
+export function startNextRound(room: RoomState): StartNextRoundResult {
+  if (room.gameStatus === "finished") {
+    return { ok: false, reason: "gameFinished" };
+  }
+
+  if (room.gameStatus !== "betweenRounds") {
+    return { ok: false, reason: "roomAlreadyStarted" };
+  }
+
+  if (room.seats.some((seat) => seat.playerId === null)) {
+    return { ok: false, reason: "notEnoughPlayers" };
+  }
+
+  if (room.seats.some((seat) => !seat.ready)) {
+    return { ok: false, reason: "notAllPlayersReady" };
+  }
+
+  if (room.nextDealerDecision === null) {
+    return { ok: false, reason: "nextDealerUnavailable" };
+  }
+
+  return {
+    ok: true,
+    room: startRoundWithDealer(room, room.nextDealerDecision.nextDealerSeatId),
+  };
+}
+
+export function finishGame(room: RoomState, playerId: string): FinishGameResult {
+  const seat = room.seats.find((value) => value.playerId === playerId);
+
+  if (seat === undefined) {
+    return { ok: false, reason: "playerNotInRoom" };
+  }
+
+  if (room.gameStatus === "finished") {
+    return { ok: true, room };
+  }
+
+  if (room.gameStatus !== "betweenRounds") {
+    return { ok: false, reason: "roundNotFinished" };
+  }
+
+  return {
+    ok: true,
+    room: {
+      ...room,
+      gameStatus: "finished",
+      gameEnd: {
+        finishedBySeatId: seat.seatId,
+        finishedByPlayerId: playerId,
+        completedRoundCount: room.roundHistory.length,
+        finalScores: cloneScores(room.scores),
+      },
+      eventLog: [
+        ...room.eventLog,
+        {
+          type: "gameFinished",
+          finishedBySeatId: seat.seatId,
+          finishedByPlayerId: playerId,
+          completedRoundCount: room.roundHistory.length,
+        },
+      ],
+    },
+  };
+}
+
+function startRoundWithDealer(room: RoomState, dealer: PlayerId): RoomState {
+  const nextRoundNumber = room.roundNumber + 1;
+  const roundSeed = nextRoundNumber === 1 ? room.seed : `${room.seed}:round:${nextRoundNumber}`;
+
+  const startedRound = startRound({ seed: roundSeed, dealer });
   const players = startedRound.players.map((player) => ({
     ...player,
     missingSuit: detectHeavenlyMissingSuit(player.hand),
@@ -797,27 +1018,36 @@ export function startRoomRound(room: RoomState, dealer: PlayerId = 0): StartRoom
   });
 
   return {
-    ok: true,
-    room: {
-      ...room,
-      roundNumber: room.roundNumber + 1,
-      status: allMissingSuitsChosen ? "playing" : "dingque",
-      phase: allMissingSuitsChosen ? "discard" : "dingque",
-      selfDrawEligible: true,
-      round: { ...startedRound, players },
-      claimWindow: null,
-      baGangClaimWindow: null,
-      gangDraw: null,
-      roundEnd: null,
-      chaJiao: null,
-      gangSettlementFacts: [],
-      chaJiaoSettlementFacts: [],
-      eventLog: [
-        ...room.eventLog,
-        { type: "roundStarted", dealer },
-        ...heavenlyMissingSuitEvents,
-      ],
-    },
+    ...room,
+    roundNumber: nextRoundNumber,
+    gameStatus: "playingRound",
+    status: allMissingSuitsChosen ? "playing" : "dingque",
+    phase: allMissingSuitsChosen ? "discard" : "dingque",
+    currentDealer: dealer,
+    dealerHistory: [...room.dealerHistory, dealer],
+    firstWinnerSeatId: null,
+    multipleHuDiscarderSeatId: null,
+    huOutcomeFacts: [],
+    nextDealerDecision: null,
+    roundStartScores: cloneScores(room.scores),
+    gameEnd: null,
+    selfDrawEligible: true,
+    round: { ...startedRound, players },
+    claimWindow: null,
+    baGangClaimWindow: null,
+    gangDraw: null,
+    roundEnd: null,
+    chaJiao: null,
+    settlementLedger: [],
+    gangSettlementFacts: [],
+    chaJiaoSettlementFacts: [],
+    resolvedSettlementIds: [],
+    resolvedWindowIds: [],
+    eventLog: [
+      ...room.eventLog,
+      { type: "roundStarted", dealer },
+      ...heavenlyMissingSuitEvents,
+    ],
   };
 }
 
@@ -1220,8 +1450,14 @@ export function claimSelfDrawHu(room: RoomState, playerId: string): ClaimSelfDra
   const selfDrawPayers = room.round.players.filter(
     (player) => player.id !== seat.seatId && !player.hasWon,
   );
+  const roomWithOutcome = recordHuOutcome(room, {
+    outcomeId: `${roundId(room)}:hu:selfDraw:event:${room.eventLog.length + 1}`,
+    method: "selfDraw",
+    winnerSeatIds: [seat.seatId],
+    responsibleSeatId: null,
+  });
   const settledRoom = applyRoomHuSettlement(
-    room,
+    roomWithOutcome,
     selfDrawPayers.map((payer) => ({
       winnerSeatId: seat.seatId,
       winnerPlayerId: playerId,
@@ -1243,7 +1479,7 @@ export function claimSelfDrawHu(room: RoomState, playerId: string): ClaimSelfDra
       selfDrawEligible: false,
       round: nextRound,
       eventLog: [
-        ...room.eventLog,
+        ...settledRoom.eventLog,
         {
           type: "selfDrawHuClaimed",
           seatId: seat.seatId,
@@ -1689,8 +1925,22 @@ export function toClientVisibleRoomState(
 
   return {
     id: room.id,
+    gameStatus: room.gameStatus,
     status: room.status,
     phase: room.phase,
+    roundNumber: room.roundNumber,
+    currentDealer: room.currentDealer,
+    dealerHistory: [...room.dealerHistory],
+    nextDealerDecision: room.nextDealerDecision === null ? null : { ...room.nextDealerDecision },
+    roundHistory: room.roundHistory.map(({ settlementLedger: _settlementLedger, ...entry }) => ({
+      ...entry,
+      roundEnd: { ...entry.roundEnd, remainingPlayerIds: [...entry.roundEnd.remainingPlayerIds] },
+      nextDealerDecision: { ...entry.nextDealerDecision },
+      scoreDeltas: entry.scoreDeltas.map((score) => ({ ...score })),
+    })),
+    gameEnd: room.gameEnd === null
+      ? null
+      : { ...room.gameEnd, finalScores: cloneScores(room.gameEnd.finalScores) },
     legalActions,
     actionDescriptors: clientActionDescriptors(room, localSeatId, legalActions),
     localSeatId,
@@ -1915,7 +2165,7 @@ export function toClientVisibleRoomEvent(
 }
 
 function clientLegalActions(room: RoomState, localSeatId: PlayerId | null): ClientLegalAction[] {
-  if (room.status === "waiting") {
+  if (room.gameStatus === "waiting") {
     if (localSeatId === null) {
       return ["takeSeat"];
     }
@@ -1924,6 +2174,28 @@ function clientLegalActions(room: RoomState, localSeatId: PlayerId | null): Clie
 
     if (room.seats.every((seat) => seat.playerId !== null && seat.ready)) {
       actions.push("startRound");
+    }
+
+    return actions;
+  }
+
+  if (room.gameStatus === "finished") {
+    return [];
+  }
+
+  if (room.gameStatus === "betweenRounds") {
+    if (localSeatId === null) {
+      return [];
+    }
+
+    const actions: ClientLegalAction[] = ["finishGame"];
+
+    if (!room.seats[localSeatId].ready) {
+      actions.unshift("readyNextRound");
+    }
+
+    if (room.seats.every((seat) => seat.playerId !== null && seat.ready)) {
+      actions.unshift("startNextRound");
     }
 
     return actions;
@@ -2320,7 +2592,16 @@ function settleDiscardClaimWindow(
     };
   }
 
-  const roomWithWinners = markDiscardHuWinners(room, claimWindow);
+  const orderedWinnerSeatIds = claimWindow.pendingPlayerIds.filter((seatId) =>
+    claimWindow.huClaims.some((claim) => claim.seatId === seatId),
+  );
+  const roomWithOutcome = recordHuOutcome(room, {
+    outcomeId: `${roundId(room)}:hu:discard:${claimWindow.windowId}`,
+    method: "discard",
+    winnerSeatIds: orderedWinnerSeatIds,
+    responsibleSeatId: claimWindow.discardedBySeatId,
+  });
+  const roomWithWinners = markDiscardHuWinners(roomWithOutcome, claimWindow);
   const settledRoom = settleHuClaims(
     roomWithWinners,
     claimWindow.discardedBySeatId,
@@ -2532,7 +2813,16 @@ function settleBaGangClaimWindow(
     return room;
   }
 
-  const roomWithWinners = markQiangGangHuWinners(room, claimWindow);
+  const orderedWinnerSeatIds = claimWindow.pendingPlayerIds.filter((seatId) =>
+    claimWindow.huClaims.some((claim) => claim.seatId === seatId),
+  );
+  const roomWithOutcome = recordHuOutcome(room, {
+    outcomeId: `${roundId(room)}:hu:qiangGang:${claimWindow.windowId}`,
+    method: "qiangGang",
+    winnerSeatIds: orderedWinnerSeatIds,
+    responsibleSeatId: claimWindow.upgradedBySeatId,
+  });
+  const roomWithWinners = markQiangGangHuWinners(roomWithOutcome, claimWindow);
   const round = roomWithWinners.round!;
   const upgrader = round.players[claimWindow.upgradedBySeatId];
   const nextHand = removeFirstTile(upgrader.hand, claimWindow.tile);
@@ -2756,6 +3046,37 @@ function appendResolvedWindowId(resolvedWindowIds: string[], windowId: string): 
     : [...resolvedWindowIds, windowId];
 }
 
+type RecordHuOutcomeInput = {
+  outcomeId: string;
+  method: HuOutcomeFact["method"];
+  winnerSeatIds: PlayerId[];
+  responsibleSeatId: PlayerId | null;
+};
+
+function recordHuOutcome(room: RoomState, input: RecordHuOutcomeInput): RoomState {
+  if (input.winnerSeatIds.length === 0 || room.huOutcomeFacts.some((fact) => fact.outcomeId === input.outcomeId)) {
+    return room;
+  }
+
+  const fact: HuOutcomeFact = {
+    roundId: roundId(room),
+    outcomeId: input.outcomeId,
+    method: input.method,
+    winnerSeatIds: [...input.winnerSeatIds],
+    responsibleSeatId: input.responsibleSeatId,
+  };
+
+  return {
+    ...room,
+    firstWinnerSeatId: room.firstWinnerSeatId ?? input.winnerSeatIds[0],
+    multipleHuDiscarderSeatId:
+      input.method === "discard" && input.winnerSeatIds.length > 1
+        ? input.responsibleSeatId
+        : room.multipleHuDiscarderSeatId,
+    huOutcomeFacts: [...room.huOutcomeFacts, fact],
+  };
+}
+
 type CreateGangSettlementFactInput = {
   gangType: GangType;
   gangSeatId: PlayerId;
@@ -2847,9 +3168,92 @@ function finishRoundIfNeeded(room: RoomState): RoomState {
 }
 
 function settleRoundPayments(room: RoomState): RoomState {
-  return settleRoundChaJiaoPayments(
+  const settledRoom = settleRoundChaJiaoPayments(
     settleRoundGangPayments(settleRoundChickenPayments(room)),
   );
+
+  return finalizeRoundHistory(settledRoom);
+}
+
+function finalizeRoundHistory(room: RoomState): RoomState {
+  if (room.round === null || room.roundEnd === null || room.status !== "ended") {
+    return room;
+  }
+
+  if (room.roundHistory.some((entry) => entry.roundNumber === room.roundNumber)) {
+    return room;
+  }
+
+  const nextDealerDecision = decideNextDealer(room);
+  const scoreDeltas = room.scores.map((score): RoundScoreDelta => {
+    const before = room.roundStartScores.find((value) => value.seatId === score.seatId)?.points ?? 0;
+    return {
+      seatId: score.seatId,
+      playerId: score.playerId,
+      beforePoints: before,
+      delta: score.points - before,
+      afterPoints: score.points,
+    };
+  });
+  const roundHistoryEntry: RoundHistoryEntry = {
+    roundId: roundId(room),
+    roundNumber: room.roundNumber,
+    dealerSeatId: room.currentDealer,
+    roundEnd: {
+      reason: room.roundEnd.reason,
+      remainingPlayerIds: [...room.roundEnd.remainingPlayerIds],
+    },
+    nextDealerDecision,
+    scoreDeltas,
+    settlementLedger: [...room.settlementLedger],
+  };
+  const resetReadyEvents: RoomEvent[] = room.seats.flatMap((seat) =>
+    seat.ready && seat.playerId !== null
+      ? [{ type: "readyChanged" as const, seatId: seat.seatId, playerId: seat.playerId, ready: false }]
+      : [],
+  );
+
+  return {
+    ...room,
+    gameStatus: "betweenRounds",
+    nextDealerDecision,
+    roundHistory: [...room.roundHistory, roundHistoryEntry],
+    seats: room.seats.map((seat) => ({ ...seat, ready: false })),
+    eventLog: [
+      ...room.eventLog,
+      ...resetReadyEvents,
+      {
+        type: "nextDealerDecided",
+        completedRoundNumber: room.roundNumber,
+        nextDealerSeatId: nextDealerDecision.nextDealerSeatId,
+        reason: nextDealerDecision.reason,
+      },
+    ],
+  };
+}
+
+function decideNextDealer(room: RoomState): NextDealerDecision {
+  const dealerOverride = [...room.huOutcomeFacts].reverse().find((fact) =>
+    (fact.method === "qiangGang" && fact.responsibleSeatId !== null) ||
+    (fact.method === "discard" && fact.winnerSeatIds.length > 1 && fact.responsibleSeatId !== null),
+  );
+  const reason: NextDealerReason = dealerOverride?.method === "qiangGang"
+    ? "qiangGangDeclarer"
+    : dealerOverride !== undefined
+      ? "multipleHuDiscarder"
+      : room.firstWinnerSeatId !== null
+        ? "firstWinner"
+        : "wallEmptyDealerKeeps";
+  const nextDealerSeatId = dealerOverride?.responsibleSeatId ?? room.firstWinnerSeatId ?? room.currentDealer;
+
+  return {
+    roundId: roundId(room),
+    completedRoundNumber: room.roundNumber,
+    nextDealerSeatId,
+    reason,
+    firstWinnerSeatId: room.firstWinnerSeatId,
+    multipleHuDiscarderSeatId: room.multipleHuDiscarderSeatId,
+  };
 }
 
 export function settleRoundChickenPayments(room: RoomState): RoomState {
@@ -3214,6 +3618,14 @@ function findNextActivePlayer(round: RoundState, fromPlayer: PlayerId): PlayerId
   }
 
   return fromPlayer;
+}
+
+function roundId(room: Pick<RoomState, "id" | "roundNumber">): string {
+  return `${room.id}:round:${room.roundNumber}`;
+}
+
+function cloneScores(scores: readonly PlayerScoreBalance[]): PlayerScoreBalance[] {
+  return scores.map((score) => ({ ...score }));
 }
 
 function replaceSeat(seats: SeatState[], seatId: PlayerId, nextSeat: SeatState): SeatState[] {

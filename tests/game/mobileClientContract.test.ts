@@ -9,6 +9,7 @@ import {
   mergeMobilePublicEvents,
   nextAutomaticDrawActionId,
   parseMobileRoomServerMessage,
+  toMobileIntermissionViewModel,
   toMobileRoundResultViewModel,
   type MobilePublicEvent,
   type MobileRoomTransport,
@@ -131,6 +132,7 @@ test("mobile terminal DTO exposes final scores and safe settlement summaries", (
   const room = startedRoom();
   const view = {
     ...toClientVisibleRoomState(room, "p1"),
+    gameStatus: "betweenRounds" as const,
     status: "ended" as const,
     phase: "ended" as const,
     roundEnd: { reason: "wallEmpty" as const, remainingPlayerIds: [0 as const, 1 as const, 2 as const, 3 as const] },
@@ -139,6 +141,39 @@ test("mobile terminal DTO exposes final scores and safe settlement summaries", (
       { seatId: 1 as const, playerId: "p2", points: -8 },
       { seatId: 2 as const, playerId: "p3", points: -8 },
       { seatId: 3 as const, playerId: "p4", points: -8 },
+    ],
+    nextDealerDecision: {
+      roundId: "ROOM:round:1",
+      completedRoundNumber: 1,
+      nextDealerSeatId: 0 as const,
+      reason: "wallEmptyDealerKeeps" as const,
+      firstWinnerSeatId: null,
+      multipleHuDiscarderSeatId: null,
+    },
+    roundHistory: [{
+      roundId: "ROOM:round:1",
+      roundNumber: 1,
+      dealerSeatId: 0 as const,
+      roundEnd: { reason: "wallEmpty" as const, remainingPlayerIds: [0 as const, 1 as const, 2 as const, 3 as const] },
+      nextDealerDecision: {
+        roundId: "ROOM:round:1",
+        completedRoundNumber: 1,
+        nextDealerSeatId: 0 as const,
+        reason: "wallEmptyDealerKeeps" as const,
+        firstWinnerSeatId: null,
+        multipleHuDiscarderSeatId: null,
+      },
+      scoreDeltas: [
+        { seatId: 0 as const, playerId: "p1", beforePoints: 0, delta: 24, afterPoints: 24 },
+        { seatId: 1 as const, playerId: "p2", beforePoints: 0, delta: -8, afterPoints: -8 },
+        { seatId: 2 as const, playerId: "p3", beforePoints: 0, delta: -8, afterPoints: -8 },
+        { seatId: 3 as const, playerId: "p4", beforePoints: 0, delta: -8, afterPoints: -8 },
+      ],
+    }],
+    legalActions: ["readyNextRound" as const, "finishGame" as const],
+    actionDescriptors: [
+      { action: "readyNextRound" as const, actionId: "ROOM:between:p1:ready" },
+      { action: "finishGame" as const, actionId: "ROOM:between:p1:finish" },
     ],
     settlementLedger: [
       {
@@ -234,15 +269,24 @@ test("mobile terminal DTO exposes final scores and safe settlement summaries", (
   assert.equal(serialized.includes("sourceWindowId"), false);
   assert.equal(serialized.includes("batchId"), false);
   assert.equal(serialized.includes("relatedEvent"), false);
+  assert.equal("settlementLedger" in parsed.message.payload.view.roundHistory[0], false);
+
+  const withInternalRoundLedger = structuredClone(snapshotMessage(view, "p1"));
+  (withInternalRoundLedger.payload.view.roundHistory[0] as Record<string, unknown>).settlementLedger = [];
+  assert.equal(parseMobileRoomServerMessage(withInternalRoundLedger).ok, false);
 
   const result = toMobileRoundResultViewModel(parsed.message.payload.view);
   assert.equal(result?.reasonLabel, "牌墙已空，流局并完成查叫");
-  assert.equal(result?.scores[0].points, 24);
+  assert.equal(result?.scores[0].cumulativePoints, 24);
   assert.deepEqual(result?.settlements.map((entry) => entry.label), [
     "自摸",
     "一条三鸡",
     "暗杠（含幺鸡）",
     "查叫",
+  ]);
+  assert.deepEqual(toMobileIntermissionViewModel(parsed.message.payload.view)?.actions, [
+    { action: "readyNextRound", actionId: "ROOM:between:p1:ready" },
+    { action: "finishGame", actionId: "ROOM:between:p1:finish" },
   ]);
 });
 

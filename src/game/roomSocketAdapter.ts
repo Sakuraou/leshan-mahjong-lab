@@ -297,6 +297,9 @@ function handleRoomServiceAction(
         | "takeSeat"
         | "toggleReady"
         | "startRound"
+        | "readyNextRound"
+        | "startNextRound"
+        | "finishGame"
         | "chooseMissingSuit"
         | "drawTile"
         | "drawGangTile"
@@ -360,6 +363,9 @@ function clientMessageToRoomAction(
         | "takeSeat"
         | "toggleReady"
         | "startRound"
+        | "readyNextRound"
+        | "startNextRound"
+        | "finishGame"
         | "chooseMissingSuit"
         | "drawTile"
         | "drawGangTile"
@@ -386,6 +392,18 @@ function clientMessageToRoomAction(
 
   if (message.type === "startRound") {
     return { type: "startRound", dealer: message.payload.dealer };
+  }
+
+  if (message.type === "readyNextRound") {
+    return { type: "readyNextRound", expectedActionId: message.payload.expectedActionId };
+  }
+
+  if (message.type === "startNextRound") {
+    return { type: "startNextRound", expectedActionId: message.payload.expectedActionId };
+  }
+
+  if (message.type === "finishGame") {
+    return { type: "finishGame", expectedActionId: message.payload.expectedActionId };
   }
 
   if (message.type === "drawTile") {
@@ -546,6 +564,9 @@ function errorMessage(code: RoomSocketErrorCode): string {
     claimAlreadyResponded: "This player has already responded to the claim window.",
     cannotAnGang: "This player cannot claim an gang with this tile.",
     cannotBaGang: "This player cannot claim ba gang with this tile.",
+    roundNotFinished: "The current round has not reached the between-rounds state.",
+    gameFinished: "The game has already finished.",
+    nextDealerUnavailable: "The next dealer decision is unavailable.",
     staleAction: "This action is stale; refresh the room snapshot before trying again.",
     cannotHu: "This player cannot claim hu on the discarded tile.",
     cannotPeng: "This player cannot claim peng on the discarded tile.",

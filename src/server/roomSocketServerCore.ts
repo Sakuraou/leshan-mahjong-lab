@@ -426,6 +426,10 @@ function isRoomSocketClientMessage(value: unknown): value is RoomSocketClientMes
     );
   }
 
+  if (value.type === "readyNextRound" || value.type === "startNextRound" || value.type === "finishGame") {
+    return isSessionRoomMessage(value) && isRecord(value.payload) && hasValidExpectedActionId(value.payload);
+  }
+
   if (value.type === "chooseMissingSuit") {
     return isSessionRoomMessage(value) && isRecord(value.payload) && isSuit(value.payload.suit);
   }

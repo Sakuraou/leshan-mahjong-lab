@@ -45,6 +45,7 @@ import {
   type MobileRoomGateway,
 } from "./roomGateway";
 import { mobileRoomSessionStore } from "./sessionStore";
+import { RoundIntermissionSection } from "./RoundIntermissionSection";
 import { RoundResultSection } from "./RoundResultSection";
 import { RoundTimelineSection } from "./RoundTimelineSection";
 import { TileFace } from "./TileFace";
@@ -619,6 +620,21 @@ export function MobileApp() {
     setSelectedGang(null);
   }
 
+  async function runIntermissionAction(
+    action: "readyNextRound" | "startNextRound" | "finishGame",
+    actionId: string,
+  ) {
+    await runRoomAction(action, (activeGateway) => {
+      if (action === "readyNextRound") {
+        return activeGateway.readyNextRound(actionId);
+      }
+      if (action === "startNextRound") {
+        return activeGateway.startNextRound(actionId);
+      }
+      return activeGateway.finishGame(actionId);
+    });
+  }
+
   async function clearStoredSession() {
     reconnectCoordinatorRef.current?.pause("sessionCleared");
     setReconnectActive(false);
@@ -743,6 +759,11 @@ export function MobileApp() {
         )}
 
         <RoundResultSection snapshot={snapshot} />
+        <RoundIntermissionSection
+          snapshot={snapshot}
+          busy={actionBusy}
+          onAction={(action, actionId) => void runIntermissionAction(action, actionId)}
+        />
 
         <Section title="服务器与房间">
           <Field label="服务器地址" value={serverUrl} onChangeText={setServerUrl} autoCapitalize="none" />
@@ -1258,6 +1279,9 @@ function actionLabel(action: ClientLegalAction): string {
     claimBaGang: "巴杠",
     passQiangGang: "过抢杠",
     claimQiangGangHu: "抢杠胡",
+    readyNextRound: "准备下一局",
+    startNextRound: "开始下一局",
+    finishGame: "结束整场",
   };
   return labels[action];
 }

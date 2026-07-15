@@ -115,7 +115,7 @@ and AI-assisted development.
 - Real local WebSocket dev server powered by `ws`, plus a smoke client that
   verifies `createRoom` and `joinRoom` over actual WebSocket connections
 - Frontend WebSocket transports that connect to `ws://127.0.0.1:8787`, submit
-  the complete authoritative single-round action flow, and maintain one
+  the complete authoritative multi-round action flow, and maintain one
   redacted snapshot per authenticated session
 - Real WebSocket experiment panel that can run a full four-client room flow:
   host/guest/helper clients join, take seats, ready up, start the round, and
@@ -133,7 +133,8 @@ and AI-assisted development.
 - Expo/React Native mobile App workspace with server configuration,
   create/join, seat, ready, start, heavenly/manual dingque, playable turns,
   private claim controls, automatic replacement draws, weak-network recovery,
-  a safe public timeline, and a complete single-round result breakdown
+  a safe public timeline, cumulative scores, next-round readiness, dealer
+  reasons, final ranking, and per-round result history
 - Shared client-core package for mobile-safe room view models, tile display
   helpers, strict runtime contracts, event deduplication, result presentation,
   transport contracts, and authoritative `legalActions` consumption
@@ -266,11 +267,12 @@ recovery by saving host/guest sessions locally, reconnecting after a simulated
 refresh, and calling `resumeSession` for fresh redacted snapshots. The default
 playable table still uses the local mock transport for a stable portfolio demo.
 
-The phone client under `apps/mobile` now completes one authoritative round: it
+The phone client under `apps/mobile` now continues across authoritative rounds: it
 uses server legal actions for every command, auto-requests eligible draws,
 keeps hu as a player choice, survives weak-network reconnects, merges a bounded
-public event timeline, and renders final scores plus hu/chicken/gang/cha-jiao
-payments. Session tokens stay in Expo SecureStore and sockets are closed and
+public event timeline, preserves cumulative scores, re-readies all four players,
+and renders final scores plus hu/chicken/gang/cha-jiao payments. Session tokens
+stay in Expo SecureStore and sockets are closed and
 resumed across AppState transitions. See
 [docs/mobile-app-plan.md](docs/mobile-app-plan.md) for run addresses, privacy
 boundaries, and the Android/iOS roadmap.
@@ -320,9 +322,10 @@ roles were used to split work into reviewable concerns:
   `localStorage`, and server-side rebinding to the latest connection.
 - Added a main-table WebSocket preview mode that reads real room snapshots while
   leaving the mock table as the default gameplay surface.
-- Built an Expo/React Native single-session client that can complete one round,
-  recover across weak networks, retain a bounded safe event timeline, and show
-  authoritative final scores with hu, chicken, gang, and cha-jiao details.
+- Built an Expo/React Native single-session client that can continue across
+  rounds, recover across weak networks, retain a bounded safe event timeline,
+  and show authoritative dealer decisions, cumulative scores, final ranking,
+  and hu, chicken, gang, and cha-jiao details.
 - Used a multi-agent AI-assisted workflow to split product planning, rule
   modeling, implementation, test-case design, and review.
 - Prepared the repository as a portfolio case study with rule documentation,

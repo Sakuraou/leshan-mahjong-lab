@@ -9,7 +9,8 @@ room service calls, then send the returned redacted room view back to clients.
 
 The room service owns the authoritative in-memory state for one room:
 
-- Room state, seats, readiness, round status, and event log.
+- Room state, seats, readiness, round status, multi-round match lifecycle, and
+  append-only event log.
 - External discard/qiang-gang winning-tile source records kept inside the
   authoritative round state.
 - Session tokens and their player ids.
@@ -20,6 +21,7 @@ The room service owns the authoritative in-memory state for one room:
   - `takeSeat`
   - `toggleReady`
   - `startRoomRound`
+  - `readyNextRound`, `startNextRound`, and `finishGame`
   - dingque, draw/discard, claim, gang, hu, and deadline transitions
 - A stable API that can be called by both the current frontend mock transport
   and a future real WebSocket adapter.
@@ -110,6 +112,10 @@ Applies one authenticated room action:
 handleRoomAction(service, sessionToken, { type: "takeSeat", seatId: 1 });
 handleRoomAction(service, sessionToken, { type: "toggleReady" });
 handleRoomAction(service, sessionToken, { type: "startRound" });
+handleRoomAction(service, sessionToken, {
+  type: "readyNextRound",
+  expectedActionId: "action:...",
+});
 ```
 
 Validation path:
@@ -123,6 +129,33 @@ Validation path:
 Invalid sessions return `invalidSession`. Rule failures return the reducer's
 stable reason code, such as `seatOccupied`, `notEnoughPlayers`, or
 `roomAlreadyStarted`.
+
+### Multi-Round Lifecycle
+
+`RoomState.gameStatus` separates the match lifecycle from the existing
+single-round status: `waiting`, `playingRound`, `betweenRounds`, and `finished`.
+Every terminal round freezes one internal `RoundHistoryEntry` with its dealer,
+end reason, score delta, full settlement ledger, and `NextDealerDecision`.
+Client views receive only the safe score/history projection.
+
+The next-dealer decision is based on formally settled server outcomes:
+
+- a robbed ba-gang declarer is responsible and becomes dealer;
+- an ordinary one-discard multiple-win discarder becomes dealer;
+- otherwise the first formally settled winner becomes dealer;
+- with no winner at wall empty, the current dealer stays.
+
+Responsibility outcomes do not lose priority merely because another hu was
+settled earlier. Starting the next round preserves members, seats, sessions,
+presence, cumulative scores, dealer history, and completed-round history. It
+resets only round tiles, melds, discards, dingque, response windows, current
+settlement facts, and ready flags. A derived per-round seed prevents replaying
+the same wall while the original seed remains server-only.
+
+`readyNextRound` is one-way for the current intermission and idempotent.
+`startNextRound` takes no dealer parameter and requires all four ready.
+`finishGame` is accepted from any member only between rounds and freezes final
+cumulative scores and completed-round count.
 
 ### `getClientRoomView`
 
@@ -293,6 +326,9 @@ lookup, event ids, and redacted room views.
   chicken settlement, qiang-gang three-chicken liability, established gang
   facts, terminal gang settlement, wall-empty cha-jiao settlement, and presence
   recovery.
+- The service also covers a server-authoritative multi-round match loop with
+  cumulative scores, responsibility-aware dealer decisions, four-player
+  re-ready, safe round history, and member-triggered match finish.
 - Chicken settlement counts original physical tiles from concealed hands,
   exposed meld sources, and discard/qiang-gang winning tiles. It writes one
   stable terminal batch and never publishes concealed counts before `ended`.

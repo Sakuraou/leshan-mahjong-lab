@@ -16,13 +16,16 @@ import {
   discardRoomTile,
   drawRoomTile,
   expireClaimWindow,
+  finishGame,
   passClaim,
   passQiangGang,
+  readyNextRound,
   joinRoom,
   settleRoundChickenPayments,
   settleRoundChaJiaoPayments,
   settleRoundGangPayments,
   startRoomRound,
+  startNextRound,
   takeSeat,
   tile,
   tickRoomStateDeadlines,
@@ -237,6 +240,139 @@ test("starts a round after four seated players are ready", () => {
   assert.equal(result.room.round?.players[0].hand.length, 14);
   assert.equal(result.room.round?.players[1].hand.length, 13);
   assert.deepEqual(result.room.eventLog.at(-1), { type: "roundStarted", dealer: 0 });
+});
+
+test("chooses the first formally settled winner as next dealer", () => {
+  const ended = finishSingleDiscardHuRound();
+
+  assert.equal(ended.gameStatus, "betweenRounds");
+  assert.equal(ended.firstWinnerSeatId, 1);
+  assert.deepEqual(ended.nextDealerDecision, {
+    roundId: `${ended.id}:round:1`,
+    completedRoundNumber: 1,
+    nextDealerSeatId: 1,
+    reason: "firstWinner",
+    firstWinnerSeatId: 1,
+    multipleHuDiscarderSeatId: null,
+  });
+});
+
+test("makes an ordinary multi-hu discarder next dealer regardless of winner order", () => {
+  const prepared = readyRoomForMultiHu();
+  const activeRoom: RoomState = {
+    ...prepared.room,
+    round: {
+      ...prepared.room.round!,
+      players: prepared.room.round!.players.map((player) =>
+        player.id === 3 ? { ...player, hasWon: true } : player,
+      ),
+    },
+  };
+  const discarded = discardRoomTile(activeRoom, "p1", prepared.discard);
+  assert.equal(discarded.ok, true);
+  if (!discarded.ok) return;
+  const firstClaim = claimHu(discarded.room, "p2");
+  assert.equal(firstClaim.ok, true);
+  if (!firstClaim.ok) return;
+  const resolved = claimHu(firstClaim.room, "p3");
+  assert.equal(resolved.ok, true);
+  if (!resolved.ok) return;
+
+  assert.equal(resolved.room.firstWinnerSeatId, 1);
+  assert.equal(resolved.room.nextDealerDecision?.reason, "multipleHuDiscarder");
+  assert.equal(resolved.room.nextDealerDecision?.nextDealerSeatId, 0);
+});
+
+test("makes the robbed ba-gang declarer next dealer even after an earlier winner", () => {
+  const prepared = readyRoomForQiangGangHu([1], [2, 3]);
+  const roomWithEarlierWinner: RoomState = {
+    ...prepared.room,
+    firstWinnerSeatId: 2,
+    huOutcomeFacts: [{
+      roundId: `${prepared.room.id}:round:1`,
+      outcomeId: "earlier-self-draw",
+      method: "selfDraw",
+      winnerSeatIds: [2],
+      responsibleSeatId: null,
+    }],
+  };
+  const declared = claimBaGang(roomWithEarlierWinner, "p1", prepared.gangTile);
+  assert.equal(declared.ok, true);
+  if (!declared.ok) return;
+  const robbed = claimQiangGangHu(declared.room, "p2");
+  assert.equal(robbed.ok, true);
+  if (!robbed.ok) return;
+
+  assert.equal(robbed.room.nextDealerDecision?.reason, "qiangGangDeclarer");
+  assert.equal(robbed.room.nextDealerDecision?.nextDealerSeatId, 0);
+  assert.equal(robbed.room.nextDealerDecision?.firstWinnerSeatId, 2);
+});
+
+test("keeps the current dealer after a wall-empty round with no winner", () => {
+  const prepared = readyRoomForClaimHu();
+  const roomWithEmptyWall: RoomState = {
+    ...prepared.room,
+    round: { ...prepared.room.round!, wall: [] },
+  };
+  const discarded = discardRoomTile(roomWithEmptyWall, "p1", prepared.discard);
+  assert.equal(discarded.ok, true);
+  if (!discarded.ok) return;
+
+  let resolved = discarded.room;
+  for (const playerId of ["p2", "p3", "p4"]) {
+    const passed = passClaim(resolved, playerId);
+    assert.equal(passed.ok, true);
+    if (!passed.ok) return;
+    resolved = passed.room;
+  }
+
+  assert.equal(resolved.roundEnd?.reason, "wallEmpty");
+  assert.equal(resolved.nextDealerDecision?.reason, "wallEmptyDealerKeeps");
+  assert.equal(resolved.nextDealerDecision?.nextDealerSeatId, 0);
+});
+
+test("requires four fresh ready states and preserves cumulative scores for the next round", () => {
+  const ended = finishSingleDiscardHuRound();
+  const firstRoundScores = ended.scores.map((score) => score.points);
+  const notReady = startNextRound(ended);
+  assert.deepEqual(notReady, { ok: false, reason: "notAllPlayersReady" });
+
+  let readyRoom = ended;
+  for (const playerId of ["p1", "p2", "p3", "p4"]) {
+    const ready = readyNextRound(readyRoom, playerId);
+    assert.equal(ready.ok, true);
+    if (!ready.ok) return;
+    readyRoom = ready.room;
+  }
+  const started = startNextRound(readyRoom);
+  assert.equal(started.ok, true);
+  if (!started.ok) return;
+
+  assert.equal(started.room.roundNumber, 2);
+  assert.equal(started.room.currentDealer, 1);
+  assert.deepEqual(started.room.scores.map((score) => score.points), firstRoundScores);
+  assert.deepEqual(started.room.roundStartScores.map((score) => score.points), firstRoundScores);
+  assert.equal(started.room.roundHistory.length, 1);
+  assert.deepEqual(started.room.settlementLedger, []);
+});
+
+test("lets any member finish between rounds and keeps the final result idempotent", () => {
+  const playing = startReadyRoom();
+  assert.deepEqual(finishGame(playing, "p2"), { ok: false, reason: "roundNotFinished" });
+
+  const ended = finishSingleDiscardHuRound();
+  const finished = finishGame(ended, "p4");
+  assert.equal(finished.ok, true);
+  if (!finished.ok) return;
+  assert.equal(finished.room.gameStatus, "finished");
+  assert.equal(finished.room.gameEnd?.finishedByPlayerId, "p4");
+  assert.equal(finished.room.gameEnd?.completedRoundCount, 1);
+
+  const repeated = finishGame(finished.room, "p1");
+  assert.equal(repeated.ok, true);
+  if (!repeated.ok) return;
+  assert.deepEqual(repeated.room.gameEnd, finished.room.gameEnd);
+  assert.deepEqual(repeated.room.scores, finished.room.scores);
 });
 
 test("redacts other players' hands in client-visible room state", () => {
@@ -891,7 +1027,10 @@ test("marks wall-empty round end with authoritative cha jiao results", () => {
   assert.equal(claimed.room.chaJiao?.reason, "wallEmpty");
   assert.deepEqual(claimed.room.chaJiao?.players.map((player) => player.seatId), [1, 2, 3]);
   assert.equal(claimed.room.chaJiao?.players.every((player) => typeof player.isListening === "boolean"), true);
-  assert.deepEqual(toClientVisibleRoomState(claimed.room, "p2").legalActions, []);
+  assert.deepEqual(toClientVisibleRoomState(claimed.room, "p2").legalActions, [
+    "readyNextRound",
+    "finishGame",
+  ]);
 });
 
 test("settles one listener against one non-listener at wall empty", () => {
@@ -2536,6 +2675,24 @@ function readyRoomForClaimHu(): { room: RoomState; discard: Tile } {
       },
     },
   };
+}
+
+function finishSingleDiscardHuRound(): RoomState {
+  const prepared = readyRoomForClaimHu();
+  const activeRoom: RoomState = {
+    ...prepared.room,
+    round: {
+      ...prepared.room.round!,
+      players: prepared.room.round!.players.map((player) =>
+        player.id === 2 || player.id === 3 ? { ...player, hasWon: true } : player,
+      ),
+    },
+  };
+  const discarded = discardRoomTile(activeRoom, "p1", prepared.discard);
+  assert.equal(discarded.ok, true);
+  const claimed = claimHu(discarded.room, "p2");
+  assert.equal(claimed.ok, true);
+  return claimed.room;
 }
 
 function readyRoomForHuPriority(): { room: RoomState; discard: Tile } {

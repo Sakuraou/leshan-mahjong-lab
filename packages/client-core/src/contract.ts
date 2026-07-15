@@ -22,10 +22,49 @@ export type ScorePattern =
   | "wuJi";
 
 export type RoundEndReason = "onePlayerLeft" | "wallEmpty";
+export type GameStatus = "waiting" | "playingRound" | "betweenRounds" | "finished";
+export type NextDealerReason =
+  | "qiangGangDeclarer"
+  | "multipleHuDiscarder"
+  | "firstWinner"
+  | "wallEmptyDealerKeeps";
 
 export type MobileRoundEndState = {
   reason: RoundEndReason;
   remainingPlayerIds: SeatId[];
+};
+
+export type MobileNextDealerDecision = {
+  roundId: string;
+  completedRoundNumber: number;
+  nextDealerSeatId: SeatId;
+  reason: NextDealerReason;
+  firstWinnerSeatId: SeatId | null;
+  multipleHuDiscarderSeatId: SeatId | null;
+};
+
+export type MobileRoundScoreDelta = {
+  seatId: SeatId;
+  playerId: string | null;
+  beforePoints: number;
+  delta: number;
+  afterPoints: number;
+};
+
+export type MobileRoundHistoryEntry = {
+  roundId: string;
+  roundNumber: number;
+  dealerSeatId: SeatId;
+  roundEnd: MobileRoundEndState;
+  nextDealerDecision: MobileNextDealerDecision;
+  scoreDeltas: MobileRoundScoreDelta[];
+};
+
+export type MobileGameEndState = {
+  finishedBySeatId: SeatId;
+  finishedByPlayerId: string;
+  completedRoundCount: number;
+  finalScores: Array<{ seatId: SeatId; playerId: string | null; points: number }>;
 };
 
 type MobileSettlementSummaryBase = {
@@ -112,7 +151,21 @@ export type MobilePublicEvent =
       connected: boolean;
       reason: "connectionClosed" | "sessionResumed";
     }
-  | { eventId: number; type: "roundEnded"; reason: RoundEndReason; remainingPlayerIds: SeatId[] };
+  | { eventId: number; type: "roundEnded"; reason: RoundEndReason; remainingPlayerIds: SeatId[] }
+  | {
+      eventId: number;
+      type: "nextDealerDecided";
+      completedRoundNumber: number;
+      nextDealerSeatId: SeatId;
+      reason: NextDealerReason;
+    }
+  | {
+      eventId: number;
+      type: "gameFinished";
+      finishedBySeatId: SeatId;
+      finishedByPlayerId: string;
+      completedRoundCount: number;
+    };
 
 export type RoomStatus = "waiting" | "dingque" | "playing" | "ended";
 export type RoundPhase = "dingque" | "draw" | "discard" | "claim" | "gangDraw" | "qiangGang" | "ended";
@@ -122,6 +175,9 @@ export type ClientLegalAction =
   | "takeSeat"
   | "toggleReady"
   | "startRound"
+  | "readyNextRound"
+  | "startNextRound"
+  | "finishGame"
   | "chooseMissingSuit"
   | "drawTile"
   | "drawGangTile"
@@ -192,8 +248,15 @@ export type ClientVisibleResponseWindow = {
 
 export type ClientVisibleRoomState = {
   id: string;
+  gameStatus: GameStatus;
   status: RoomStatus;
   phase: RoundPhase | null;
+  roundNumber: number;
+  currentDealer: SeatId;
+  dealerHistory: SeatId[];
+  nextDealerDecision: MobileNextDealerDecision | null;
+  roundHistory: MobileRoundHistoryEntry[];
+  gameEnd: MobileGameEndState | null;
   legalActions: ClientLegalAction[];
   actionDescriptors: ClientActionDescriptor[];
   localSeatId: SeatId | null;
@@ -247,6 +310,9 @@ export type RoomSocketErrorCode =
   | "cannotMingGang"
   | "cannotAnGang"
   | "cannotBaGang"
+  | "roundNotFinished"
+  | "gameFinished"
+  | "nextDealerUnavailable"
   | "staleAction";
 
 export type ProtocolErrorCode = "invalidJson" | "invalidMessage" | "unknownConnection" | "sessionNotBound";
@@ -266,6 +332,7 @@ export type RoomSocketClientMessage =
   | { protocolVersion: 1; clientMessageId: string; roomId: string; sessionToken: string; type: "takeSeat"; payload: { seatId: SeatId } }
   | { protocolVersion: 1; clientMessageId: string; roomId: string; sessionToken: string; type: "toggleReady"; payload: EmptyPayload }
   | { protocolVersion: 1; clientMessageId: string; roomId: string; sessionToken: string; type: "startRound"; payload: { dealer?: SeatId } }
+  | GuardedEmptySessionAction<"readyNextRound" | "startNextRound" | "finishGame">
   | { protocolVersion: 1; clientMessageId: string; roomId: string; sessionToken: string; type: "chooseMissingSuit"; payload: { suit: Suit } }
   | GuardedEmptySessionAction<"drawTile" | "drawGangTile" | "passClaim" | "claimHu" | "claimSelfDrawHu" | "claimPeng" | "claimMingGang" | "passQiangGang" | "claimQiangGangHu">
   | GuardedTileSessionAction<"discardTile" | "claimAnGang" | "claimBaGang">
@@ -312,7 +379,8 @@ export type MobileServerMessageParseResult =
   | { ok: false; reason: string };
 
 const legalActions = new Set<ClientLegalAction>([
-  "takeSeat", "toggleReady", "startRound", "chooseMissingSuit", "drawTile", "drawGangTile",
+  "takeSeat", "toggleReady", "startRound", "readyNextRound", "startNextRound", "finishGame",
+  "chooseMissingSuit", "drawTile", "drawGangTile",
   "discardTile", "passClaim", "claimHu", "claimSelfDrawHu", "claimPeng", "claimMingGang",
   "claimAnGang", "claimBaGang", "passQiangGang", "claimQiangGangHu",
 ]);
@@ -325,6 +393,7 @@ const errorCodes = new Set<RoomSocketErrorCode>([
   "tileNotInHand", "mustDiscardMissingSuitFirst", "cannotDiscardYaoJi", "noClaimWindow",
   "noQiangGangWindow", "claimNotAllowed", "claimAlreadyResponded", "cannotHu", "cannotPeng",
   "cannotMingGang", "cannotAnGang", "cannotBaGang",
+  "roundNotFinished", "gameFinished", "nextDealerUnavailable",
   "staleAction",
 ]);
 const protocolErrorCodes = new Set<ProtocolErrorCode>([
@@ -424,11 +493,14 @@ export function parseMobileRoomServerMessage(input: unknown): MobileServerMessag
 
 function parseClientVisibleRoomState(value: unknown): { ok: true; value: ClientVisibleRoomState } | { ok: false; reason: string } {
   const allowedViewKeys = [
-    "id", "status", "phase", "legalActions", "actionDescriptors", "localSeatId", "members", "seats",
+    "id", "gameStatus", "status", "phase", "roundNumber", "currentDealer", "dealerHistory",
+    "nextDealerDecision", "roundHistory", "gameEnd", "legalActions", "actionDescriptors", "localSeatId", "members", "seats",
     "round", "claimWindow", "baGangClaimWindow", "gangDraw", "roundEnd", "chaJiao", "scores",
     "settlementLedger", "gangSettlements", "responseWindow", "eventLog",
   ];
   if (!isRecord(value) || !hasOnlyKeys(value, allowedViewKeys) || !isNonEmptyString(value.id) ||
+      !isGameStatus(value.gameStatus) || !isSafeInteger(value.roundNumber) || !isSeatId(value.currentDealer) ||
+      !Array.isArray(value.dealerHistory) || !value.dealerHistory.every(isSeatId) || !Array.isArray(value.roundHistory) ||
       !isRoomStatus(value.status) || !isRoundPhaseOrNull(value.phase) || !Array.isArray(value.legalActions) ||
       !value.legalActions.every((action) => typeof action === "string" && legalActions.has(action as ClientLegalAction)) ||
       !Array.isArray(value.actionDescriptors) || !isSeatIdOrNull(value.localSeatId) || !Array.isArray(value.seats) ||
@@ -459,7 +531,13 @@ function parseClientVisibleRoomState(value: unknown): { ok: true; value: ClientV
 
   const roundEnd = value.roundEnd === null ? null : parseRoundEnd(value.roundEnd);
   const settlementLedger = parseSettlementLedger(value.settlementLedger);
-  if (roundEnd === undefined || settlementLedger === null) {
+  const nextDealerDecision = value.nextDealerDecision === null ? null : parseNextDealerDecision(value.nextDealerDecision);
+  const roundHistory = value.roundHistory.map(parseRoundHistoryEntry);
+  const gameEnd = value.gameEnd === null ? null : parseGameEnd(value.gameEnd);
+  if (
+    roundEnd === undefined || settlementLedger === null || nextDealerDecision === undefined ||
+    roundHistory.some((entry) => entry === null) || gameEnd === undefined
+  ) {
     return invalid("终局或结算公开视图结构不合法");
   }
 
@@ -467,8 +545,15 @@ function parseClientVisibleRoomState(value: unknown): { ok: true; value: ClientV
     ok: true,
     value: {
       id: value.id,
+      gameStatus: value.gameStatus,
       status: value.status,
       phase: value.phase,
+      roundNumber: value.roundNumber,
+      currentDealer: value.currentDealer,
+      dealerHistory: [...value.dealerHistory],
+      nextDealerDecision,
+      roundHistory: roundHistory as MobileRoundHistoryEntry[],
+      gameEnd,
       legalActions: [...value.legalActions] as ClientLegalAction[],
       actionDescriptors: descriptors as ClientActionDescriptor[],
       localSeatId: value.localSeatId,
@@ -613,6 +698,110 @@ function parseRoundEnd(value: unknown): MobileRoundEndState | undefined {
   return {
     reason: value.reason,
     remainingPlayerIds: [...value.remainingPlayerIds],
+  };
+}
+
+function parseNextDealerDecision(value: unknown): MobileNextDealerDecision | undefined {
+  if (
+    !isRecord(value) ||
+    !hasOnlyKeys(value, [
+      "roundId", "completedRoundNumber", "nextDealerSeatId", "reason",
+      "firstWinnerSeatId", "multipleHuDiscarderSeatId",
+    ]) ||
+    !isNonEmptyString(value.roundId) ||
+    !isSafeInteger(value.completedRoundNumber) ||
+    !isSeatId(value.nextDealerSeatId) ||
+    !isNextDealerReason(value.reason) ||
+    !isSeatIdOrNull(value.firstWinnerSeatId) ||
+    !isSeatIdOrNull(value.multipleHuDiscarderSeatId)
+  ) {
+    return undefined;
+  }
+
+  return {
+    roundId: value.roundId,
+    completedRoundNumber: value.completedRoundNumber,
+    nextDealerSeatId: value.nextDealerSeatId,
+    reason: value.reason,
+    firstWinnerSeatId: value.firstWinnerSeatId,
+    multipleHuDiscarderSeatId: value.multipleHuDiscarderSeatId,
+  };
+}
+
+function parseRoundHistoryEntry(value: unknown): MobileRoundHistoryEntry | null {
+  if (
+    !isRecord(value) ||
+    !hasOnlyKeys(value, ["roundId", "roundNumber", "dealerSeatId", "roundEnd", "nextDealerDecision", "scoreDeltas"]) ||
+    !isNonEmptyString(value.roundId) ||
+    !isSafeInteger(value.roundNumber) ||
+    !isSeatId(value.dealerSeatId) ||
+    !Array.isArray(value.scoreDeltas)
+  ) {
+    return null;
+  }
+
+  const roundEnd = parseRoundEnd(value.roundEnd);
+  const nextDealerDecision = parseNextDealerDecision(value.nextDealerDecision);
+  const scoreDeltas = value.scoreDeltas.map(parseRoundScoreDelta);
+
+  if (roundEnd === undefined || nextDealerDecision === undefined || scoreDeltas.some((entry) => entry === null)) {
+    return null;
+  }
+
+  return {
+    roundId: value.roundId,
+    roundNumber: value.roundNumber,
+    dealerSeatId: value.dealerSeatId,
+    roundEnd,
+    nextDealerDecision,
+    scoreDeltas: scoreDeltas as MobileRoundScoreDelta[],
+  };
+}
+
+function parseRoundScoreDelta(value: unknown): MobileRoundScoreDelta | null {
+  if (
+    !isRecord(value) ||
+    !hasOnlyKeys(value, ["seatId", "playerId", "beforePoints", "delta", "afterPoints"]) ||
+    !isSeatId(value.seatId) ||
+    !(value.playerId === null || isNonEmptyString(value.playerId)) ||
+    !isFiniteNumber(value.beforePoints) ||
+    !isFiniteNumber(value.delta) ||
+    !isFiniteNumber(value.afterPoints)
+  ) {
+    return null;
+  }
+
+  return {
+    seatId: value.seatId,
+    playerId: value.playerId,
+    beforePoints: value.beforePoints,
+    delta: value.delta,
+    afterPoints: value.afterPoints,
+  };
+}
+
+function parseGameEnd(value: unknown): MobileGameEndState | undefined {
+  if (
+    !isRecord(value) ||
+    !hasOnlyKeys(value, ["finishedBySeatId", "finishedByPlayerId", "completedRoundCount", "finalScores"]) ||
+    !isSeatId(value.finishedBySeatId) ||
+    !isNonEmptyString(value.finishedByPlayerId) ||
+    !isSafeInteger(value.completedRoundCount) ||
+    !Array.isArray(value.finalScores)
+  ) {
+    return undefined;
+  }
+
+  const finalScores = value.finalScores.map(parseScore);
+  if (finalScores.some((entry) => entry === null)) {
+    return undefined;
+  }
+
+  return {
+    finishedBySeatId: value.finishedBySeatId,
+    finishedByPlayerId: value.finishedByPlayerId,
+    completedRoundCount: value.completedRoundCount,
+    finalScores: finalScores as Array<{ seatId: SeatId; playerId: string | null; points: number }>,
   };
 }
 
@@ -844,6 +1033,33 @@ function parseMobilePublicEvent(value: unknown, eventId: number): MobilePublicEv
       : undefined;
   }
 
+  if (value.type === "nextDealerDecided") {
+    return hasOnlyKeys(value, ["type", "completedRoundNumber", "nextDealerSeatId", "reason"]) &&
+      isSafeInteger(value.completedRoundNumber) && isSeatId(value.nextDealerSeatId) && isNextDealerReason(value.reason)
+      ? {
+          eventId,
+          type: value.type,
+          completedRoundNumber: value.completedRoundNumber,
+          nextDealerSeatId: value.nextDealerSeatId,
+          reason: value.reason,
+        }
+      : undefined;
+  }
+
+  if (value.type === "gameFinished") {
+    return hasOnlyKeys(value, ["type", "finishedBySeatId", "finishedByPlayerId", "completedRoundCount"]) &&
+      isSeatId(value.finishedBySeatId) && isNonEmptyString(value.finishedByPlayerId) &&
+      isSafeInteger(value.completedRoundCount)
+      ? {
+          eventId,
+          type: value.type,
+          finishedBySeatId: value.finishedBySeatId,
+          finishedByPlayerId: value.finishedByPlayerId,
+          completedRoundCount: value.completedRoundCount,
+        }
+      : undefined;
+  }
+
   // Draws, response choices and window internals are intentionally not part of the mobile event contract.
   return null;
 }
@@ -966,6 +1182,13 @@ function isSuit(value: unknown): value is Suit {
 }
 function isRoundEndReason(value: unknown): value is RoundEndReason {
   return value === "onePlayerLeft" || value === "wallEmpty";
+}
+function isGameStatus(value: unknown): value is GameStatus {
+  return value === "waiting" || value === "playingRound" || value === "betweenRounds" || value === "finished";
+}
+function isNextDealerReason(value: unknown): value is NextDealerReason {
+  return value === "qiangGangDeclarer" || value === "multipleHuDiscarder" ||
+    value === "firstWinner" || value === "wallEmptyDealerKeeps";
 }
 function isScorePattern(value: unknown): value is ScorePattern {
   return value === "pingHu" || value === "daDui" || value === "danDiao" || value === "qingYiSe" ||

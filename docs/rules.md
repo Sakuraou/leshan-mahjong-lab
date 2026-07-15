@@ -27,6 +27,27 @@ The first playable version implements **eight chicken Leshan Mahjong**.
 - Players can peng, ming gang, an gang, and ba gang.
 - The round uses xuezhan daodi.
 
+## Multi-Round Match And Dealer
+
+- A new room starts every player at 0 cumulative points.
+- Hu, chicken, gang, and cha-jiao transfers are added to the same match score.
+  Starting the next round resets round-only tiles and windows, never the score.
+- After a round ends, all four ready flags reset. All four seated players must
+  ready again before the next round can start.
+- A robbed ba-gang declarer becomes the next dealer. This responsibility rule
+  applies even when another player won earlier in the round.
+- For an ordinary one-discard multiple win, the discarder becomes the next
+  dealer. The winners do not compete for dealer by hu order.
+- If neither responsibility rule occurs, the first player whose hu is formally
+  settled by the server becomes the next dealer. The original dealer has no
+  extra priority; they keep the dealership only by being that first winner.
+- If the wall empties and nobody has won, the current dealer remains dealer.
+- The decision is frozen with the completed round. Reconnects, repeated
+  deadline ticks, and repeated settlement calls cannot change it.
+- The match has no fixed round count. Between rounds, any room member may end
+  the match; all four final cumulative scores, ranking, and round deltas remain
+  available. In-round forced dissolution and voting are not part of this MVP.
+
 ## Dingque And Laizi
 
 After dingque:

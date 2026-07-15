@@ -11,11 +11,14 @@ import {
   discardRoomTile,
   drawGangTile,
   drawRoomTile,
+  finishGame,
   joinRoom,
   passClaim,
   passQiangGang,
+  readyNextRound,
   setPlayerPresence,
   startRoomRound,
+  startNextRound,
   takeSeat,
   toggleReady,
   toClientVisibleRoomState,
@@ -33,12 +36,15 @@ import {
   type DiscardRoomTileResult,
   type DrawGangTileResult,
   type DrawRoomTileResult,
+  type FinishGameResult,
   type JoinRoomResult,
   type PassClaimResult,
   type PassQiangGangResult,
+  type ReadyNextRoundResult,
   type RoomEvent,
   type RoomState,
   type StartRoomRoundResult,
+  type StartNextRoundResult,
   type TakeSeatResult,
   type ToggleReadyResult,
 } from "./room.ts";
@@ -84,6 +90,9 @@ export type RoomAction =
   | { type: "takeSeat"; seatId: PlayerId }
   | { type: "toggleReady" }
   | { type: "startRound"; dealer?: PlayerId }
+  | { type: "readyNextRound"; expectedActionId?: string }
+  | { type: "startNextRound"; expectedActionId?: string }
+  | { type: "finishGame"; expectedActionId?: string }
   | { type: "chooseMissingSuit"; suit: Suit }
   | { type: "drawTile"; expectedActionId?: string }
   | { type: "drawGangTile"; expectedActionId?: string }
@@ -106,6 +115,9 @@ export type RoomServiceError =
   | ResultFailureReason<TakeSeatResult>
   | ResultFailureReason<ToggleReadyResult>
   | ResultFailureReason<StartRoomRoundResult>
+  | ResultFailureReason<ReadyNextRoundResult>
+  | ResultFailureReason<StartNextRoundResult>
+  | ResultFailureReason<FinishGameResult>
   | ResultFailureReason<ChooseMissingSuitResult>
   | ResultFailureReason<DrawGangTileResult>
   | ResultFailureReason<DrawRoomTileResult>
@@ -397,6 +409,9 @@ function applyRoomAction(
   | TakeSeatResult
   | ToggleReadyResult
   | StartRoomRoundResult
+  | ReadyNextRoundResult
+  | StartNextRoundResult
+  | FinishGameResult
   | ChooseMissingSuitResult
   | DrawGangTileResult
   | DrawRoomTileResult
@@ -421,6 +436,18 @@ function applyRoomAction(
 
   if (action.type === "startRound") {
     return startRoomRound(room, action.dealer);
+  }
+
+  if (action.type === "readyNextRound") {
+    return readyNextRound(room, playerId);
+  }
+
+  if (action.type === "startNextRound") {
+    return startNextRound(room);
+  }
+
+  if (action.type === "finishGame") {
+    return finishGame(room, playerId);
   }
 
   if (action.type === "drawTile") {

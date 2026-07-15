@@ -1,7 +1,9 @@
 import type {
+  ClientLegalAction,
   ClientVisibleRoomState,
   MobilePublicEvent,
   MobileSettlementSummary,
+  NextDealerReason,
   SeatId,
   Suit,
   Tile,
@@ -21,15 +23,37 @@ export type MobileSettlementItem = {
 };
 
 export type MobileRoundResultViewModel = {
+  roundNumber: number;
   reason: "onePlayerLeft" | "wallEmpty";
   reasonLabel: string;
+  nextDealer: {
+    seatId: SeatId;
+    displayName: string;
+    reasonLabel: string;
+  };
+  gameFinished: boolean;
   scores: Array<{
     seatId: SeatId;
     displayName: string;
-    points: number;
+    roundDelta: number;
+    cumulativePoints: number;
     isLocal: boolean;
   }>;
   settlements: MobileSettlementItem[];
+  history: Array<{
+    roundNumber: number;
+    dealerName: string;
+    nextDealerName: string;
+    scoreText: string;
+  }>;
+};
+
+export type MobileIntermissionViewModel = {
+  readySeats: Array<{ seatId: SeatId; displayName: string; ready: boolean }>;
+  actions: Array<{
+    action: Extract<ClientLegalAction, "readyNextRound" | "startNextRound" | "finishGame">;
+    actionId: string;
+  }>;
 };
 
 export function toMobileTimelineItems(
@@ -49,20 +73,69 @@ export function toMobileRoundResultViewModel(
     return null;
   }
 
+  const latestRound = view.roundHistory.find((entry) => entry.roundNumber === view.roundNumber);
+  if (latestRound === undefined || view.nextDealerDecision === null) {
+    return null;
+  }
+
   return {
+    roundNumber: view.roundNumber,
     reason: view.roundEnd.reason,
     reasonLabel: view.roundEnd.reason === "wallEmpty"
       ? "牌墙已空，流局并完成查叫"
       : "血战结束，仅剩一位未胡",
-    scores: view.scores
+    nextDealer: {
+      seatId: view.nextDealerDecision.nextDealerSeatId,
+      displayName: seatName(view, view.nextDealerDecision.nextDealerSeatId),
+      reasonLabel: nextDealerReasonLabel(view.nextDealerDecision.reason),
+    },
+    gameFinished: view.gameStatus === "finished",
+    scores: latestRound.scoreDeltas
       .map((score) => ({
         seatId: score.seatId,
         displayName: seatName(view, score.seatId),
-        points: score.points,
+        roundDelta: score.delta,
+        cumulativePoints: score.afterPoints,
         isLocal: view.localSeatId === score.seatId,
       }))
-      .sort((left, right) => right.points - left.points || left.seatId - right.seatId),
+      .sort((left, right) => right.cumulativePoints - left.cumulativePoints || left.seatId - right.seatId),
     settlements: view.settlementLedger.map((entry) => settlementItem(entry, view)),
+    history: [...view.roundHistory]
+      .sort((left, right) => left.roundNumber - right.roundNumber)
+      .map((entry) => ({
+        roundNumber: entry.roundNumber,
+        dealerName: seatName(view, entry.dealerSeatId),
+        nextDealerName: seatName(view, entry.nextDealerDecision.nextDealerSeatId),
+        scoreText: entry.scoreDeltas
+          .map((score) => `${seatName(view, score.seatId)} ${signedPoints(score.delta)}`)
+          .join(" · "),
+      })),
+  };
+}
+
+export function toMobileIntermissionViewModel(
+  view: ClientVisibleRoomState | null,
+): MobileIntermissionViewModel | null {
+  if (view?.gameStatus !== "betweenRounds") {
+    return null;
+  }
+
+  const intermissionActions = new Set(["readyNextRound", "startNextRound", "finishGame"] as const);
+  return {
+    readySeats: view.seats.map((seat) => ({
+      seatId: seat.seatId,
+      displayName: seat.displayName ?? `座位 ${seat.seatId + 1}`,
+      ready: seat.ready,
+    })),
+    actions: view.actionDescriptors.flatMap((descriptor) =>
+      intermissionActions.has(descriptor.action as "readyNextRound" | "startNextRound" | "finishGame") &&
+      view.legalActions.includes(descriptor.action)
+        ? [{
+            action: descriptor.action as "readyNextRound" | "startNextRound" | "finishGame",
+            actionId: descriptor.actionId,
+          }]
+        : [],
+    ),
   };
 }
 
@@ -96,7 +169,28 @@ function mobilePublicEventText(event: MobilePublicEvent, view: ClientVisibleRoom
       return `${playerName(view, event.playerId)} ${event.connected ? "已恢复在线" : "已离线"}`;
     case "roundEnded":
       return event.reason === "wallEmpty" ? "牌墙已空，本局结束" : "仅剩一位未胡，本局结束";
+    case "nextDealerDecided":
+      return `下一局由${seatName(view, event.nextDealerSeatId)}坐庄（${nextDealerReasonLabel(event.reason)}）`;
+    case "gameFinished":
+      return `${seatName(view, event.finishedBySeatId)}结束整场，共完成 ${event.completedRoundCount} 局`;
   }
+}
+
+export function nextDealerReasonLabel(reason: NextDealerReason): string {
+  switch (reason) {
+    case "qiangGangDeclarer":
+      return "被抢杠者坐庄";
+    case "multipleHuDiscarder":
+      return "一炮多响点炮者坐庄";
+    case "firstWinner":
+      return "本局第一个胡牌者坐庄";
+    case "wallEmptyDealerKeeps":
+      return "无人胡牌，原庄连庄";
+  }
+}
+
+function signedPoints(points: number): string {
+  return `${points > 0 ? "+" : ""}${points}`;
 }
 
 function settlementItem(

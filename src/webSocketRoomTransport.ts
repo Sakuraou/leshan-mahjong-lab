@@ -28,6 +28,9 @@ export type WebSocketRoomTransport = {
   takeSeat: (playerId: string, seatId: PlayerId) => Promise<WebSocketRoomTransportActionResult>;
   toggleReady: (playerId: string) => Promise<WebSocketRoomTransportActionResult>;
   startRound: (playerId: string, dealer?: PlayerId) => Promise<WebSocketRoomTransportActionResult>;
+  readyNextRound: (playerId: string) => Promise<WebSocketRoomTransportActionResult>;
+  startNextRound: (playerId: string) => Promise<WebSocketRoomTransportActionResult>;
+  finishGame: (playerId: string) => Promise<WebSocketRoomTransportActionResult>;
   chooseMissingSuit: (playerId: string, suit: Suit) => Promise<WebSocketRoomTransportActionResult>;
   drawTile: (playerId: string) => Promise<WebSocketRoomTransportActionResult>;
   drawGangTile: (playerId: string) => Promise<WebSocketRoomTransportActionResult>;
@@ -163,6 +166,9 @@ export async function createWebSocketRoomTransport(
             | "takeSeat"
             | "toggleReady"
             | "startRound"
+            | "readyNextRound"
+            | "startNextRound"
+            | "finishGame"
             | "chooseMissingSuit"
             | "drawTile"
             | "drawGangTile"
@@ -235,6 +241,9 @@ export async function createWebSocketRoomTransport(
     takeSeat: (playerId, seatId) => sendSessionMessage(playerId, { type: "takeSeat", payload: { seatId } }),
     toggleReady: (playerId) => sendSessionMessage(playerId, { type: "toggleReady", payload: {} }),
     startRound: (playerId, dealer) => sendSessionMessage(playerId, { type: "startRound", payload: { dealer } }),
+    readyNextRound: (playerId) => sendSessionMessage(playerId, { type: "readyNextRound", payload: {} }),
+    startNextRound: (playerId) => sendSessionMessage(playerId, { type: "startNextRound", payload: {} }),
+    finishGame: (playerId) => sendSessionMessage(playerId, { type: "finishGame", payload: {} }),
     chooseMissingSuit: (playerId, suit) => sendSessionMessage(playerId, { type: "chooseMissingSuit", payload: { suit } }),
     drawTile: (playerId) => sendSessionMessage(playerId, { type: "drawTile", payload: {} }),
     drawGangTile: (playerId) => sendSessionMessage(playerId, { type: "drawGangTile", payload: {} }),

@@ -142,6 +142,35 @@ test("accepts chooseMissingSuit protocol messages and routes snapshots", () => {
   assert.equal(actionRejected(result.outgoing[0].message).payload.code, "roundNotStarted");
 });
 
+test("accepts between-round protocol messages through the WebSocket boundary", () => {
+  let server = createConnectedServer(["conn-host"]);
+  server = handleRoomSocketRawMessage(
+    server,
+    "conn-host",
+    JSON.stringify(createRoomMessage("m-create", "server-room-next-round", "Host")),
+  ).state;
+
+  const result = handleRoomSocketRawMessage(
+    server,
+    "conn-host",
+    JSON.stringify({
+      protocolVersion: 1,
+      clientMessageId: "m-ready-next",
+      roomId: "server-room-next-round",
+      sessionToken: "session-1",
+      type: "readyNextRound",
+      payload: {},
+    } satisfies RoomSocketClientMessage),
+  );
+
+  assert.equal(result.errors.length, 0);
+  assert.deepEqual(
+    result.outgoing.map((message) => [message.connectionId, message.message.type]),
+    [["conn-host", "actionRejected"]],
+  );
+  assert.equal(actionRejected(result.outgoing[0].message).payload.code, "playerNotSeated");
+});
+
 test("accepts drawTile protocol messages and routes adapter rejections", () => {
   let server = createConnectedServer(["conn-host"]);
   server = handleRoomSocketRawMessage(

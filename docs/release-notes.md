@@ -2,8 +2,8 @@
 
 ## MVP Snapshot
 
-The current build has a phone-first Expo client that can complete one
-server-authoritative round. The Vite Web app remains the multi-client rule,
+The current build has a phone-first Expo client that can complete and continue
+across server-authoritative rounds. The Vite Web app remains the multi-client rule,
 privacy, protocol, and portfolio debugging surface.
 
 ### Current MVP Features
@@ -61,14 +61,20 @@ privacy, protocol, and portfolio debugging surface.
 - Expo client with authoritative discard/gang candidates, private response
   controls, stale-action protection, 1/2/4/8-second reconnect, safe missed-event
   merging, a compact timeline, and a final settlement screen.
+- Server-authoritative multi-round lifecycle with cumulative scores, frozen
+  dealer decisions, four-player re-ready, safe per-round score history, and
+  member-triggered match finish.
+- Local dealer rules: a robbed ba-gang declarer or ordinary multi-hu discarder
+  becomes next dealer regardless of earlier hu order; otherwise the first
+  formally settled winner becomes dealer, while a no-win wall-empty round keeps
+  the current dealer.
+- Phone intermission controls driven only by server `legalActions` and
+  `actionDescriptors`, plus final cumulative ranking and round deltas.
 - GitHub Actions verification for TypeScript, tests, Web build, and mobile
   TypeScript on push and pull request.
 
 ### Known Limits
 
-- The first mobile closure ends after one round. Dealer rotation, accumulated
-  match score, round count, and next-round readiness still need local-rule
-  confirmation.
 - Gang-shang-hua and gang-shang-pao do not yet have distinct scoring/event
   labels beyond the existing authoritative hu flow.
 - The phone UI is functional but still needs real Mahjong artwork, audio,
@@ -98,14 +104,21 @@ privacy, protocol, and portfolio debugging surface.
 1. Paste the Vercel production URL into the README.
 2. Capture the first portfolio screenshots and replace the screenshot
    placeholders.
-3. Confirm dealer rotation, next-round readiness, match length, and cumulative
-   score rules, then implement the multi-round room lifecycle.
-4. Validate the Expo app on physical Android and iOS devices.
-5. Add production `wss://` hosting and durable room/session persistence.
-6. Add real tile artwork, sound/vibration controls, and accessibility polish.
-7. Add a clearer portfolio page or route for case-study presentation.
+3. Validate the complete multi-round Expo flow on physical Android and iOS
+   devices.
+4. Add production `wss://` hosting and durable room/session persistence.
+5. Add real tile artwork, sound/vibration controls, and accessibility polish.
+6. Add a clearer portfolio page or route for case-study presentation.
 
 ## 2026-07-15
+
+- Added the authoritative `waiting -> playingRound -> betweenRounds -> finished`
+  match lifecycle and cumulative scoring across rounds.
+- Added frozen dealer decisions for robbed ba-gang responsibility, ordinary
+  one-discard multiple wins, first formal winner, and no-win wall-empty rounds.
+- Added four-player re-ready, next-round start, any-member intermission finish,
+  final cumulative ranking, and safe per-round score history to the mobile DTO
+  and Expo UI.
 
 - Added server-side heavenly missing-suit detection immediately after dealing.
 - Added strict mobile terminal DTOs for round end, final scores, and safe
