@@ -1,5 +1,21 @@
 # Release Notes
 
+## 2026-07-15 - Remote Internal Beta Foundation
+
+- Added environment-backed mobile endpoints for local host, Android emulator,
+  LAN, and production WSS, with no production localhost fallback.
+- Added Chinese diagnostics for malformed address, insecure production URL,
+  TLS, device/server offline, invalid session, and missing room.
+- Added a production Node WebSocket runtime with `/ws`, Origin policy,
+  liveness/readiness checks, payload limits, safe logs, heartbeat, deadline
+  ticks, and graceful shutdown.
+- Added Docker packaging, `.env.example`, production smoke coverage, and a
+  provider-neutral deployment runbook.
+- Added dynamic Expo native configuration and EAS development, LAN internal,
+  preview APK, and production profiles. Session tokens remain in SecureStore.
+- Added a four-device checklist covering privacy, reconnect, cumulative scores,
+  responsibility dealer rules, member finish, and final ranking.
+
 ## MVP Snapshot
 
 The current build has a phone-first Expo client that can complete and continue

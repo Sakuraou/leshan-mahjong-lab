@@ -5,6 +5,26 @@ the room socket adapter. `src/server/devServer.ts` wraps it with a real local
 Node `ws` port while keeping connection health and room transitions in pure,
 deterministic core functions.
 
+## Production Runtime
+
+`src/server/nodeServer.ts` now provides the shared Node HTTP/WebSocket runtime.
+The existing dev server keeps its root-path socket for browser compatibility;
+`productionServer.ts` adds validated environment configuration:
+
+- WebSocket upgrades only on `WS_PATH` (default `/ws`).
+- Exact browser Origin allowlisting and an explicit missing-Origin policy for
+  native clients; wildcard production origins are rejected.
+- `/health/live` and `/health/ready`; readiness returns `503` while draining.
+- A 64 KiB default payload limit, guarded sends, ping/pong health, response
+  deadline ticks, and idempotent graceful shutdown.
+- Structured startup/lifecycle logs that omit raw messages, snapshots, hands,
+  session tokens, and undelivered recipient credentials.
+
+The Dockerfile starts this entry with Node 24. TLS should terminate at the
+hosting provider; phones use public `wss://` while the single container receives
+HTTP/WS. Keep one replica because active rooms are process memory. See
+[internal-beta-deployment.md](internal-beta-deployment.md).
+
 ## Current Scope
 
 The server core owns:

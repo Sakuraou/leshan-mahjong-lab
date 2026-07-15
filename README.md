@@ -20,6 +20,30 @@ after the GitHub repository is imported in Vercel.
 - Socket adapter interface: [docs/socket-adapter.md](docs/socket-adapter.md)
 - WebSocket server core: [docs/websocket-server.md](docs/websocket-server.md)
 - Mobile App plan: [docs/mobile-app-plan.md](docs/mobile-app-plan.md)
+- Internal beta deployment: [docs/internal-beta-deployment.md](docs/internal-beta-deployment.md)
+- Four-device test checklist: [docs/physical-device-test-checklist.md](docs/physical-device-test-checklist.md)
+
+## Remote Mobile Beta
+
+The repository now contains the first remote-beta delivery path without
+removing the browser debug table:
+
+- `src/server/productionServer.ts` exposes `/ws`, liveness/readiness health
+  checks, Origin filtering, payload limits, heartbeat/deadline ticks,
+  structured secret-free logs, and graceful `SIGTERM` / `SIGINT` shutdown.
+- `Dockerfile` runs the in-memory authoritative room server as a single Node 24
+  container. A hosting proxy terminates TLS, so phones use its public
+  `wss://.../ws` URL.
+- The Expo client offers development, Android-emulator, LAN, and production
+  endpoint modes. Production refuses `ws://`, localhost, and an unconfigured
+  endpoint instead of falling back to `127.0.0.1`.
+- `apps/mobile/eas.json` includes LAN internal, preview internal-distribution
+  APK, and production profiles. The public WebSocket URL is supplied through
+  `EXPO_PUBLIC_ROOM_SERVER_URL`; room session tokens remain in SecureStore.
+
+The code and build profiles are ready, but a hosted URL and signed EAS artifact
+still require the project owner's hosting and Expo/Apple accounts. See the
+[deployment runbook](docs/internal-beta-deployment.md).
 
 ## Deploy To Vercel
 
@@ -114,6 +138,9 @@ and AI-assisted development.
   started
 - Real local WebSocket dev server powered by `ws`, plus a smoke client that
   verifies `createRoom` and `joinRoom` over actual WebSocket connections
+- Production Node WebSocket runtime with `/ws`, HTTP health checks, exact
+  Origin allowlisting, payload limits, safe structured logs, graceful shutdown,
+  Docker packaging, and a separate production smoke
 - Frontend WebSocket transports that connect to `ws://127.0.0.1:8787`, submit
   the complete authoritative multi-round action flow, and maintain one
   redacted snapshot per authenticated session
@@ -135,6 +162,10 @@ and AI-assisted development.
   private claim controls, automatic replacement draws, weak-network recovery,
   a safe public timeline, cumulative scores, next-round readiness, dealer
   reasons, final ranking, and per-round result history
+- Mobile endpoint profiles for local host, Android emulator (`10.0.2.2`), LAN,
+  and remote `wss://`, with production URL validation and Chinese diagnostics
+- Expo/EAS internal distribution configuration for side-by-side development,
+  preview, and production builds
 - Shared client-core package for mobile-safe room view models, tile display
   helpers, strict runtime contracts, event deduplication, result presentation,
   transport contracts, and authoritative `legalActions` consumption
@@ -191,6 +222,8 @@ npm run mobile:export
 npm run dev:server
 npm run dev:server:lan
 npm run smoke:server
+npm run smoke:server:production
+npm run start:server
 npm run check:all
 ```
 
@@ -201,6 +234,8 @@ npm run check:all
 - Expo / React Native
 - TypeScript
 - Node test runner
+- Node 24 + `ws` production room server
+- Docker and Expo EAS internal distribution configuration
 - Pure TypeScript game engine under `src/game`
 - GitHub for project history and portfolio presentation
 - Planned deployment: Vercel
@@ -229,6 +264,9 @@ src/
   server/
     roomSocketServerCore.ts Testable WebSocket server core
     devServer.ts         Local Node ws runtime with heartbeat and deadline ticks
+    nodeServer.ts        Shared HTTP/WebSocket runtime and graceful shutdown
+    productionServer.ts  Validated production entry and safe structured logs
+    productionSmoke.ts   Health, Origin, and real-socket production smoke
 apps/
   mobile/               Expo phone client, reconnect flow, timeline, result UI
 packages/
@@ -255,10 +293,12 @@ snapshot per simulated session. Replacing this local transport with a real
 WebSocket transport should mainly change delivery and connection management,
 not the room lifecycle rules.
 
-The server-side core and local `ws` dev wrapper are also in place.
+The server-side core and both local and production `ws` wrappers are in place.
 `src/server/roomSocketServerCore.ts` keeps connection registration, JSON
 parsing, adapter calls, session routing, reconnect binding, and undelivered
 messages testable without tying the room logic to a specific network runtime.
+The production wrapper adds HTTP upgrade policy and lifecycle operations while
+continuing to delegate every Mahjong transition to that same tested core.
 
 The WebSocket experiment panel is intentionally separate from the main table.
 It uses the real local `ws` dev server to prove the full room lifecycle and

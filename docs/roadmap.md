@@ -218,9 +218,17 @@ phone-first product.
   round history
 - [x] Add GitHub Actions checks for TypeScript, tests, Web build, and mobile
   TypeScript
+- [x] Add environment-backed local, Android-emulator, LAN, and production WSS
+  endpoint profiles with no production localhost fallback
+- [x] Add a production Node WebSocket entry with Origin policy, health checks,
+  payload limits, secret-free logs, graceful shutdown, and Docker packaging
+- [x] Add Expo/EAS development, LAN internal, preview APK, and production build
+  profiles with production cleartext disabled
+- [x] Add production/mobile endpoint tests and a four-device beta checklist
 - Add vibration/audio feedback
 - Test Android and iOS layouts on physical devices
-- Package an installable beta build
+- Link owner hosting and Expo accounts, deploy the WSS server, and generate the
+  first signed internal APK/IPA
 
 ## Phase 6: Portfolio Polish
 

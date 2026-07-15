@@ -8,6 +8,9 @@ it is not the final gameplay shell.
 
 The first Expo/React Native client lives in `apps/mobile`. It currently covers:
 
+- Environment-backed endpoints for local host, Android emulator, LAN, and
+  remote production. Production has no localhost fallback and accepts only an
+  explicit `wss://` URL.
 - Configuring a WebSocket server address, room id, and display name.
 - Creating or joining a real server-authoritative room.
 - Rendering four seats, presence, readiness, scores, and local-seat ownership.
@@ -115,6 +118,8 @@ opponent hands, private claim arrays, or concealed an-gang tiles.
   `responseByMe` cross the view-model boundary.
 - Session token: kept in the transport closure and Expo SecureStore, never
   rendered in the UI.
+- Build configuration: public server URLs may enter `EXPO_PUBLIC_*`; session
+  tokens and credentials never enter `.env`, EAS profiles, logs, or screenshots.
 - Commands: every visible button is gated by server `legalActions`.
 - Discard: selectable tiles come only from the server's `discardTile`
   descriptor; the server still performs final validation.
@@ -172,6 +177,9 @@ Address rules:
 - Physical phone: run `npm run dev:server:lan`, then use
   `ws://<computer-LAN-IP>:8787`; Windows Firewall must allow the Node process.
 - Production: use `wss://`; plain `ws://` is development-only.
+- Remote beta: deploy the production Docker service, set
+  `EXPO_PUBLIC_ROOM_SERVER_URL=wss://HOST/ws` in the EAS preview environment,
+  then build from `apps/mobile` with the `preview` profile.
 
 Quality commands:
 
@@ -180,16 +188,20 @@ npm run check
 npm run mobile:typecheck
 npm run mobile:export
 npm run smoke:server
+npm run smoke:server:production
 ```
 
 ## Android And iOS Roadmap
 
-1. Validate the complete multi-round flow in Expo Go on one Android phone and
-   one iPhone.
-2. Add vibration/audio settings and accessibility labels for real tile artwork.
-3. Move the in-memory server to a `wss://` deployment with durable room/session
-   storage.
-4. Produce internal Android and iOS beta builds with EAS Build.
+1. Link owner hosting and Expo accounts, deploy the single-instance Docker
+   server, and generate the first signed `preview` build.
+2. Run the complete [four-device checklist](physical-device-test-checklist.md),
+   including reconnect, multi-round totals, responsibility dealer, and finish.
+3. Add vibration/audio settings and accessibility labels for real tile artwork.
+4. Add durable room/session storage after the in-memory beta is stable.
+
+The provider-neutral server and EAS steps are documented in
+[internal-beta-deployment.md](internal-beta-deployment.md).
 
 The Web client remains useful throughout this sequence because it can expose
 debug timelines and multi-client snapshots that should not appear in the

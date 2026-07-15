@@ -10,10 +10,10 @@ export type RoomSocketSmokeResult = {
   guestMessages: RoomSocketServerMessage[];
 };
 
-export async function runRoomSocketSmokeClient(input: { url: string; roomId?: string }): Promise<RoomSocketSmokeResult> {
+export async function runRoomSocketSmokeClient(input: { url: string; roomId?: string; origin?: string }): Promise<RoomSocketSmokeResult> {
   const roomId = input.roomId ?? `smoke-room-${Date.now()}`;
-  const host = await openSmokeSocket(input.url);
-  const guest = await openSmokeSocket(input.url);
+  const host = await openSmokeSocket(input.url, input.origin);
+  const guest = await openSmokeSocket(input.url, input.origin);
 
   try {
     const hostMessages: RoomSocketServerMessage[] = [];
@@ -54,8 +54,8 @@ export async function runRoomSocketSmokeClient(input: { url: string; roomId?: st
   }
 }
 
-async function openSmokeSocket(url: string): Promise<WebSocket> {
-  const socket = new WebSocket(url);
+async function openSmokeSocket(url: string, origin?: string): Promise<WebSocket> {
+  const socket = new WebSocket(url, origin === undefined ? undefined : { origin });
 
   await new Promise<void>((resolve, reject) => {
     socket.once("open", resolve);

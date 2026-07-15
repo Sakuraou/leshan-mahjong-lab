@@ -6,10 +6,13 @@ import type {
 } from "@leshan-mahjong/client-core";
 
 const storageKey = "leshan-mahjong.room-session.v1";
+const secureStoreOptions: SecureStore.SecureStoreOptions = {
+  keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+};
 
 export const mobileRoomSessionStore: RoomSessionStore = {
   async load() {
-    const raw = await SecureStore.getItemAsync(storageKey);
+    const raw = await SecureStore.getItemAsync(storageKey, secureStoreOptions);
 
     if (raw === null) {
       return null;
@@ -22,8 +25,9 @@ export const mobileRoomSessionStore: RoomSessionStore = {
         typeof value.serverUrl !== "string" ||
         typeof value.roomId !== "string" ||
         typeof value.playerId !== "string" ||
-        typeof value.sessionToken !== "string" ||
-        typeof value.lastEventId !== "number"
+        typeof value.sessionToken !== "string" || value.sessionToken.trim() === "" ||
+        typeof value.lastEventId !== "number" || !Number.isSafeInteger(value.lastEventId) || value.lastEventId < 0 ||
+        !isWebSocketUrl(value.serverUrl)
       ) {
         return null;
       }
@@ -43,9 +47,18 @@ export const mobileRoomSessionStore: RoomSessionStore = {
     }
   },
   async save(session) {
-    await SecureStore.setItemAsync(storageKey, JSON.stringify(session));
+    await SecureStore.setItemAsync(storageKey, JSON.stringify(session), secureStoreOptions);
   },
   async clear() {
-    await SecureStore.deleteItemAsync(storageKey);
+    await SecureStore.deleteItemAsync(storageKey, secureStoreOptions);
   },
 };
+
+function isWebSocketUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (url.protocol === "ws:" || url.protocol === "wss:") && url.hostname !== "";
+  } catch {
+    return false;
+  }
+}

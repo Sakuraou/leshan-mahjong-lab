@@ -6,6 +6,8 @@ import type {
   ClientVisibleMeld,
   ClientVisibleRoomState,
   MobilePublicEvent,
+  MobileDevelopmentTarget,
+  MobileServerMode,
   PersistedRoomSession,
   PlayerId,
   ReconnectAttemptContext,
@@ -17,13 +19,19 @@ import type {
 } from "@leshan-mahjong/client-core";
 import {
   canUseAction,
+  classifyMobileConnectionError,
   createReconnectCoordinator,
+  defaultDevelopmentServerUrl,
   descriptorForAction,
+  inferMobileDevelopmentTarget,
+  inferMobileServerMode,
   legalTilesForAction,
+  mobileConnectionDiagnosticText,
   nextAutomaticDrawAction,
   suitLabel,
   tileLabel,
   toClientRoomViewModel,
+  validateMobileServerUrl,
 } from "@leshan-mahjong/client-core";
 import NetInfo from "@react-native-community/netinfo";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -44,6 +52,7 @@ import {
   latestServerEventId,
   type MobileRoomGateway,
 } from "./roomGateway";
+import { initialMobileServerConfig } from "./environment";
 import { mobileRoomSessionStore } from "./sessionStore";
 import { RoundIntermissionSection } from "./RoundIntermissionSection";
 import { RoundResultSection } from "./RoundResultSection";
@@ -61,7 +70,7 @@ type ConnectionStatus =
   | "online"
   | "failed"
   | "error";
-type Identity = { playerId: string; sessionToken: string };
+type Identity = { playerId: string };
 type PendingActionConfirmation = {
   action: ClientLegalAction;
   actionId: string | null;
@@ -75,6 +84,7 @@ type SelectedGang = {
 
 const seatIds: PlayerId[] = [0, 1, 2, 3];
 const suits: Suit[] = ["bamboos", "dots", "characters"];
+const serverModes: MobileServerMode[] = ["development", "lan", "production"];
 const initialReconnectState: ReconnectState = {
   phase: "offline",
   attempt: 0,
@@ -86,7 +96,11 @@ const initialReconnectState: ReconnectState = {
 };
 
 export function MobileApp() {
-  const [serverUrl, setServerUrl] = useState("ws://127.0.0.1:8787");
+  const [serverMode, setServerMode] = useState<MobileServerMode>(initialMobileServerConfig.mode);
+  const [developmentTarget, setDevelopmentTarget] = useState<MobileDevelopmentTarget>(
+    initialMobileServerConfig.developmentTarget,
+  );
+  const [serverUrl, setServerUrl] = useState(initialMobileServerConfig.url);
   const [roomId, setRoomId] = useState("LSMJ-MOBILE");
   const [displayName, setDisplayName] = useState("手机玩家");
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("idle");
@@ -130,6 +144,27 @@ export function MobileApp() {
     });
   }
 
+  function selectServerMode(mode: MobileServerMode) {
+    setServerMode(mode);
+    if (mode === "development") {
+      setServerUrl(defaultDevelopmentServerUrl(developmentTarget));
+      return;
+    }
+    if (mode === "production") {
+      const configured = initialMobileServerConfig.mode === "production" ? initialMobileServerConfig.url : "";
+      setServerUrl(serverUrl.startsWith("wss://") ? serverUrl : configured);
+      return;
+    }
+    const configured = initialMobileServerConfig.mode === "lan" ? initialMobileServerConfig.url : "";
+    setServerUrl(inferMobileServerMode(serverUrl) === "lan" ? serverUrl : configured);
+  }
+
+  function selectDevelopmentTarget(target: MobileDevelopmentTarget) {
+    setServerMode("development");
+    setDevelopmentTarget(target);
+    setServerUrl(defaultDevelopmentServerUrl(target));
+  }
+
   useEffect(() => {
     void mobileRoomSessionStore.load().then((record) => {
       if (record === null) {
@@ -139,8 +174,13 @@ export function MobileApp() {
       sessionRef.current = record;
       setStoredSession(record);
       setServerUrl(record.serverUrl);
+      setServerMode(inferMobileServerMode(record.serverUrl));
+      setDevelopmentTarget(inferMobileDevelopmentTarget(record.serverUrl));
       setRoomId(record.roomId);
       setStatusText("发现可恢复的安全会话");
+    }).catch(() => {
+      setConnectionStatus("error");
+      setStatusText("无法读取本机安全会话，请重新加入房间");
     });
   }, []);
 
@@ -345,9 +385,15 @@ export function MobileApp() {
   }, [selectedGang, snapshot]);
 
   async function createOrJoinRoom(mode: "create" | "join") {
-    if (serverUrl.trim() === "" || roomId.trim() === "" || displayName.trim() === "") {
+    const validation = validateMobileServerUrl(serverMode, serverUrl);
+    if (!validation.ok) {
       setConnectionStatus("error");
-      setStatusText("请填写服务器、房间号和昵称");
+      setStatusText(validation.message);
+      return;
+    }
+    if (roomId.trim() === "" || displayName.trim() === "") {
+      setConnectionStatus("error");
+      setStatusText("请填写房间号和昵称");
       return;
     }
 
@@ -362,7 +408,12 @@ export function MobileApp() {
 
     let nextGateway: MobileRoomGateway | null = null;
     try {
-      nextGateway = await connectMobileRoomGateway({ serverUrl, roomId, initialEvents: [] });
+      nextGateway = await connectMobileRoomGateway({
+        serverUrl: validation.url,
+        serverMode,
+        roomId,
+        initialEvents: [],
+      });
       if (generation !== connectionGeneration.current) {
         nextGateway.close();
         return;
@@ -397,7 +448,7 @@ export function MobileApp() {
       }
       reconnectCoordinatorRef.current?.markOnline();
       setStatusText(mode === "create" ? "房间已创建" : "已加入房间");
-    } catch {
+    } catch (error) {
       if (pendingGatewayRef.current === nextGateway) {
         pendingGatewayRef.current = null;
       }
@@ -406,7 +457,10 @@ export function MobileApp() {
         return;
       }
       setConnectionStatus("offline");
-      setStatusText("连接失败，请检查服务器地址和本地服务");
+      setStatusText(mobileConnectionDiagnosticText(classifyMobileConnectionError(error, {
+        url: serverUrl,
+        networkConnected: networkConnectedRef.current,
+      })));
     }
   }
 
@@ -438,6 +492,7 @@ export function MobileApp() {
     try {
       nextGateway = await connectMobileRoomGateway({
         ...record,
+        serverMode: inferMobileServerMode(record.serverUrl),
         initialEvents: publicEventsRef.current,
       });
       if (!context.isCurrent() || generation !== connectionGeneration.current) {
@@ -486,9 +541,13 @@ export function MobileApp() {
         pendingGatewayRef.current = null;
       }
       nextGateway?.close();
+      const diagnostic = classifyMobileConnectionError(error, {
+        url: record.serverUrl,
+        networkConnected: networkConnectedRef.current,
+      });
       return {
         ok: false,
-        reason: error instanceof Error ? error.message : "reconnectFailed",
+        reason: diagnostic,
       };
     }
   }
@@ -529,7 +588,7 @@ export function MobileApp() {
     gatewayRef.current = nextGateway;
     sessionRef.current = record;
     setGateway(nextGateway);
-    setIdentity({ playerId, sessionToken });
+    setIdentity({ playerId });
     setSnapshot(nextSnapshot);
     publicEventsRef.current = nextEvents;
     setPublicEvents(nextEvents);
@@ -766,7 +825,51 @@ export function MobileApp() {
         />
 
         <Section title="服务器与房间">
+          <View style={styles.serverModeControl}>
+            {serverModes.map((mode) => (
+              <Pressable
+                key={mode}
+                accessibilityRole="button"
+                accessibilityState={{ selected: serverMode === mode }}
+                style={({ pressed }) => [
+                  styles.serverModeButton,
+                  serverMode === mode && styles.serverModeButtonActive,
+                  pressed && styles.pressed,
+                ]}
+                onPress={() => selectServerMode(mode)}
+              >
+                <Text style={[
+                  styles.serverModeText,
+                  serverMode === mode && styles.serverModeTextActive,
+                ]}>
+                  {serverModeLabel(mode)}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          {serverMode !== "development" ? null : (
+            <View style={styles.developmentTargetRow}>
+              {(["local", "androidEmulator"] as const).map((target) => (
+                <Pressable
+                  key={target}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: developmentTarget === target }}
+                  style={({ pressed }) => [
+                    styles.developmentTargetButton,
+                    developmentTarget === target && styles.developmentTargetButtonActive,
+                    pressed && styles.pressed,
+                  ]}
+                  onPress={() => selectDevelopmentTarget(target)}
+                >
+                  <Text style={styles.developmentTargetText}>
+                    {target === "local" ? "本机" : "Android 模拟器"}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
           <Field label="服务器地址" value={serverUrl} onChangeText={setServerUrl} autoCapitalize="none" />
+          <Text style={styles.serverModeHint}>{serverModeHint(serverMode)}</Text>
           <View style={styles.fieldRow}>
             <View style={styles.flexField}>
               <Field label="房间号" value={roomId} onChangeText={setRoomId} autoCapitalize="characters" />
@@ -1297,8 +1400,30 @@ function actionFailureText(reason: string): string {
     timeout: "服务器响应超时",
     closed: "连接已关闭",
     staleAction: "这个操作已经过期，已按服务器最新牌局刷新",
+    invalidSession: "保存的会话已失效，请重新加入房间",
+    roomNotFound: "房间已不存在，请重新创建或加入其他房间",
+    invalidAddress: "服务器地址格式不正确，请输入 ws:// 或 wss:// 地址",
+    insecureProductionUrl: "生产服务器必须使用 wss:// 加密连接",
+    tlsError: "安全连接失败，请检查证书、域名和设备时间",
+    deviceOffline: "当前设备未联网，请检查 Wi-Fi 或移动网络",
+    serverOffline: "无法连接服务器，服务器可能未启动或暂时不可用",
+    originRejected: "当前客户端来源未获服务器允许",
   };
-  return labels[reason] ?? `操作失败：${reason}`;
+  return labels[reason] ?? "操作失败，请按服务器最新状态重试";
+}
+
+function serverModeLabel(mode: MobileServerMode): string {
+  return mode === "development" ? "开发服务器" : mode === "lan" ? "局域网" : "生产服务器";
+}
+
+function serverModeHint(mode: MobileServerMode): string {
+  if (mode === "production") {
+    return "远程内测只允许 wss:// 安全地址";
+  }
+  if (mode === "lan") {
+    return "填写运行服务端电脑的局域网 IP，例如 ws://192.168.1.20:8787";
+  }
+  return "本机用于 iOS 模拟器；Android 模拟器使用 10.0.2.2";
 }
 
 function isUncertainTransportResult(result: ClientTransportActionResult): boolean {
@@ -1383,6 +1508,68 @@ const styles = StyleSheet.create({
     color: "#29463A",
     fontSize: 14,
     lineHeight: 20,
+  },
+  serverModeControl: {
+    flexDirection: "row",
+    gap: 6,
+    marginBottom: 10,
+  },
+  serverModeButton: {
+    flex: 1,
+    minHeight: 46,
+    borderWidth: 1,
+    borderColor: "#BFC7C0",
+    borderRadius: 6,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 6,
+  },
+  serverModeButtonActive: {
+    borderColor: "#1F5A43",
+    backgroundColor: "#DCECE3",
+  },
+  serverModeText: {
+    color: "#4E5A53",
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  serverModeTextActive: {
+    color: "#174A36",
+  },
+  developmentTargetRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 10,
+  },
+  developmentTargetButton: {
+    flex: 1,
+    minHeight: 42,
+    borderWidth: 1,
+    borderColor: "#C8CEC7",
+    borderRadius: 6,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#F6F8F5",
+  },
+  developmentTargetButtonActive: {
+    borderColor: "#2F6073",
+    backgroundColor: "#E0EDF1",
+  },
+  developmentTargetText: {
+    color: "#294D5A",
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "700",
+  },
+  serverModeHint: {
+    color: "#667068",
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: -4,
+    marginBottom: 8,
   },
   pendingConfirmationBand: {
     paddingHorizontal: 20,

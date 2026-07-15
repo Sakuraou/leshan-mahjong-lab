@@ -3,12 +3,14 @@
     "name": "乐山麻将",
     "slug": "leshan-mahjong",
     "version": "0.1.0",
+    "scheme": "leshanmahjong",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.sakuraou.leshanmahjong"
+      "bundleIdentifier": "com.sakuraou.leshanmahjong",
+      "buildNumber": "1"
     },
     "android": {
       "adaptiveIcon": {
@@ -18,7 +20,8 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.sakuraou.leshanmahjong"
+      "package": "com.sakuraou.leshanmahjong",
+      "versionCode": 1
     },
     "web": {
       "favicon": "./assets/favicon.png"

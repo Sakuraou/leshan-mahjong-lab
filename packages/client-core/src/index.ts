@@ -80,3 +80,20 @@ export type {
   PersistedRoomSession,
   RoomSessionStore,
 } from "./transport.ts";
+export {
+  classifyMobileConnectionError,
+  defaultDevelopmentServerUrl,
+  inferMobileDevelopmentTarget,
+  inferMobileServerMode,
+  mobileConnectionDiagnosticText,
+  resolveMobileServerConfig,
+  validateMobileServerUrl,
+} from "./mobileServerConfig.ts";
+export type {
+  MobileConnectionDiagnosticCode,
+  MobileDevelopmentTarget,
+  MobileServerConfig,
+  MobileServerEnvironmentInput,
+  MobileServerMode,
+  MobileServerValidationResult,
+} from "./mobileServerConfig.ts";

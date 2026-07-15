@@ -22,7 +22,10 @@ export type MobileWebSocketLike = {
   readyState: number;
   send(data: string): void;
   close(): void;
-  addEventListener(type: "open" | "close" | "error" | "message", listener: (event: { data?: unknown }) => void): void;
+  addEventListener(
+    type: "open" | "close" | "error" | "message",
+    listener: (event: { data?: unknown; message?: unknown; error?: unknown }) => void,
+  ): void;
 };
 
 export type MobileRoomTransportOptions = {
@@ -358,9 +361,19 @@ function waitForOpen(socket: MobileWebSocketLike, timeoutMs: number): Promise<vo
       clearTimeout(timer);
       resolve();
     });
-    socket.addEventListener("error", () => {
+    socket.addEventListener("error", (event) => {
       clearTimeout(timer);
-      reject(new Error("WebSocket connection failed."));
+      reject(new Error(webSocketErrorMessage(event)));
     });
   });
+}
+
+function webSocketErrorMessage(event: { message?: unknown; error?: unknown }): string {
+  if (typeof event.message === "string" && event.message.trim() !== "") {
+    return event.message;
+  }
+  if (event.error instanceof Error && event.error.message.trim() !== "") {
+    return event.error.message;
+  }
+  return "WebSocket connection failed.";
 }
