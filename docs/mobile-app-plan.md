@@ -35,8 +35,16 @@ The first Expo/React Native client lives in `apps/mobile`. It currently covers:
 - Showing only the window deadline summary, remaining responder count, and the
   local player's submitted choice before the server atomically closes it.
 - Saving a small versioned session record with Expo SecureStore.
+- Driving recovery through explicit `offline`, `waiting`, `reconnecting`,
+  `resuming`, `online`, and `failed` states. Unexpected closes retry after
+  1, 2, 4, and 8 seconds; foreground activation, network recovery, and the
+  manual command retry immediately.
 - Closing the socket on background and resuming with `sessionToken` plus
-  `lastEventId` after the App becomes active again.
+  `lastEventId` after the App becomes active again. Only the newest connection
+  generation may attach its snapshot or update the UI.
+- Marking an interrupted discard, hu, peng, or gang request as "result pending
+  confirmation" instead of replaying it. Recovery clears old selections and
+  rebuilds controls from the fresh server `actionId`.
 
 The Vite Web preview remains the multi-client debugging surface. The phone App
 now owns a single authenticated session and can complete the first real
@@ -52,6 +60,7 @@ Authoritative Node WebSocket server
   -> strict client-core parser and reduced mobile DTO
   -> legalActions + parameterized actionDescriptors
   -> single-session MobileRoomTransport
+  -> injectable reconnect coordinator
   -> Expo mobile presentation
 
 Vite Web debug client
@@ -66,7 +75,7 @@ Ownership boundaries:
 | `src/game` | Rules, hidden hands, wall, response choices, settlement, authoritative transitions |
 | `src/server` | WebSocket connections, heartbeat, session routing, deadline ticks |
 | `src/webSocketRoomTransport.ts` | Multi-client browser experiment transport and debug history |
-| `packages/client-core` | Standalone client DTOs, strict parser, view model, single-session transport, labels, sorting |
+| `packages/client-core` | Standalone client DTOs, strict parser, view model, single-session transport, reconnect coordinator, labels, sorting |
 | `src/App.tsx` | Browser debug and portfolio surface |
 | `apps/mobile` | Phone layout, SecureStore, AppState recovery, user commands |
 
@@ -98,6 +107,16 @@ opponent hands, private claim arrays, or concealed an-gang tiles.
 - Recovery: transient discard/gang selections are cleared, the latest snapshot
   rebuilds the action area, and the persisted completed auto-draw id prevents
   the same replacement draw from being submitted twice.
+- In-flight commands: ordinary user commands are never queued for replay. An
+  interrupted command remains visibly unconfirmed until a fresh authoritative
+  snapshot arrives. Only automatic normal/gang draws may be retried, and only
+  while the same descriptor remains legal and its id is not recorded complete.
+- Connection ownership: both authenticated and not-yet-authenticated sockets
+  carry a local generation. Late callbacks from superseded generations are
+  closed and ignored; the server independently enforces latest binding.
+- Missed events: the parser scans the event envelope for forbidden private
+  fields, then discards it in this milestone. The App stores only the reduced
+  snapshot and event cursor, never raw event history or private responses.
 - Server messages: malformed envelopes, unknown extra fields, hidden wall/seed
   fields, and non-null opponent hands are rejected before state changes.
 
@@ -141,9 +160,9 @@ npm run smoke:server
 ## Android And iOS Roadmap
 
 1. Validate the current shell in Expo Go on one Android phone and one iPhone.
-2. Add foreground reconnect backoff and network-change handling around the
-   completed action-id replay protection.
-3. Add richer settlement presentation and a compact in-game event timeline.
+2. Add a client-safe public event contract, event-id deduplication, and a
+   compact in-game timeline without retaining private recovery payloads.
+3. Add richer settlement presentation and final-score breakdowns.
 4. Add vibration/audio settings and accessibility labels for real tile artwork.
 5. Move the in-memory server to a `wss://` deployment with durable room/session
    storage.

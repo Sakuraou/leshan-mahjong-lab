@@ -7,11 +7,16 @@ import type {
   ClientVisibleRoomState,
   PersistedRoomSession,
   PlayerId,
+  ReconnectAttemptContext,
+  ReconnectAttemptResult,
+  ReconnectCoordinator,
+  ReconnectState,
   Suit,
   Tile,
 } from "@leshan-mahjong/client-core";
 import {
   canUseAction,
+  createReconnectCoordinator,
   descriptorForAction,
   legalTilesForAction,
   nextAutomaticDrawAction,
@@ -19,6 +24,7 @@ import {
   tileLabel,
   toClientRoomViewModel,
 } from "@leshan-mahjong/client-core";
+import NetInfo from "@react-native-community/netinfo";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AppState,
@@ -40,8 +46,22 @@ import {
 import { mobileRoomSessionStore } from "./sessionStore";
 import { TileFace } from "./TileFace";
 
-type ConnectionStatus = "idle" | "connecting" | "online" | "background" | "offline" | "error";
+type ConnectionStatus =
+  | "idle"
+  | "connecting"
+  | "background"
+  | "offline"
+  | "waiting"
+  | "reconnecting"
+  | "resuming"
+  | "online"
+  | "failed"
+  | "error";
 type Identity = { playerId: string; sessionToken: string };
+type PendingActionConfirmation = {
+  action: ClientLegalAction;
+  actionId: string | null;
+};
 type SelectedDiscard = { tile: Tile; actionId: string };
 type SelectedGang = {
   action: "claimAnGang" | "claimBaGang";
@@ -51,6 +71,15 @@ type SelectedGang = {
 
 const seatIds: PlayerId[] = [0, 1, 2, 3];
 const suits: Suit[] = ["bamboos", "dots", "characters"];
+const initialReconnectState: ReconnectState = {
+  phase: "offline",
+  attempt: 0,
+  maxAttempts: 4,
+  generation: 0,
+  nextRetryAt: null,
+  retryDelayMs: null,
+  lastError: null,
+};
 
 export function MobileApp() {
   const [serverUrl, setServerUrl] = useState("ws://127.0.0.1:8787");
@@ -64,17 +93,36 @@ export function MobileApp() {
   const [storedSession, setStoredSession] = useState<PersistedRoomSession | null>(null);
   const [selectedDiscard, setSelectedDiscard] = useState<SelectedDiscard | null>(null);
   const [selectedGang, setSelectedGang] = useState<SelectedGang | null>(null);
+  const [pendingConfirmation, setPendingConfirmation] = useState<PendingActionConfirmation | null>(null);
+  const [reconnectState, setReconnectState] = useState<ReconnectState>(initialReconnectState);
+  const [reconnectActive, setReconnectActive] = useState(false);
+  const [countdownNow, setCountdownNow] = useState(Date.now());
   const [actionBusy, setActionBusy] = useState(false);
   const gatewayRef = useRef<MobileRoomGateway | null>(null);
+  const pendingGatewayRef = useRef<MobileRoomGateway | null>(null);
   const sessionRef = useRef<PersistedRoomSession | null>(null);
   const connectionGeneration = useRef(0);
+  const pendingConfirmationRef = useRef<PendingActionConfirmation | null>(null);
+  const activeActionRef = useRef<PendingActionConfirmation | null>(null);
+  const reconnectSuccessTextRef = useRef("会话恢复成功");
+  const reconnectAttemptRef = useRef<
+    (context: ReconnectAttemptContext) => Promise<ReconnectAttemptResult>
+  >(async () => ({ ok: false, reason: "reconnectNotReady" }));
+  const reconnectCoordinatorRef = useRef<ReconnectCoordinator | null>(null);
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  const networkConnectedRef = useRef<boolean | null>(null);
   const lastPersistedEventId = useRef(-1);
   const autoDrawInFlight = useRef<string | null>(null);
   const viewModel = useMemo(
     () => (snapshot === null ? null : toClientRoomViewModel(snapshot)),
     [snapshot],
   );
+  reconnectAttemptRef.current = performReconnectAttempt;
+  if (reconnectCoordinatorRef.current === null) {
+    reconnectCoordinatorRef.current = createReconnectCoordinator({
+      attempt: (context) => reconnectAttemptRef.current(context),
+    });
+  }
 
   useEffect(() => {
     void mobileRoomSessionStore.load().then((record) => {
@@ -91,6 +139,54 @@ export function MobileApp() {
   }, []);
 
   useEffect(() => {
+    const coordinator = reconnectCoordinatorRef.current!;
+    return coordinator.subscribe(setReconnectState);
+  }, []);
+
+  useEffect(() => {
+    if (!reconnectActive) {
+      return;
+    }
+    if (reconnectState.phase === "waiting") {
+      setConnectionStatus("waiting");
+      const seconds = reconnectState.nextRetryAt === null
+        ? 0
+        : Math.max(0, Math.ceil((reconnectState.nextRetryAt - countdownNow) / 1_000));
+      setStatusText(`连接中断，${seconds} 秒后进行第 ${reconnectState.attempt + 1} 次重试`);
+      return;
+    }
+    if (reconnectState.phase === "reconnecting") {
+      setConnectionStatus("reconnecting");
+      setStatusText(`正在进行第 ${reconnectState.attempt} 次重新连接`);
+      return;
+    }
+    if (reconnectState.phase === "resuming") {
+      setConnectionStatus("resuming");
+      setStatusText("连接已建立，正在恢复服务端牌局快照");
+      return;
+    }
+    if (reconnectState.phase === "failed") {
+      setConnectionStatus("failed");
+      setStatusText("自动重连失败，请检查网络或手动重新连接");
+      return;
+    }
+    if (reconnectState.phase === "online") {
+      setConnectionStatus("online");
+      setStatusText(reconnectSuccessTextRef.current);
+      setReconnectActive(false);
+    }
+  }, [countdownNow, reconnectActive, reconnectState]);
+
+  useEffect(() => {
+    if (!reconnectActive || reconnectState.phase !== "waiting") {
+      return;
+    }
+    setCountdownNow(Date.now());
+    const timer = setInterval(() => setCountdownNow(Date.now()), 250);
+    return () => clearInterval(timer);
+  }, [reconnectActive, reconnectState.phase, reconnectState.nextRetryAt]);
+
+  useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextState) => {
       const previousState = appStateRef.current;
       appStateRef.current = nextState;
@@ -101,23 +197,44 @@ export function MobileApp() {
 
         if (activeGateway !== null && activeSession !== null) {
           void persistSession(activeGateway, activeSession);
-          activeGateway.close();
-          gatewayRef.current = null;
-          setGateway(null);
-          resetTransientTurnState();
-          setConnectionStatus("background");
-          setStatusText("应用已进入后台，会话已安全保存");
         }
+        markActiveActionPending();
+        reconnectCoordinatorRef.current?.pause("background");
+        setReconnectActive(false);
+        closeCurrentGateway();
+        setConnectionStatus("background");
+        setStatusText("应用已进入后台，会话已安全保存");
         return;
       }
 
       if (nextState === "active" && previousState !== "active" && sessionRef.current !== null) {
-        void resumeStoredSession(sessionRef.current, "已从后台恢复连接");
+        requestImmediateReconnect("foreground", "已从后台恢复连接");
       }
     });
 
     return () => subscription.remove();
   }, []);
+
+  useEffect(() => NetInfo.addEventListener((networkState) => {
+    const connected = networkState.isConnected === true && networkState.isInternetReachable !== false;
+    const wasConnected = networkConnectedRef.current;
+    networkConnectedRef.current = connected;
+
+    if (
+      connected &&
+      wasConnected === false &&
+      appStateRef.current === "active" &&
+      sessionRef.current !== null &&
+      gatewayRef.current === null
+    ) {
+      requestImmediateReconnect("networkAvailable", "网络已恢复，牌局已重新连接");
+      return;
+    }
+
+    if (!connected && wasConnected === true && gatewayRef.current !== null) {
+      handleUnexpectedDisconnect(gatewayRef.current, "网络连接不可用");
+    }
+  }), []);
 
   useEffect(() => {
     if (gateway === null) {
@@ -125,6 +242,9 @@ export function MobileApp() {
     }
 
     return gateway.subscribe((transportState) => {
+      if (gatewayRef.current !== gateway) {
+        return;
+      }
       if (transportState.snapshot !== null) {
         setSnapshot(transportState.snapshot);
         const record = sessionRef.current;
@@ -133,8 +253,10 @@ export function MobileApp() {
         }
       }
       if (transportState.status === "closed" || transportState.status === "error") {
-        setConnectionStatus("offline");
-        setStatusText(transportState.lastError ?? "连接已断开，可使用恢复会话重新进入");
+        handleUnexpectedDisconnect(
+          gateway,
+          transportState.lastError ?? "连接已断开",
+        );
       }
     });
   }, [gateway]);
@@ -150,22 +272,39 @@ export function MobileApp() {
     }
 
     const actionId = drawAction.actionId;
+    const pendingAction = { action: drawAction.action, actionId } satisfies PendingActionConfirmation;
     autoDrawInFlight.current = actionId;
+    activeActionRef.current = pendingAction;
     setStatusText(drawAction.action === "drawGangTile" ? "系统正在发放杠后补牌" : "轮到你了，系统正在自动摸牌");
     const request = drawAction.action === "drawGangTile"
       ? gateway.drawGangTile(actionId)
       : gateway.drawTile(actionId);
     void request.then(async (result) => {
+      if (gatewayRef.current !== gateway) {
+        markPendingConfirmation(pendingAction);
+        return;
+      }
       if (!result.ok) {
+        if (isUncertainTransportResult(result)) {
+          markPendingConfirmation(pendingAction);
+        } else {
+          activeActionRef.current = null;
+        }
         setStatusText(actionFailureText(result.reason));
         return;
       }
+      activeActionRef.current = null;
       const record = sessionRef.current;
       if (record !== null) {
         const nextRecord = { ...record, lastCompletedAutoDrawActionId: actionId };
         sessionRef.current = nextRecord;
         setStoredSession(nextRecord);
-        await mobileRoomSessionStore.save(nextRecord);
+        try {
+          await mobileRoomSessionStore.save(nextRecord);
+        } catch {
+          setStatusText("已自动摸牌，但本机暂时无法保存恢复进度");
+          return;
+        }
       }
       setStatusText("已自动摸牌，请选择一张合法手牌打出");
     }).finally(() => {
@@ -204,38 +343,64 @@ export function MobileApp() {
       return;
     }
 
+    reconnectCoordinatorRef.current?.pause("newRoomEntry");
+    setReconnectActive(false);
     const generation = ++connectionGeneration.current;
     closeCurrentGateway();
     setConnectionStatus("connecting");
     setStatusText(mode === "create" ? "正在创建房间" : "正在加入房间");
 
+    let nextGateway: MobileRoomGateway | null = null;
     try {
-      const nextGateway = await connectMobileRoomGateway({ serverUrl, roomId });
+      nextGateway = await connectMobileRoomGateway({ serverUrl, roomId });
+      if (generation !== connectionGeneration.current) {
+        nextGateway.close();
+        return;
+      }
+      pendingGatewayRef.current = nextGateway;
       const result = mode === "create"
         ? await nextGateway.createRoomSession({ displayName: displayName.trim() })
         : await nextGateway.joinRoomSession({ displayName: displayName.trim() });
 
       if (generation !== connectionGeneration.current) {
+        pendingGatewayRef.current = null;
         nextGateway.close();
         return;
       }
 
       if (!result.ok) {
+        pendingGatewayRef.current = null;
         nextGateway.close();
         setConnectionStatus("error");
         setStatusText(actionFailureText(result.reason));
         return;
       }
 
-      await attachAuthenticatedGateway(nextGateway, result.playerId, result.sessionToken);
+      const attached = await attachAuthenticatedGateway(
+        nextGateway,
+        result.playerId,
+        result.sessionToken,
+        generation,
+      );
+      if (!attached) {
+        return;
+      }
+      reconnectCoordinatorRef.current?.markOnline();
       setStatusText(mode === "create" ? "房间已创建" : "已加入房间");
     } catch {
+      if (pendingGatewayRef.current === nextGateway) {
+        pendingGatewayRef.current = null;
+      }
+      nextGateway?.close();
+      if (generation !== connectionGeneration.current) {
+        return;
+      }
       setConnectionStatus("offline");
       setStatusText("连接失败，请检查服务器地址和本地服务");
     }
   }
 
-  async function resumeStoredSession(
+  function resumeStoredSession(
     record: PersistedRoomSession | null = storedSession,
     successText = "会话恢复成功",
   ) {
@@ -244,41 +409,74 @@ export function MobileApp() {
       setStatusText("没有可恢复的会话");
       return;
     }
+    sessionRef.current = record;
+    setStoredSession(record);
+    requestImmediateReconnect("manualRetry", successText);
+  }
+
+  async function performReconnectAttempt(
+    context: ReconnectAttemptContext,
+  ): Promise<ReconnectAttemptResult> {
+    const record = sessionRef.current;
+    if (record === null) {
+      return { ok: false, reason: "missingSession", terminal: true };
+    }
 
     const generation = ++connectionGeneration.current;
     closeCurrentGateway();
-    setConnectionStatus("connecting");
-    setStatusText("正在恢复会话");
-
+    let nextGateway: MobileRoomGateway | null = null;
     try {
-      const nextGateway = await connectMobileRoomGateway(record);
+      nextGateway = await connectMobileRoomGateway(record);
+      if (!context.isCurrent() || generation !== connectionGeneration.current) {
+        nextGateway.close();
+        return { ok: false, reason: "supersededReconnect", terminal: true };
+      }
+      pendingGatewayRef.current = nextGateway;
+      if (!context.markResuming()) {
+        pendingGatewayRef.current = null;
+        nextGateway.close();
+        return { ok: false, reason: "supersededReconnect", terminal: true };
+      }
+
       const result = await nextGateway.resumeSession({
         sessionToken: record.sessionToken,
         lastSeenEventId: record.lastEventId,
       });
-
-      if (generation !== connectionGeneration.current) {
+      if (!context.isCurrent() || generation !== connectionGeneration.current) {
+        pendingGatewayRef.current = null;
         nextGateway.close();
-        return;
+        return { ok: false, reason: "supersededReconnect", terminal: true };
       }
-
       if (!result.ok) {
+        pendingGatewayRef.current = null;
         nextGateway.close();
-
-        if (result.reason === "actionRejected") {
-          await clearStoredSession();
+        const terminal = result.kind === "protocol" ||
+          result.code === "invalidSession" || result.code === "roomNotFound";
+        if (terminal) {
+          await invalidateStoredSession();
         }
-
-        setConnectionStatus("error");
-        setStatusText(actionFailureText(result.reason));
-        return;
+        return { ok: false, reason: result.reason, terminal };
       }
 
-      await attachAuthenticatedGateway(nextGateway, result.playerId, result.sessionToken);
-      setStatusText(successText);
-    } catch {
-      setConnectionStatus("offline");
-      setStatusText("恢复失败，服务器当前不可用");
+      const attached = await attachAuthenticatedGateway(
+        nextGateway,
+        result.playerId,
+        result.sessionToken,
+        generation,
+        context.isCurrent,
+      );
+      return attached
+        ? { ok: true }
+        : { ok: false, reason: "supersededReconnect", terminal: true };
+    } catch (error) {
+      if (pendingGatewayRef.current === nextGateway) {
+        pendingGatewayRef.current = null;
+      }
+      nextGateway?.close();
+      return {
+        ok: false,
+        reason: error instanceof Error ? error.message : "reconnectFailed",
+      };
     }
   }
 
@@ -286,8 +484,21 @@ export function MobileApp() {
     nextGateway: MobileRoomGateway,
     playerId: string,
     sessionToken: string,
-  ) {
+    expectedGeneration: number,
+    isCurrent: () => boolean = () => true,
+  ): Promise<boolean> {
     const nextSnapshot = await nextGateway.waitForSnapshot();
+    if (
+      !isCurrent() ||
+      expectedGeneration !== connectionGeneration.current ||
+      pendingGatewayRef.current !== nextGateway
+    ) {
+      if (pendingGatewayRef.current === nextGateway) {
+        pendingGatewayRef.current = null;
+      }
+      nextGateway.close();
+      return false;
+    }
     const previousRecord = sessionRef.current;
     const record: PersistedRoomSession = {
       serverUrl: nextGateway.getState().url,
@@ -300,6 +511,7 @@ export function MobileApp() {
         : undefined,
     };
 
+    pendingGatewayRef.current = null;
     gatewayRef.current = nextGateway;
     sessionRef.current = record;
     setGateway(nextGateway);
@@ -307,9 +519,15 @@ export function MobileApp() {
     setSnapshot(nextSnapshot);
     setStoredSession(record);
     setConnectionStatus("online");
+    clearPendingConfirmation();
     resetTransientTurnState();
-    await mobileRoomSessionStore.save(record);
+    try {
+      await mobileRoomSessionStore.save(record);
+    } catch {
+      setStatusText("连接已恢复，但安全会话暂时无法保存到本机");
+    }
     lastPersistedEventId.current = record.lastEventId;
+    return true;
   }
 
   async function runRoomAction(
@@ -321,24 +539,44 @@ export function MobileApp() {
       return;
     }
 
+    const actionGateway = gateway;
+    const pendingAction: PendingActionConfirmation = {
+      action,
+      actionId: descriptorForAction(snapshot, action)?.actionId ?? null,
+    };
+    activeActionRef.current = pendingAction;
     setActionBusy(true);
     let result: ClientTransportActionResult;
     try {
-      result = await callback(gateway);
+      result = await callback(actionGateway);
     } catch {
-      setConnectionStatus("offline");
-      setStatusText("连接中断，操作未确认，请恢复会话后查看服务端状态");
+      markPendingConfirmation(pendingAction);
+      if (gatewayRef.current === actionGateway) {
+        handleUnexpectedDisconnect(actionGateway, "动作结果未确认");
+      }
       return;
     } finally {
       setActionBusy(false);
     }
 
+    if (gatewayRef.current !== actionGateway) {
+      markPendingConfirmation(pendingAction);
+      return;
+    }
     if (!result.ok) {
+      if (isUncertainTransportResult(result)) {
+        markPendingConfirmation(pendingAction);
+        handleUnexpectedDisconnect(actionGateway, actionFailureText(result.reason));
+      } else {
+        activeActionRef.current = null;
+      }
       setStatusText(actionFailureText(result.reason));
       return;
     }
 
-    await persistSession(gateway, sessionRef.current);
+    activeActionRef.current = null;
+    clearPendingConfirmation();
+    await persistSession(actionGateway, sessionRef.current);
     setStatusText(actionSuccessText(action));
   }
 
@@ -367,23 +605,93 @@ export function MobileApp() {
   }
 
   async function clearStoredSession() {
+    reconnectCoordinatorRef.current?.pause("sessionCleared");
+    setReconnectActive(false);
     connectionGeneration.current += 1;
     closeCurrentGateway();
     sessionRef.current = null;
     setStoredSession(null);
     setIdentity(null);
     setSnapshot(null);
+    clearPendingConfirmation();
     resetTransientTurnState();
     setConnectionStatus("idle");
     setStatusText("已清除本机保存的会话");
     await mobileRoomSessionStore.clear();
   }
 
-  function closeCurrentGateway() {
-    gatewayRef.current?.close();
+  async function invalidateStoredSession() {
+    sessionRef.current = null;
+    setStoredSession(null);
+    setIdentity(null);
+    setSnapshot(null);
+    clearPendingConfirmation();
+    resetTransientTurnState();
+    await mobileRoomSessionStore.clear();
+  }
+
+  function requestImmediateReconnect(reason: string, successText: string) {
+    if (sessionRef.current === null) {
+      setConnectionStatus("error");
+      setStatusText("没有可恢复的会话");
+      return;
+    }
+    reconnectSuccessTextRef.current = successText;
+    setReconnectActive(true);
+    reconnectCoordinatorRef.current?.retryNow(reason);
+  }
+
+  function handleUnexpectedDisconnect(activeGateway: MobileRoomGateway, reason: string) {
+    if (gatewayRef.current !== activeGateway) {
+      return;
+    }
+    markActiveActionPending();
     gatewayRef.current = null;
     setGateway(null);
     resetTransientTurnState();
+    activeGateway.close();
+    if (sessionRef.current === null || appStateRef.current !== "active") {
+      setConnectionStatus("offline");
+      setStatusText(reason);
+      return;
+    }
+    reconnectSuccessTextRef.current = pendingConfirmationRef.current === null
+      ? "连接已恢复"
+      : "连接已恢复，操作结果已按服务器最新牌局确认";
+    setReconnectActive(true);
+    reconnectCoordinatorRef.current?.start(reason);
+  }
+
+  function markActiveActionPending() {
+    if (activeActionRef.current !== null) {
+      markPendingConfirmation(activeActionRef.current);
+    }
+  }
+
+  function markPendingConfirmation(pending: PendingActionConfirmation) {
+    activeActionRef.current = null;
+    pendingConfirmationRef.current = pending;
+    setPendingConfirmation(pending);
+  }
+
+  function clearPendingConfirmation() {
+    activeActionRef.current = null;
+    pendingConfirmationRef.current = null;
+    setPendingConfirmation(null);
+  }
+
+  function closeCurrentGateway() {
+    const activeGateway = gatewayRef.current;
+    const pendingGateway = pendingGatewayRef.current;
+    gatewayRef.current = null;
+    pendingGatewayRef.current = null;
+    setGateway(null);
+    resetTransientTurnState();
+    activeActionRef.current = null;
+    activeGateway?.close();
+    if (pendingGateway !== activeGateway) {
+      pendingGateway?.close();
+    }
   }
 
   function resetTransientTurnState() {
@@ -406,6 +714,14 @@ export function MobileApp() {
         <View style={styles.statusBand}>
           <Text style={styles.statusText}>{statusText}</Text>
         </View>
+        {pendingConfirmation === null ? null : (
+          <View style={styles.pendingConfirmationBand}>
+            <Text style={styles.pendingConfirmationTitle}>操作结果待确认</Text>
+            <Text style={styles.pendingConfirmationText}>
+              {actionLabel(pendingConfirmation.action)}请求可能已经到达服务端。恢复后将以最新牌局为准，不会自动重放。
+            </Text>
+          </View>
+        )}
 
         <Section title="服务器与房间">
           <Field label="服务器地址" value={serverUrl} onChangeText={setServerUrl} autoCapitalize="none" />
@@ -418,12 +734,21 @@ export function MobileApp() {
             </View>
           </View>
           <View style={styles.actionRow}>
-            <CommandButton label="创建房间" onPress={() => void createOrJoinRoom("create")} disabled={connectionStatus === "connecting"} />
-            <CommandButton label="加入房间" onPress={() => void createOrJoinRoom("join")} disabled={connectionStatus === "connecting"} tone="secondary" />
+            <CommandButton label="创建房间" onPress={() => void createOrJoinRoom("create")} disabled={actionBusy || isConnectionBusy(connectionStatus)} />
+            <CommandButton label="加入房间" onPress={() => void createOrJoinRoom("join")} disabled={actionBusy || isConnectionBusy(connectionStatus)} tone="secondary" />
           </View>
           <View style={styles.actionRow}>
-            <CommandButton label="恢复会话" onPress={() => void resumeStoredSession()} disabled={storedSession === null || connectionStatus === "connecting"} tone="quiet" />
-            <CommandButton label="清除会话" onPress={() => void clearStoredSession()} disabled={storedSession === null} tone="danger" />
+            <CommandButton
+              label={connectionStatus === "online"
+                ? "已连接"
+                : connectionStatus === "waiting" || connectionStatus === "failed"
+                  ? "立即重新连接"
+                  : "恢复会话"}
+              onPress={() => resumeStoredSession()}
+              disabled={storedSession === null || connectionStatus === "online" || isConnectionBusy(connectionStatus)}
+              tone="quiet"
+            />
+            <CommandButton label="清除会话" onPress={() => void clearStoredSession()} disabled={storedSession === null || actionBusy} tone="danger" />
           </View>
         </Section>
 
@@ -557,7 +882,13 @@ export function MobileApp() {
     sessionRef.current = nextRecord;
     setStoredSession(nextRecord);
     lastPersistedEventId.current = nextRecord.lastEventId;
-    await mobileRoomSessionStore.save(nextRecord);
+    try {
+      await mobileRoomSessionStore.save(nextRecord);
+    } catch {
+      if (sessionRef.current?.sessionToken === nextRecord.sessionToken) {
+        setStatusText("牌局已同步，但本机暂时无法保存恢复进度");
+      }
+    }
   }
 }
 
@@ -833,23 +1164,33 @@ function MetaItem({ label, value }: { label: string; value: string }) {
 }
 
 function StatusBadge({ status }: { status: ConnectionStatus }) {
-  const text = status === "online"
-    ? "在线"
-    : status === "connecting"
-      ? "连接中"
-      : status === "background"
-        ? "后台"
-        : status === "offline"
-          ? "离线"
-          : status === "error"
-            ? "异常"
-            : "未连接";
+  const labels: Record<ConnectionStatus, string> = {
+    idle: "未连接",
+    connecting: "连接中",
+    background: "后台",
+    offline: "离线",
+    waiting: "等待重试",
+    reconnecting: "重连中",
+    resuming: "恢复中",
+    online: "在线",
+    failed: "重连失败",
+    error: "异常",
+  };
 
   return (
-    <View style={[styles.statusBadge, status === "online" && styles.statusBadgeOnline]}>
-      <Text style={styles.statusBadgeText}>{text}</Text>
+    <View style={[
+      styles.statusBadge,
+      status === "online" && styles.statusBadgeOnline,
+      (status === "waiting" || status === "reconnecting" || status === "resuming") && styles.statusBadgeWaiting,
+      (status === "failed" || status === "error" || status === "offline") && styles.statusBadgeError,
+    ]}>
+      <Text style={styles.statusBadgeText}>{labels[status]}</Text>
     </View>
   );
+}
+
+function isConnectionBusy(status: ConnectionStatus): boolean {
+  return status === "connecting" || status === "reconnecting" || status === "resuming";
 }
 
 function localSeat(viewModel: ClientRoomViewModel | null): ClientSeatViewModel | null {
@@ -914,6 +1255,10 @@ function actionFailureText(reason: string): string {
   return labels[reason] ?? `操作失败：${reason}`;
 }
 
+function isUncertainTransportResult(result: ClientTransportActionResult): boolean {
+  return !result.ok && (result.kind === "transport" || result.kind === "protocol");
+}
+
 function meldLabel(meld: ClientVisibleMeld): string {
   if (meld.type === "anGang" && meld.tile === null) {
     return "暗杠";
@@ -969,6 +1314,12 @@ const styles = StyleSheet.create({
   statusBadgeOnline: {
     backgroundColor: "#24704B",
   },
+  statusBadgeWaiting: {
+    backgroundColor: "#9B6A1D",
+  },
+  statusBadgeError: {
+    backgroundColor: "#9A3D3D",
+  },
   statusBadgeText: {
     color: "#FFFFFF",
     fontSize: 13,
@@ -986,6 +1337,25 @@ const styles = StyleSheet.create({
     color: "#29463A",
     fontSize: 14,
     lineHeight: 20,
+  },
+  pendingConfirmationBand: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    backgroundColor: "#FFF1D6",
+    borderBottomWidth: 1,
+    borderBottomColor: "#E3C98E",
+  },
+  pendingConfirmationTitle: {
+    color: "#69480F",
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: "800",
+  },
+  pendingConfirmationText: {
+    color: "#745B2D",
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 2,
   },
   section: {
     paddingHorizontal: 16,

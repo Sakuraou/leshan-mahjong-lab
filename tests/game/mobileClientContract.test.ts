@@ -67,6 +67,25 @@ test("strict mobile parser projects a safe snapshot and rejects hidden fields", 
     ok: false,
     reason: "牌局公开视图结构不合法",
   });
+
+  const withPrivateMissedEvent = structuredClone(message) as unknown as {
+    payload: { events: Array<{ type: string; pendingPlayerIds: number[] }> };
+  };
+  withPrivateMissedEvent.payload.events = [{ type: "claimResponse", pendingPlayerIds: [1, 2] }];
+  assert.deepEqual(parseMobileRoomServerMessage(withPrivateMissedEvent), {
+    ok: false,
+    reason: "roomSnapshot 包含客户端禁止字段",
+  });
+
+  const withPublicMissedEvent = structuredClone(message) as unknown as {
+    payload: { events: Array<{ type: string; playerId: string; connected: boolean }> };
+  };
+  withPublicMissedEvent.payload.events = [{ type: "presenceChanged", playerId: "p1", connected: true }];
+  const publicEventParsed = parseMobileRoomServerMessage(withPublicMissedEvent);
+  assert.equal(publicEventParsed.ok, true);
+  if (publicEventParsed.ok && publicEventParsed.message.type === "roomSnapshot") {
+    assert.equal("events" in publicEventParsed.message.payload, false);
+  }
 });
 
 test("strict mobile parser rejects malformed message envelopes", () => {
@@ -257,6 +276,126 @@ test("single-session mobile transport consumes real WebSocket server snapshots",
     guest.close();
     await server.close();
   }
+});
+
+test("a fresh mobile transport resumes the same real session and seat", async () => {
+  const server = await createRoomSocketDevServer({ port: 0 });
+  const first = await createMobileRoomTransport({
+    url: server.url,
+    roomId: "mobile-resume-room",
+    socketFactory: (url) => new WebSocket(url) as unknown as MobileWebSocketLike,
+  });
+  let resumed: MobileRoomTransport | null = null;
+  try {
+    const created = await first.createRoomSession({ displayName: "Host" });
+    assert.equal(created.ok, true);
+    if (!created.ok) return;
+    assert.equal((await first.takeSeat(0)).ok, true);
+    const beforeClose = await waitForTransport(first, (state) =>
+      state.snapshot?.seats[0].playerId === created.playerId ? state : null);
+    first.close();
+    await delay(20);
+
+    resumed = await createMobileRoomTransport({
+      url: server.url,
+      roomId: "mobile-resume-room",
+      socketFactory: (url) => new WebSocket(url) as unknown as MobileWebSocketLike,
+    });
+    const recovery = await resumed.resumeSession({
+      sessionToken: created.sessionToken,
+      lastSeenEventId: beforeClose.lastEventId,
+    });
+    assert.equal(recovery.ok, true);
+    if (!recovery.ok) return;
+    const recovered = await waitForTransport(resumed, (state) =>
+      state.snapshot?.seats[0].connected === true ? state : null);
+    assert.equal(recovery.playerId, created.playerId);
+    assert.equal(recovery.sessionToken, created.sessionToken);
+    assert.equal(recovered.playerId, created.playerId);
+    assert.equal(recovered.sessionToken, created.sessionToken);
+    assert.equal(recovered.snapshot?.seats[0].playerId, created.playerId);
+  } finally {
+    first.close();
+    resumed?.close();
+    await server.close();
+  }
+});
+
+test("recovery transport sends only resume and never replays an uncertain discard", async () => {
+  const firstSocket = new FakeSocket();
+  const firstPromise = createMobileRoomTransport({
+    url: "ws://example.test",
+    roomId: "ROOM",
+    socketFactory: () => firstSocket,
+  });
+  firstSocket.open();
+  const first = await firstPromise;
+  const createPromise = first.createRoomSession({ displayName: "手机玩家" });
+  const createRequest = JSON.parse(firstSocket.sent[0]) as { clientMessageId: string };
+  firstSocket.serverSend({
+    protocolVersion: 1,
+    serverEventId: 1,
+    roomId: "ROOM",
+    recipientSessionToken: "secure-token",
+    type: "actionAccepted",
+    payload: { clientMessageId: createRequest.clientMessageId, playerId: "p1" },
+  });
+  assert.equal((await createPromise).ok, true);
+
+  let room = startedRoom();
+  for (const [playerId, suit] of [
+    ["p1", "characters"],
+    ["p2", "dots"],
+    ["p3", "dots"],
+    ["p4", "dots"],
+  ] as const) {
+    const chosen = chooseMissingSuit(room, playerId, suit);
+    assert.equal(chosen.ok, true);
+    if (chosen.ok) room = chosen.room;
+  }
+  const view = toClientVisibleRoomState(room, "p1");
+  firstSocket.serverSend(snapshotMessage(view, "p1"));
+  const descriptor = descriptorForAction(view, "discardTile");
+  const discard = legalTilesForAction(view, "discardTile")[0];
+  assert.notEqual(descriptor, null);
+  assert.notEqual(discard, undefined);
+
+  const uncertainDiscard = first.discardTile(discard!, descriptor!.actionId);
+  assert.equal((JSON.parse(firstSocket.sent.at(-1)!) as { type: string }).type, "discardTile");
+  firstSocket.close();
+  assert.deepEqual(await uncertainDiscard, {
+    ok: false,
+    kind: "transport",
+    code: "closed",
+    reason: "连接已关闭",
+  });
+
+  const recoverySocket = new FakeSocket();
+  const recoveryPromise = createMobileRoomTransport({
+    url: "ws://example.test",
+    roomId: "ROOM",
+    socketFactory: () => recoverySocket,
+  });
+  recoverySocket.open();
+  const recovery = await recoveryPromise;
+  const resumePromise = recovery.resumeSession({ sessionToken: "secure-token", lastSeenEventId: 1 });
+  const resumeRequest = JSON.parse(recoverySocket.sent[0]) as { clientMessageId: string; type: string };
+  assert.equal(resumeRequest.type, "resumeSession");
+  recoverySocket.serverSend({
+    protocolVersion: 1,
+    serverEventId: 2,
+    roomId: "ROOM",
+    recipientSessionToken: "secure-token",
+    type: "actionAccepted",
+    payload: { clientMessageId: resumeRequest.clientMessageId, playerId: "p1" },
+  });
+  recoverySocket.serverSend(snapshotMessage(view, "p1"));
+  assert.equal((await resumePromise).ok, true);
+  assert.deepEqual(
+    recoverySocket.sent.map((entry) => (JSON.parse(entry) as { type: string }).type),
+    ["resumeSession"],
+  );
+  recovery.close();
 });
 
 test("mobile transports complete a real authoritative draw and discard turn", async () => {
@@ -458,4 +597,8 @@ function waitForTransport<T>(
       }
     });
   });
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }

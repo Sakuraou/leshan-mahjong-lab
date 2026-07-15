@@ -187,9 +187,19 @@ phone-first product.
   qiang-gang waiting, and one-shot automatic gang replacement draws
 - [x] Clear transient turn selections on recovery while preserving the last
   completed automatic draw id
+- [x] Add an injectable mobile reconnect coordinator with explicit offline,
+  waiting, reconnecting, resuming, online, and failed states plus 1/2/4/8-second
+  backoff
+- [x] Retry immediately on foreground/network recovery, isolate superseded
+  connection callbacks, and provide a manual reconnect command with countdown
+  status
+- [x] Mark interrupted user actions as pending confirmation without replay,
+  then rebuild controls from the latest authoritative snapshot and action id
+- [x] Verify real WebSocket session/seat recovery, one-shot automatic draws,
+  safe missed-event handling, and deterministic reconnect timing
 - Add settlement detail surfaces and a compact phone event timeline
-- Add vibration/audio feedback and foreground network retry backoff
-- Test Android and iOS layouts plus weak-network reconnect behavior
+- Add vibration/audio feedback
+- Test Android and iOS layouts on physical devices
 - Package an installable beta build
 
 ## Phase 6: Portfolio Polish

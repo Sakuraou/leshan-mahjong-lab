@@ -35,6 +35,19 @@ export type { ClientRoomViewModel, ClientSeatViewModel } from "./roomViewModel.t
 export { createMobileRoomTransport } from "./mobileTransport.ts";
 export type { MobileRoomTransportOptions, MobileWebSocketLike } from "./mobileTransport.ts";
 export { nextAutomaticDrawAction, nextAutomaticDrawActionId } from "./mobileTurn.ts";
+export {
+  createReconnectCoordinator,
+  DEFAULT_RECONNECT_DELAYS_MS,
+} from "./reconnectCoordinator.ts";
+export type {
+  ReconnectAttemptContext,
+  ReconnectAttemptResult,
+  ReconnectCoordinator,
+  ReconnectCoordinatorOptions,
+  ReconnectPhase,
+  ReconnectScheduler,
+  ReconnectState,
+} from "./reconnectCoordinator.ts";
 export type {
   ClientTransportActionResult,
   MobileRoomTransport,

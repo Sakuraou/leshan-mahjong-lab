@@ -869,7 +869,9 @@ they do not commit or roll back a meld locally.
 
 ## Reconnect And Recovery
 
-Each browser stores a `sessionToken` in local storage. On reload:
+The Web debug client stores a `sessionToken` in local storage. The Expo client
+stores one session in SecureStore. On reload or reconnect both use the same
+wire command:
 
 ```json
 {
@@ -919,6 +921,40 @@ Invalid tokens still return `invalidSession`.
 
 Disconnected players remain subject to authoritative claim deadlines, so an
 offline responder is automatically passed when the window expires.
+
+### Mobile Weak-Network Recovery
+
+The phone client wraps connection creation and `resumeSession` in an explicit
+coordinator with these presentation states:
+
+```ts
+type ReconnectPhase =
+  | "offline"
+  | "waiting"
+  | "reconnecting"
+  | "resuming"
+  | "online"
+  | "failed";
+```
+
+- An unexpected close waits 1, 2, 4, and 8 seconds before attempts 1-4, then
+  enters `failed`. The clock and timer API are injectable for deterministic
+  tests.
+- Returning to the foreground, regaining network reachability, or tapping the
+  manual retry command starts an immediate attempt.
+- Every cycle has a local generation. A late connect, resume result, close, or
+  error from an older generation is ignored and its socket is closed. This is
+  in addition to the server's latest-connection-only session binding.
+- User commands interrupted before `actionAccepted` or `actionRejected` are
+  displayed as pending confirmation and are never replayed. A fresh snapshot
+  and action descriptor decide what the player can do next.
+- `drawTile` and `drawGangTile` are the only automatic commands. They may be
+  sent after recovery only when the latest snapshot still carries the same
+  legal descriptor and its `actionId` is not stored as completed.
+- Resume payload events are screened for forbidden private fields. The first
+  mobile milestone intentionally drops event bodies after validation and
+  stores only the reduced snapshot plus `lastEventId`; a later public-event DTO
+  will be required before the App renders a missed-event timeline.
 
 ## Server Interface Draft
 
