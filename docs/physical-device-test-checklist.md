@@ -13,7 +13,7 @@ Fill this in before each run:
 | --- | --- |
 | App version | `0.2.0` |
 | EAS build id / APK URL | `ac719fc4-730a-4236-8b3c-bdbde3fb5495` / pending queue completion |
-| Server commit | `db302d7` plus current remote-beta hardening commit |
+| Server commit | `d226682` |
 | WSS endpoint | `wss://leshan-mahjong-room-server.onrender.com/ws` |
 | Test date and network | |
 | Device A model / Android | |

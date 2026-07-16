@@ -26,6 +26,9 @@
   boundary passed remotely. Expo project `@twilight111/leshan-mahjong` is now
   bound, its preview WSS environment is configured, and signed Android build
   `ac719fc4-730a-4236-8b3c-bdbde3fb5495` has entered the EAS Free Tier queue.
+- Observed the `d226682` Render redeploy with a live public WebSocket: the old
+  connection closed, readiness returned, and the four-client remote smoke
+  passed on the replacement instance.
 - Added server-authoritative voluntary ba-gang candidates for each physical
   hand tile and peng, including normal, yao-ji, and delayed-natural zero-point
   payment previews.

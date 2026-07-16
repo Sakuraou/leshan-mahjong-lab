@@ -102,10 +102,12 @@ pong cannot force the backend's native stale timer to expire. That timer remains
 covered by the local production smoke; remote acceptance instead covers the
 authoritative response deadline and an actual socket close/resume.
 
-Graceful shutdown remains a local deterministic test until a controlled Render
-redeploy is observed with a connected client. During physical acceptance, that
-redeploy must confirm the App enters recovery; because state is in memory, the
-old room is expected to be unavailable after the new instance starts.
+A controlled Render redeploy for commit `d226682` was observed with a healthy
+public WebSocket held open. The connection opened, closed with code `1006`
+during the instance switch, readiness returned `200`, and the complete remote
+four-client smoke then passed again. This proves the public client receives a
+disconnect and can enter recovery. Because state is in memory, an old room is
+still expected to be unavailable after a new instance starts.
 
 ## Expo Project Binding
 
