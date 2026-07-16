@@ -12,6 +12,9 @@
   disconnect, and resume. It also probes untrusted Origin rejection, oversized
   messages, heartbeat health, and stale-socket expiry without printing session
   credentials.
+- Kept the Render Free Blueprint compatible by relying on the platform's
+  default shutdown window while retaining the server's own 5-second graceful
+  drain.
 - Expanded the four-device checklist for voluntary ba gang, immediate versus
   delayed-natural scoring, yao-ji continuation, qiang-gang, repeated gang
   exchange, exchange-created self-draw prompts, touch ordering, reconnect, and

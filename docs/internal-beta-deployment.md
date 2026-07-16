@@ -68,7 +68,7 @@ The production runtime provides:
 | Maximum message | `65536` bytes |
 | Heartbeat interval | `10000` ms |
 | Connection timeout | `30000` ms |
-| Shutdown grace | `5000` ms application, `15` s provider maximum |
+| Shutdown grace | `5000` ms in the application; provider uses its Free-tier default |
 | Replicas | `1` |
 
 ## Remote Server Verification
