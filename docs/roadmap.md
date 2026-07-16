@@ -193,6 +193,12 @@ phone-first product.
   reject delayed actions as `staleAction` in the authoritative service
 - [x] Add server-provided an-gang/ba-gang candidate selection, confirmation,
   qiang-gang waiting, and one-shot automatic gang replacement draws
+- [x] Implement the confirmed voluntary continue-gang candidates by exposed meld,
+  including normal scoring for yao-ji continuations, immediate natural-draw
+  payment eligibility, and zero-point delayed natural-tile ba gang
+- [x] Implement repeated yao-ji exchange for established ming/an/ba gangs without
+  changing frozen ledger facts, granting a replacement draw, or opening the
+  current ruleset's qiang-gang window; offer exchange-created hu as self-draw
 - [x] Clear transient turn selections on recovery while preserving the last
   completed automatic draw id
 - [x] Add an injectable mobile reconnect coordinator with explicit offline,
@@ -225,6 +231,8 @@ phone-first product.
 - [x] Add Expo/EAS development, LAN internal, preview APK, and production build
   profiles with production cleartext disabled
 - [x] Add production/mobile endpoint tests and a four-device beta checklist
+- [x] Add touch/drag local-hand ordering with stable tile ids, sorted initial deal,
+  one-tile draw insertion, reconnect restoration, and no manual arrange action
 - Add vibration/audio feedback
 - Test Android and iOS layouts on physical devices
 - Link owner hosting and Expo accounts, deploy the WSS server, and generate the

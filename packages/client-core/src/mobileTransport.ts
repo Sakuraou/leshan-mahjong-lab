@@ -112,14 +112,23 @@ export async function createMobileRoomTransport(
     chooseMissingSuit: (suit) => sendSessionAction("chooseMissingSuit", { suit }),
     drawTile: (expectedActionId) => sendGuardedSessionAction("drawTile", {}, expectedActionId),
     drawGangTile: (expectedActionId) => sendGuardedSessionAction("drawGangTile", {}, expectedActionId),
-    discardTile: (tile, expectedActionId) => sendGuardedSessionAction("discardTile", { tile }, expectedActionId),
+    discardTile: (tile, expectedActionId) => sendGuardedSessionAction(
+      "discardTile",
+      { tile: { suit: tile.suit, rank: tile.rank }, tileId: tile.tileId },
+      expectedActionId,
+    ),
     passClaim: (expectedActionId) => sendGuardedSessionAction("passClaim", {}, expectedActionId),
     claimHu: (expectedActionId) => sendGuardedSessionAction("claimHu", {}, expectedActionId),
     claimSelfDrawHu: (expectedActionId) => sendGuardedSessionAction("claimSelfDrawHu", {}, expectedActionId),
     claimPeng: (expectedActionId) => sendGuardedSessionAction("claimPeng", {}, expectedActionId),
     claimMingGang: (expectedActionId) => sendGuardedSessionAction("claimMingGang", {}, expectedActionId),
     claimAnGang: (tile, expectedActionId) => sendGuardedSessionAction("claimAnGang", { tile }, expectedActionId),
-    claimBaGang: (tile, expectedActionId) => sendGuardedSessionAction("claimBaGang", { tile }, expectedActionId),
+    claimBaGang: (candidateId, expectedActionId) => sendGuardedSessionAction("claimBaGang", { candidateId }, expectedActionId),
+    exchangeGangYaoJi: (candidateId, expectedActionId) => sendGuardedSessionAction(
+      "exchangeGangYaoJi",
+      { candidateId },
+      expectedActionId,
+    ),
     passQiangGang: (expectedActionId) => sendGuardedSessionAction("passQiangGang", {}, expectedActionId),
     claimQiangGangHu: (expectedActionId) => sendGuardedSessionAction("claimQiangGangHu", {}, expectedActionId),
     getState: () => state,
@@ -190,6 +199,7 @@ export async function createMobileRoomTransport(
       | "claimMingGang"
       | "claimAnGang"
       | "claimBaGang"
+      | "exchangeGangYaoJi"
       | "passQiangGang"
       | "claimQiangGangHu"
     >,

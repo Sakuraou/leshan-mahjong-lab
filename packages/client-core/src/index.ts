@@ -1,12 +1,16 @@
 export type {
   ClientActionDescriptor,
+  ClientBaGangCandidate,
   ClientLegalAction,
+  ClientOwnedTile,
   ClientResponseChoice,
   ClientVisibleMeld,
   ClientVisiblePlayerState,
   ClientVisibleResponseWindow,
   ClientVisibleRoomState,
   ClientVisibleSeatState,
+  ClientYaoJiExchangeCandidate,
+  BaGangPaymentEligibility,
   MobileRoomServerMessage,
   MobilePublicEvent,
   MobileGameEndState,
@@ -60,6 +64,11 @@ export type { ClientRoomViewModel, ClientSeatViewModel } from "./roomViewModel.t
 export { createMobileRoomTransport } from "./mobileTransport.ts";
 export type { MobileRoomTransportOptions, MobileWebSocketLike } from "./mobileTransport.ts";
 export { nextAutomaticDrawAction, nextAutomaticDrawActionId } from "./mobileTurn.ts";
+export {
+  moveMobileHandTile,
+  orderMobileHand,
+  reconcileMobileHandOrder,
+} from "./mobileHandOrder.ts";
 export {
   createReconnectCoordinator,
   DEFAULT_RECONNECT_DELAYS_MS,

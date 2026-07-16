@@ -1,5 +1,22 @@
 # Release Notes
 
+## 2026-07-16
+
+- Added server-authoritative voluntary ba-gang candidates for each physical
+  hand tile and peng, including normal, yao-ji, and delayed-natural zero-point
+  payment previews.
+- Added immutable zero-point ba-gang facts so later yao-ji exchange cannot
+  rewrite gang provenance, payer sets, or scoring history.
+- Added `exchangeGangYaoJi` for established ming/an/ba gangs. It supports
+  repeated exchanges, preserves the frozen gang fact, grants no extra draw,
+  opens no qiang-gang window in this ruleset, and offers rather than forces an
+  exchange-created self-draw hu.
+- Added owner-only physical `tileId` values, opaque candidate ids, stale-action
+  rejection, and redaction coverage for an-gang and opponent hand privacy.
+- Added Expo selection/confirmation for continue-gang and yao-ji exchange plus
+  touch drag ordering. Initial hands are sorted once; draws/exchanges insert
+  only new tiles, and per-round custom order survives session recovery.
+
 ## 2026-07-15 - Remote Internal Beta Foundation
 
 - Added environment-backed mobile endpoints for local host, Android emulator,

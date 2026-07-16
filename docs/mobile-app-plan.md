@@ -70,6 +70,29 @@ now owns a single authenticated session and can continue across authoritative
 round boundaries without storing debug message history or other players'
 snapshots.
 
+## Next Interaction Milestone: Continue Gang And Hand Arrangement
+
+The next phone interaction pass will keep ba gang voluntary. The server will
+describe each legal exposed-meld target, the physical fourth tile, and whether
+that continuation still qualifies for payment. The player chooses whether to
+continue and which candidate to use; declining never blocks an ordinary
+discard. A yao-ji continuation receives the normal with-laizi payment; only a
+natural matching tile retained after its draw turn loses payment eligibility.
+A zero-point delayed continuation still uses the authoritative qiang-gang and
+gang-draw flow.
+
+The server will also offer safe candidates for exchanging a natural tile into
+an established ming/an/ba gang and returning one yao ji to the hand. The current
+ruleset changes neither the frozen gang score nor the draw phase and opens no
+qiang-gang window. An exchange-created hu is offered as self-draw and remains a
+player decision.
+
+The same milestone will add local drag ordering for the concealed hand. Deal
+snapshots get a default bamboo/dot/character rank order. Later draws insert only
+the new tile without re-sorting the player's custom layout. Dragging remains
+presentation-only and never tells the server what a yao ji represents, and the
+phone UI will not add a separate arrange button.
+
 ## Architecture
 
 ```text
@@ -112,7 +135,9 @@ The mobile parser and view model copy a fixed safe field set. They do not retain
 raw WebSocket messages, multi-player snapshot maps, shuffle seeds, wall order,
 opponent hands, private claim arrays, or concealed an-gang tiles.
 
-- Local seat: `hand` is visible and sorted for display.
+- Local seat: `hand` contains owner-only `tileId` values. The first snapshot of
+  a round is sorted bamboo/dot/character and rank; later snapshots are rendered
+  through a local order overlay instead of re-sorting the whole hand.
 - Other seats: `hand` remains `null`; only `handCount` is rendered as tile backs.
 - Response windows: only `pendingResponderCount`, `hasRespondedByMe`, and
   `responseByMe` cross the view-model boundary.
@@ -123,12 +148,19 @@ opponent hands, private claim arrays, or concealed an-gang tiles.
 - Commands: every visible button is gated by server `legalActions`.
 - Discard: selectable tiles come only from the server's `discardTile`
   descriptor; the server still performs final validation.
-- Active gangs: target tiles come only from the session-scoped `claimAnGang`
-  and `claimBaGang` descriptors. An-gang candidates and tiles are never copied
-  into another session's view.
+- Active gangs: targets come only from session-scoped `claimAnGang`,
+  `claimBaGang`, and `exchangeGangYaoJi` descriptors. Ba-gang candidates state
+  whether the selected physical tile earns normal or zero delayed-natural
+  points. Exchange candidates identify one established gang and one natural
+  hand tile; the phone never derives either candidate itself.
+- Confirmation: voluntary ba gang and yao-ji exchange always require explicit
+  selection and confirmation. Hu remains a separate player decision after an
+  exchange creates a winning hand.
 - Recovery: transient discard/gang selections are cleared, the latest snapshot
   rebuilds the action area, and the persisted completed auto-draw id prevents
-  the same replacement draw from being submitted twice.
+  the same replacement draw from being submitted twice. The per-round hand
+  order is stored with the secure session; reconnect intersects it with current
+  owner tile ids, removes stale ids, and inserts only newly seen tiles.
 - In-flight commands: ordinary user commands are never queued for replay. An
   interrupted command remains visibly unconfirmed until a fresh authoritative
   snapshot arrives. Only automatic normal/gang draws may be retried, and only

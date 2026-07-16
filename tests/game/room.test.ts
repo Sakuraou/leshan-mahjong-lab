@@ -15,8 +15,10 @@ import {
   drawGangTile,
   discardRoomTile,
   drawRoomTile,
+  exchangeGangYaoJi,
   expireClaimWindow,
   finishGame,
+  handleRoomAction,
   passClaim,
   passQiangGang,
   readyNextRound,
@@ -32,11 +34,13 @@ import {
   toggleReady,
   toClientVisibleRoomState,
   type RoomState,
+  type RoomServiceState,
   type ChaJiaoSettlementEntry,
   type ChickenSettlementEntry,
   type ClaimedWinningTile,
   type GangSettlementEntry,
   type Meld,
+  type PhysicalTile,
   type PlayerId,
   type QiangGangSanJiLiabilityEntry,
   type Suit,
@@ -519,7 +523,7 @@ test("discards a tile for the current seated player after dingque is complete", 
   assert.equal(visibleToP1.round?.players[0].hand?.length, 13);
   assert.equal(visibleToP2.round?.players[0].hand, null);
   assert.equal(visibleToP2.round?.players[0].handCount, 13);
-  assert.deepEqual(visibleToP2.round?.players[0].discards, [discard]);
+  assert.deepEqual(visibleToP2.round?.players[0].discards, [{ suit: discard.suit, rank: discard.rank }]);
   assert.equal(visibleToP2.claimWindow?.pendingResponderCount, 3);
 });
 
@@ -1629,6 +1633,7 @@ test("lets a player claim ming gang from the claim window", () => {
       tile: discard,
       tiles: [tile("characters", 9), tile("characters", 9), tile("characters", 9), discard],
       fromPlayer: 0,
+      gangId: claimed.room.gangSettlementFacts[0]?.gangId,
     },
   ]);
   assert.deepEqual(claimed.room.eventLog.at(-2), {
@@ -1747,6 +1752,7 @@ test("lets the current player claim an gang after drawing", () => {
       tile: gangTile,
       tiles: [gangTile, gangTile, gangTile, gangTile],
       fromPlayer: null,
+      gangId: claimed.room.gangSettlementFacts[0]?.gangId,
     },
   ]);
   assert.deepEqual(claimed.room.eventLog.at(-1), {
@@ -1918,8 +1924,18 @@ test("declares ba gang, keeps peng pending, and commits after every player passe
   const baGangDescriptor = ownerBefore.actionDescriptors.find(
     (descriptor) => descriptor.action === "claimBaGang",
   );
-  assert.ok(baGangDescriptor !== undefined && "tiles" in baGangDescriptor);
-  assert.deepEqual(baGangDescriptor.tiles, [gangTile]);
+  assert.ok(baGangDescriptor !== undefined && "candidates" in baGangDescriptor);
+  assert.deepEqual(baGangDescriptor.candidates.map((candidate) => ({
+    targetTile: candidate.targetTile,
+    addedTile: { suit: candidate.addedTile.suit, rank: candidate.addedTile.rank },
+    paymentEligibility: candidate.paymentEligibility,
+    pointsPerPayer: candidate.pointsPerPayer,
+  })), [{
+    targetTile: gangTile,
+    addedTile: gangTile,
+    paymentEligibility: "normal",
+    pointsPerPayer: 2,
+  }]);
   assert.equal(opponentBefore.actionDescriptors.some((descriptor) => descriptor.action === "claimBaGang"), false);
 
   const claimed = claimBaGang(room, "p1", gangTile, { now: 1_000, timeoutMs: 5_000 });
@@ -1947,6 +1963,9 @@ test("declares ba gang, keeps peng pending, and commits after every player passe
     targetTile: gangTile,
     tile: gangTile,
     pengMeldIndex: 0,
+    candidateId: baGangDescriptor.candidates[0].candidateId,
+    paymentEligibility: "normal",
+    pointsPerPayer: 2,
     pendingPlayerIds: [1, 2, 3],
     passedPlayerIds: [],
     huClaims: [],
@@ -1996,6 +2015,255 @@ test("declares ba gang, keeps peng pending, and commits after every player passe
   assert.equal(drawn.room.phase, "discard");
   assert.equal(drawn.room.round?.wall.length, beforeWallCount - 1);
   assert.equal(drawn.room.round?.players[0].hand.length, 11);
+});
+
+test("freezes normal, delayed-zero, and yao-ji ba gang candidates by physical tile", () => {
+  const target = physicalTile("characters", 9, "peng-target");
+  const oldNatural = physicalTile("characters", 9, "old-natural");
+  const freshNatural = physicalTile("characters", 9, "fresh-natural");
+  const yaoJi = physicalTile("bamboos", 1, "yao-ji");
+  const base = readyRoomForActiveGang({
+    hand: [
+      oldNatural,
+      freshNatural,
+      yaoJi,
+      ...[2, 3, 4, 5, 6, 7, 8, 2].map((rank, index) =>
+        physicalTile(index === 7 ? "dots" : "characters", rank as Tile["rank"], `filler-${index}`)),
+    ],
+    melds: [{
+      type: "peng",
+      tile: target,
+      tiles: [
+        physicalTile("characters", 9, "peng-1"),
+        physicalTile("characters", 9, "peng-2"),
+        physicalTile("characters", 9, "peng-3"),
+      ],
+      fromPlayer: 2,
+    }],
+  });
+  const room = { ...base, selfDrawEligible: true, lastDrawnTileId: freshNatural.instanceId ?? null };
+  const descriptor = toClientVisibleRoomState(room, "p1").actionDescriptors.find(
+    (entry) => entry.action === "claimBaGang",
+  );
+  assert.ok(descriptor?.action === "claimBaGang");
+  assert.equal(descriptor.candidates.length, 3);
+
+  const stale = handleRoomAction(serviceForRoom(room), "test-session", {
+    type: "claimBaGang",
+    candidateId: "stale-candidate",
+    expectedActionId: descriptor.actionId,
+  });
+  assert.equal(stale.ok, false);
+  assert.equal(stale.ok ? null : stale.reason, "staleAction");
+
+  const candidateByTileId = new Map(descriptor.candidates.map((candidate) => [candidate.addedTile.tileId, candidate]));
+  assert.deepEqual(
+    {
+      old: candidateByTileId.get("old-natural")?.paymentEligibility,
+      oldPoints: candidateByTileId.get("old-natural")?.pointsPerPayer,
+      fresh: candidateByTileId.get("fresh-natural")?.paymentEligibility,
+      freshPoints: candidateByTileId.get("fresh-natural")?.pointsPerPayer,
+      yaoJi: candidateByTileId.get("yao-ji")?.paymentEligibility,
+      yaoJiPoints: candidateByTileId.get("yao-ji")?.pointsPerPayer,
+    },
+    {
+      old: "zeroDelayedNatural",
+      oldPoints: 0,
+      fresh: "normal",
+      freshPoints: 2,
+      yaoJi: "normal",
+      yaoJiPoints: 1,
+    },
+  );
+
+  const zeroCommitted = commitBaGangCandidate(room, candidateByTileId.get("old-natural")!.candidateId);
+  assert.equal(zeroCommitted.gangSettlementFacts.at(-1)?.pointsPerPayer, 0);
+  assert.equal(zeroCommitted.gangSettlementFacts.at(-1)?.paymentEligibility, "zeroDelayedNatural");
+  assert.equal(
+    finishGangSettlement(zeroCommitted).settlementLedger.some((entry) => entry.reason === "baGang"),
+    false,
+  );
+
+  const freshCommitted = commitBaGangCandidate(room, candidateByTileId.get("fresh-natural")!.candidateId);
+  assert.equal(freshCommitted.gangSettlementFacts.at(-1)?.pointsPerPayer, 2);
+  assert.equal(freshCommitted.gangSettlementFacts.at(-1)?.physicalTiles.at(-1)?.instanceId, "fresh-natural");
+
+  const yaoJiCommitted = commitBaGangCandidate(room, candidateByTileId.get("yao-ji")!.candidateId);
+  assert.equal(yaoJiCommitted.gangSettlementFacts.at(-1)?.usesLaizi, true);
+  assert.equal(yaoJiCommitted.gangSettlementFacts.at(-1)?.pointsPerPayer, 1);
+});
+
+test("exchanges yao ji from all gang types without changing frozen gang facts", () => {
+  const gangTargets = [
+    physicalTile("characters", 2, "target-ming"),
+    physicalTile("characters", 3, "target-an"),
+    physicalTile("characters", 4, "target-ba"),
+  ];
+  const melds: Meld[] = [
+    {
+      type: "mingGang",
+      tile: gangTargets[0],
+      tiles: [
+        physicalTile("characters", 2, "m-1"),
+        physicalTile("characters", 2, "m-2"),
+        physicalTile("characters", 2, "m-3"),
+        physicalTile("bamboos", 1, "m-yj"),
+      ],
+      fromPlayer: 1,
+      gangId: "gang-ming",
+    },
+    {
+      type: "anGang",
+      tile: gangTargets[1],
+      tiles: [
+        physicalTile("characters", 3, "a-1"),
+        physicalTile("characters", 3, "a-2"),
+        physicalTile("dots", 1, "a-yj-1"),
+        physicalTile("bamboos", 1, "a-yj-2"),
+      ],
+      fromPlayer: null,
+      gangId: "gang-an",
+    },
+    {
+      type: "baGang",
+      tile: gangTargets[2],
+      tiles: [
+        physicalTile("characters", 4, "b-1"),
+        physicalTile("characters", 4, "b-2"),
+        physicalTile("characters", 4, "b-3"),
+        physicalTile("dots", 1, "b-yj"),
+      ],
+      fromPlayer: 2,
+      gangId: "gang-ba",
+    },
+  ];
+  const facts: RoomState["gangSettlementFacts"] = melds.map((meld, index) => ({
+    gangId: meld.gangId!,
+    gangType: meld.type as "mingGang" | "anGang" | "baGang",
+    gangSeatId: 0,
+    gangPlayerId: "p1",
+    targetTile: meld.tile,
+    physicalTiles: [...meld.tiles],
+    usesLaizi: true,
+    payers: [{ seatId: 1, playerId: "p2" }],
+    pointsPerPayer: index === 2 ? 1 : 2,
+    paymentEligibility: "normal",
+    sourceWindowId: null,
+    relatedEventType: index === 0 ? "mingGangClaimed" : index === 1 ? "anGangClaimed" : "baGangClaimed",
+  }));
+  const base = readyRoomForActiveGang({
+    hand: [
+      physicalTile("characters", 2, "hand-ming"),
+      physicalTile("characters", 3, "hand-an-1"),
+      physicalTile("characters", 3, "hand-an-2"),
+      physicalTile("characters", 4, "hand-ba"),
+      physicalTile("dots", 2, "safe-1"),
+      physicalTile("dots", 3, "safe-2"),
+      physicalTile("dots", 5, "safe-3"),
+    ],
+    melds,
+  });
+  let room: RoomState = {
+    ...base,
+    selfDrawEligible: false,
+    lastDrawnTileId: null,
+    gangSettlementFacts: facts,
+  };
+  const frozenFacts = structuredClone(room.gangSettlementFacts);
+
+  for (const gangType of ["mingGang", "anGang", "anGang", "baGang"] as const) {
+    const descriptor = toClientVisibleRoomState(room, "p1").actionDescriptors.find(
+      (entry) => entry.action === "exchangeGangYaoJi",
+    );
+    assert.ok(descriptor?.action === "exchangeGangYaoJi");
+    const candidate = descriptor.candidates.find((entry) => entry.gangType === gangType);
+    assert.notEqual(candidate, undefined);
+    const result = exchangeGangYaoJi(room, "p1", candidate!.candidateId);
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    room = result.room;
+    assert.equal(room.phase, "discard");
+    assert.equal(room.gangDraw, null);
+    assert.deepEqual(room.gangSettlementFacts, frozenFacts);
+  }
+
+  assert.equal(room.round?.players[0].melds.flatMap((meld) => meld.tiles).some(isYaoJiFace), false);
+  assert.equal(room.round?.players[0].hand.filter(isYaoJiFace).length, 4);
+  assert.equal(room.eventLog.filter((event) => event.type === "gangYaoJiExchanged").length, 4);
+  const opponentView = toClientVisibleRoomState(room, "p2");
+  assert.deepEqual(opponentView.round?.players[0].melds.find((meld) => meld.type === "anGang"), {
+    type: "anGang",
+    tile: null,
+    tiles: [],
+    fromPlayer: null,
+  });
+  const publicAnGangExchange = opponentView.eventLog.findLast(
+    (event) => event.type === "gangYaoJiExchanged" && event.gangType === "anGang",
+  );
+  assert.equal(publicAnGangExchange?.type === "gangYaoJiExchanged" && publicAnGangExchange.targetTile, null);
+  assert.equal(JSON.stringify(opponentView).includes("hand-an-1"), false);
+  assert.equal(JSON.stringify(opponentView).includes("a-yj-1"), false);
+});
+
+test("exchange-created hu is offered as self draw but never claimed automatically", () => {
+  const target = physicalTile("characters", 9, "hu-target");
+  const meld: Meld = {
+    type: "anGang",
+    tile: target,
+    tiles: [
+      physicalTile("characters", 9, "hu-gang-1"),
+      physicalTile("characters", 9, "hu-gang-2"),
+      physicalTile("characters", 9, "hu-gang-3"),
+      physicalTile("bamboos", 1, "hu-returned-yj"),
+    ],
+    fromPlayer: null,
+    gangId: "hu-gang",
+  };
+  const room = readyRoomForActiveGang({
+    hand: [
+      physicalTile("characters", 2, "hu-2"),
+      physicalTile("characters", 3, "hu-3a"),
+      physicalTile("characters", 4, "hu-4a"),
+      physicalTile("characters", 3, "hu-3b"),
+      physicalTile("characters", 4, "hu-4b"),
+      physicalTile("characters", 5, "hu-5"),
+      physicalTile("characters", 6, "hu-6"),
+      physicalTile("characters", 7, "hu-7"),
+      physicalTile("characters", 8, "hu-8"),
+      physicalTile("dots", 5, "hu-pair"),
+      physicalTile("characters", 9, "hu-exchange-natural"),
+    ],
+    melds: [meld],
+  });
+  const prepared: RoomState = {
+    ...room,
+    selfDrawEligible: false,
+    lastDrawnTileId: null,
+    gangSettlementFacts: [{
+      gangId: "hu-gang",
+      gangType: "anGang",
+      gangSeatId: 0,
+      gangPlayerId: "p1",
+      targetTile: target,
+      physicalTiles: [...meld.tiles],
+      usesLaizi: true,
+      payers: [],
+      pointsPerPayer: 2,
+      paymentEligibility: "normal",
+      sourceWindowId: null,
+      relatedEventType: "anGangClaimed",
+    }],
+  };
+  const descriptor = toClientVisibleRoomState(prepared, "p1").actionDescriptors.find(
+    (entry) => entry.action === "exchangeGangYaoJi",
+  );
+  assert.ok(descriptor?.action === "exchangeGangYaoJi");
+  const result = exchangeGangYaoJi(prepared, "p1", descriptor.candidates[0].candidateId);
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.room.round?.players[0].hasWon, false);
+  assert.equal(result.room.selfDrawEligible, true);
+  assert.equal(toClientVisibleRoomState(result.room, "p1").legalActions.includes("claimSelfDrawHu"), true);
 });
 
 test("keeps the original peng when one player claims qiang gang hu", () => {
@@ -2886,6 +3154,48 @@ function readyRoomForActiveGang(input: {
           : { ...player, missingSuit: "dots" },
       ),
     },
+  };
+}
+
+function physicalTile(suit: Suit, rank: Tile["rank"], instanceId: string): PhysicalTile {
+  return { suit, rank, instanceId };
+}
+
+function isYaoJiFace(value: Tile): boolean {
+  return value.rank === 1 && (value.suit === "bamboos" || value.suit === "dots");
+}
+
+function commitBaGangCandidate(room: RoomState, candidateId: string): RoomState {
+  const declared = claimBaGang(room, "p1", candidateId);
+  if (!declared.ok) {
+    throw new Error(declared.reason);
+  }
+
+  let nextRoom = declared.room;
+  for (const playerId of ["p2", "p3", "p4"]) {
+    const passed = passQiangGang(nextRoom, playerId);
+    if (!passed.ok) {
+      throw new Error(passed.reason);
+    }
+    nextRoom = passed.room;
+  }
+  return nextRoom;
+}
+
+function serviceForRoom(room: RoomState): RoomServiceState {
+  return {
+    room,
+    sessions: [{
+      sessionToken: "test-session",
+      playerId: "p1",
+      displayName: "P1",
+      lastEventId: room.eventLog.length,
+    }],
+    lastEventId: room.eventLog.length,
+    nextPlayerNumber: 5,
+    sessionTokenFactory: () => "unused-session",
+    nowFactory: () => 1_000,
+    responseWindowTimeoutMs: 5_000,
   };
 }
 

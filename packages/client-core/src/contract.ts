@@ -10,6 +10,30 @@ export type Tile = {
   rank: Rank;
 };
 
+export type ClientOwnedTile = Tile & {
+  tileId: string;
+};
+
+export type BaGangPaymentEligibility = "normal" | "zeroDelayedNatural";
+
+export type ClientBaGangCandidate = {
+  candidateId: string;
+  targetTile: Tile;
+  addedTile: ClientOwnedTile;
+  usesLaizi: boolean;
+  paymentEligibility: BaGangPaymentEligibility;
+  payerSeatIds: SeatId[];
+  pointsPerPayer: 0 | 1 | 2;
+};
+
+export type ClientYaoJiExchangeCandidate = {
+  candidateId: string;
+  gangType: "mingGang" | "anGang" | "baGang";
+  targetTile: Tile;
+  naturalTile: ClientOwnedTile;
+  returnedYaoJi: Tile;
+};
+
 export type ScorePattern =
   | "pingHu"
   | "daDui"
@@ -114,6 +138,14 @@ export type MobilePublicEvent =
   | { eventId: number; type: "anGangClaimed"; seatId: SeatId; playerId: string; usesLaizi: boolean }
   | {
       eventId: number;
+      type: "gangYaoJiExchanged";
+      seatId: SeatId;
+      playerId: string;
+      gangType: "mingGang" | "anGang" | "baGang";
+      targetTile: Tile | null;
+    }
+  | {
+      eventId: number;
       type: "huClaimed";
       seatId: SeatId;
       playerId: string;
@@ -189,11 +221,12 @@ export type ClientLegalAction =
   | "claimMingGang"
   | "claimAnGang"
   | "claimBaGang"
+  | "exchangeGangYaoJi"
   | "passQiangGang"
   | "claimQiangGangHu";
 
 type BasicActionDescriptor = {
-  action: Exclude<ClientLegalAction, "takeSeat" | "chooseMissingSuit" | "discardTile" | "claimAnGang" | "claimBaGang">;
+  action: Exclude<ClientLegalAction, "takeSeat" | "chooseMissingSuit" | "discardTile" | "claimAnGang" | "claimBaGang" | "exchangeGangYaoJi">;
   actionId: string;
 };
 
@@ -201,7 +234,10 @@ export type ClientActionDescriptor =
   | BasicActionDescriptor
   | { action: "takeSeat"; actionId: string; seatIds: SeatId[] }
   | { action: "chooseMissingSuit"; actionId: string; suits: Suit[] }
-  | { action: "discardTile" | "claimAnGang" | "claimBaGang"; actionId: string; tiles: Tile[] };
+  | { action: "discardTile"; actionId: string; tiles: ClientOwnedTile[] }
+  | { action: "claimAnGang"; actionId: string; tiles: Tile[] }
+  | { action: "claimBaGang"; actionId: string; candidates: ClientBaGangCandidate[] }
+  | { action: "exchangeGangYaoJi"; actionId: string; candidates: ClientYaoJiExchangeCandidate[] };
 
 export type ClientVisibleMeld =
   | {
@@ -219,7 +255,7 @@ export type ClientVisibleMeld =
 
 export type ClientVisiblePlayerState = {
   id: SeatId;
-  hand: Tile[] | null;
+  hand: ClientOwnedTile[] | null;
   handCount: number;
   discards: Tile[];
   melds: ClientVisibleMeld[];
@@ -310,6 +346,7 @@ export type RoomSocketErrorCode =
   | "cannotMingGang"
   | "cannotAnGang"
   | "cannotBaGang"
+  | "cannotExchangeGangYaoJi"
   | "roundNotFinished"
   | "gameFinished"
   | "nextDealerUnavailable"
@@ -335,7 +372,31 @@ export type RoomSocketClientMessage =
   | GuardedEmptySessionAction<"readyNextRound" | "startNextRound" | "finishGame">
   | { protocolVersion: 1; clientMessageId: string; roomId: string; sessionToken: string; type: "chooseMissingSuit"; payload: { suit: Suit } }
   | GuardedEmptySessionAction<"drawTile" | "drawGangTile" | "passClaim" | "claimHu" | "claimSelfDrawHu" | "claimPeng" | "claimMingGang" | "passQiangGang" | "claimQiangGangHu">
-  | GuardedTileSessionAction<"discardTile" | "claimAnGang" | "claimBaGang">
+  | {
+      protocolVersion: 1;
+      clientMessageId: string;
+      roomId: string;
+      sessionToken: string;
+      type: "discardTile";
+      payload: { tile: Tile; tileId?: string; expectedActionId?: string };
+    }
+  | GuardedTileSessionAction<"claimAnGang">
+  | {
+      protocolVersion: 1;
+      clientMessageId: string;
+      roomId: string;
+      sessionToken: string;
+      type: "claimBaGang";
+      payload: { candidateId?: string; tile?: Tile; expectedActionId?: string };
+    }
+  | {
+      protocolVersion: 1;
+      clientMessageId: string;
+      roomId: string;
+      sessionToken: string;
+      type: "exchangeGangYaoJi";
+      payload: { candidateId: string; expectedActionId?: string };
+    }
   | { protocolVersion: 1; clientMessageId: string; roomId: string; sessionToken: string; type: "resumeSession"; payload: { lastSeenEventId?: number } };
 
 export type MobileRoomServerMessage =
@@ -382,7 +443,7 @@ const legalActions = new Set<ClientLegalAction>([
   "takeSeat", "toggleReady", "startRound", "readyNextRound", "startNextRound", "finishGame",
   "chooseMissingSuit", "drawTile", "drawGangTile",
   "discardTile", "passClaim", "claimHu", "claimSelfDrawHu", "claimPeng", "claimMingGang",
-  "claimAnGang", "claimBaGang", "passQiangGang", "claimQiangGangHu",
+  "claimAnGang", "claimBaGang", "exchangeGangYaoJi", "passQiangGang", "claimQiangGangHu",
 ]);
 const errorCodes = new Set<RoomSocketErrorCode>([
   "roomNotFound", "roomAlreadyExists", "invalidSession", "sessionDisconnected", "roomAlreadyStarted",
@@ -392,7 +453,7 @@ const errorCodes = new Set<RoomSocketErrorCode>([
   "notCurrentPlayer", "notDrawPhase", "notDiscardPhase", "wallEmpty", "playerAlreadyWon",
   "tileNotInHand", "mustDiscardMissingSuitFirst", "cannotDiscardYaoJi", "noClaimWindow",
   "noQiangGangWindow", "claimNotAllowed", "claimAlreadyResponded", "cannotHu", "cannotPeng",
-  "cannotMingGang", "cannotAnGang", "cannotBaGang",
+  "cannotMingGang", "cannotAnGang", "cannotBaGang", "cannotExchangeGangYaoJi",
   "roundNotFinished", "gameFinished", "nextDealerUnavailable",
   "staleAction",
 ]);
@@ -403,6 +464,7 @@ const forbiddenSnapshotKeys = new Set([
   "seed", "wall", "pendingPlayerIds", "passedPlayerIds", "huClaims", "meldClaims",
   "pengMeldIndex", "physicalTiles", "gangId", "claimedWinningTile", "decomposition",
   "resolvedSettlementIds", "resolvedWindowIds", "connectionId", "lastSeenAt", "supersededSessionTokens",
+  "instanceId", "lastDrawnTileId", "ruleOptions",
 ]);
 
 export function parseMobileRoomServerMessage(input: unknown): MobileServerMessageParseResult {
@@ -582,12 +644,83 @@ function parseActionDescriptor(value: unknown): ClientActionDescriptor | null {
       ? { action, actionId: value.actionId, suits: [...value.suits] }
       : null;
   }
-  if (action === "discardTile" || action === "claimAnGang" || action === "claimBaGang") {
+  if (action === "discardTile") {
+    return hasOnlyKeys(value, ["action", "actionId", "tiles"]) && Array.isArray(value.tiles) && value.tiles.every(isClientOwnedTile)
+      ? { action, actionId: value.actionId, tiles: value.tiles.map(cloneOwnedTile) }
+      : null;
+  }
+  if (action === "claimAnGang") {
     return hasOnlyKeys(value, ["action", "actionId", "tiles"]) && Array.isArray(value.tiles) && value.tiles.every(isTile)
       ? { action, actionId: value.actionId, tiles: value.tiles.map(cloneTile) }
       : null;
   }
+  if (action === "claimBaGang") {
+    const candidates = Array.isArray(value.candidates) ? value.candidates.map(parseBaGangCandidate) : [];
+    return hasOnlyKeys(value, ["action", "actionId", "candidates"]) &&
+      Array.isArray(value.candidates) && !candidates.some((candidate) => candidate === null)
+      ? { action, actionId: value.actionId, candidates: candidates as ClientBaGangCandidate[] }
+      : null;
+  }
+  if (action === "exchangeGangYaoJi") {
+    const candidates = Array.isArray(value.candidates) ? value.candidates.map(parseYaoJiExchangeCandidate) : [];
+    return hasOnlyKeys(value, ["action", "actionId", "candidates"]) &&
+      Array.isArray(value.candidates) && !candidates.some((candidate) => candidate === null)
+      ? { action, actionId: value.actionId, candidates: candidates as ClientYaoJiExchangeCandidate[] }
+      : null;
+  }
   return hasOnlyKeys(value, ["action", "actionId"]) ? { action: action as BasicActionDescriptor["action"], actionId: value.actionId } : null;
+}
+
+function parseBaGangCandidate(value: unknown): ClientBaGangCandidate | null {
+  if (
+    !isRecord(value) ||
+    !hasOnlyKeys(value, [
+      "candidateId", "targetTile", "addedTile", "usesLaizi", "paymentEligibility",
+      "payerSeatIds", "pointsPerPayer",
+    ]) ||
+    !isNonEmptyString(value.candidateId) ||
+    !isTile(value.targetTile) ||
+    !isClientOwnedTile(value.addedTile) ||
+    typeof value.usesLaizi !== "boolean" ||
+    !(value.paymentEligibility === "normal" || value.paymentEligibility === "zeroDelayedNatural") ||
+    !Array.isArray(value.payerSeatIds) ||
+    !value.payerSeatIds.every(isSeatId) ||
+    !(value.pointsPerPayer === 0 || value.pointsPerPayer === 1 || value.pointsPerPayer === 2)
+  ) {
+    return null;
+  }
+
+  return {
+    candidateId: value.candidateId,
+    targetTile: cloneTile(value.targetTile),
+    addedTile: cloneOwnedTile(value.addedTile),
+    usesLaizi: value.usesLaizi,
+    paymentEligibility: value.paymentEligibility,
+    payerSeatIds: [...value.payerSeatIds],
+    pointsPerPayer: value.pointsPerPayer,
+  };
+}
+
+function parseYaoJiExchangeCandidate(value: unknown): ClientYaoJiExchangeCandidate | null {
+  if (
+    !isRecord(value) ||
+    !hasOnlyKeys(value, ["candidateId", "gangType", "targetTile", "naturalTile", "returnedYaoJi"]) ||
+    !isNonEmptyString(value.candidateId) ||
+    !(value.gangType === "mingGang" || value.gangType === "anGang" || value.gangType === "baGang") ||
+    !isTile(value.targetTile) ||
+    !isClientOwnedTile(value.naturalTile) ||
+    !isTile(value.returnedYaoJi)
+  ) {
+    return null;
+  }
+
+  return {
+    candidateId: value.candidateId,
+    gangType: value.gangType,
+    targetTile: cloneTile(value.targetTile),
+    naturalTile: cloneOwnedTile(value.naturalTile),
+    returnedYaoJi: cloneTile(value.returnedYaoJi),
+  };
 }
 
 function parseSeat(value: unknown): ClientVisibleSeatState | null {
@@ -628,7 +761,7 @@ function parsePlayer(value: unknown, localSeatId: SeatId | null): ClientVisibleP
     return null;
   }
   if (value.id === localSeatId) {
-    if (!Array.isArray(value.hand) || !value.hand.every(isTile)) {
+    if (!Array.isArray(value.hand) || !value.hand.every(isClientOwnedTile)) {
       return null;
     }
   } else if (value.hand !== null) {
@@ -640,7 +773,7 @@ function parsePlayer(value: unknown, localSeatId: SeatId | null): ClientVisibleP
   }
   return {
     id: value.id,
-    hand: value.hand === null ? null : value.hand.map(cloneTile),
+    hand: value.hand === null ? null : value.hand.map(cloneOwnedTile),
     handCount: value.handCount,
     discards: value.discards.map(cloneTile),
     melds: melds as ClientVisibleMeld[],
@@ -999,6 +1132,23 @@ function parseMobilePublicEvent(value: unknown, eventId: number): MobilePublicEv
       : undefined;
   }
 
+  if (value.type === "gangYaoJiExchanged") {
+    const gangTypeValid = value.gangType === "mingGang" || value.gangType === "anGang" || value.gangType === "baGang";
+    const targetValid = value.targetTile === null || isTile(value.targetTile);
+    return hasOnlyKeys(value, ["type", "seatId", "playerId", "gangType", "targetTile"]) &&
+      isSeatId(value.seatId) && isNonEmptyString(value.playerId) && gangTypeValid && targetValid &&
+      (value.gangType === "anGang" || value.targetTile !== null)
+      ? {
+          eventId,
+          type: value.type,
+          seatId: value.seatId,
+          playerId: value.playerId,
+          gangType: value.gangType as "mingGang" | "anGang" | "baGang",
+          targetTile: value.targetTile === null ? null : cloneTile(value.targetTile as Tile),
+        }
+      : undefined;
+  }
+
   if (value.type === "huClaimed") {
     return parseHuPublicEvent(value, eventId);
   }
@@ -1201,8 +1351,15 @@ function isRank(value: unknown): value is Rank {
 function isTile(value: unknown): value is Tile {
   return isRecord(value) && hasOnlyKeys(value, ["suit", "rank"]) && isSuit(value.suit) && isRank(value.rank);
 }
+function isClientOwnedTile(value: unknown): value is ClientOwnedTile {
+  return isRecord(value) && hasOnlyKeys(value, ["suit", "rank", "tileId"]) &&
+    isSuit(value.suit) && isRank(value.rank) && isNonEmptyString(value.tileId);
+}
 function cloneTile(value: Tile): Tile {
   return { suit: value.suit, rank: value.rank };
+}
+function cloneOwnedTile(value: ClientOwnedTile): ClientOwnedTile {
+  return { suit: value.suit, rank: value.rank, tileId: value.tileId };
 }
 function isRoomStatus(value: unknown): value is RoomStatus {
   return value === "waiting" || value === "dingque" || value === "playing" || value === "ended";

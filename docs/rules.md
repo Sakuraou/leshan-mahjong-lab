@@ -267,6 +267,74 @@ establish a gang payment yet. If every eligible player passes or times out, the
 peng is upgraded and the payer set is frozen at that moment. If anyone wins by
 qiang gang hu, the original peng remains and no ba-gang payment exists.
 
+### Voluntary Ba Gang / Continue Gang
+
+Ba gang is a player decision and must never be executed automatically. When a
+player has more than one legal continuation target, the server must publish the
+legal candidates and the player chooses which exposed peng to continue.
+
+An exposed peng can become a ba gang in either of these ways:
+
+- The player uses a yao ji already in hand as the fourth logical tile. This is
+  allowed whether or not the original peng itself used yao ji.
+- The player uses a natural tile equal to the logical target of the exposed
+  peng, whether it was drawn this turn or retained from an earlier turn.
+
+The action and its payment eligibility are separate:
+
+- If the newly drawn physical tile is the natural matching tile, and the player
+  continues the peng during that same draw/discard turn, the ba gang uses the
+  normal payment table.
+- If the player declines during that turn and uses that physical tile to
+  continue the peng in a later turn, the ba gang action is still allowed but it
+  produces no ba-gang payment.
+- A yao ji is not a natural matching tile and is not subject to that natural
+  tile's immediate-use expiry. Whenever a yao ji is used to continue a peng,
+  the ba gang uses the normal with-laizi payment table (`1` from each other
+  active, not-yet-won player).
+- The normal payment table still inspects all four physical meld tiles. For
+  example, an original peng that already contains yao ji remains a with-laizi
+  ba gang even when its fourth tile is a newly drawn natural match.
+- A scoring or zero-scoring ba gang still follows the ordinary qiang-gang
+  window, rollback, gang-draw, and blood-battle state flow.
+
+The server therefore needs to retain the physical fourth tile and whether its
+normal ba-gang payment opportunity is still current. The client must consume a
+server candidate rather than infer this timing rule itself.
+
+### Replacing Yao Ji In An Established Gang
+
+If an already established four-tile gang contains a yao ji resolved as its
+logical target, and the player later draws the natural matching tile, the
+player may put that natural tile into the gang and return one yao ji from the
+gang to the concealed hand.
+
+- This is a one-for-one physical tile exchange; the logical gang remains the
+  same.
+- A three-tile peng cannot return a yao ji this way. The exposed meld must
+  already contain four logical equal tiles, counting yao ji replacements.
+- The exchange applies to an already established ming gang, an gang, or ba
+  gang.
+- The natural tile may be exchanged during a later legal turn; it does not have
+  to be exchanged in the turn in which it was drawn.
+- If a gang contains more than one yao ji, each natural matching tile can return
+  one yao ji, and the exchange can repeat on later turns.
+- The exchange itself is not a new peng or a second gang declaration.
+- The established gang's frozen payer set, uses-laizi classification, and score
+  do not change. The exchange creates no new gang payment and grants no extra
+  gang replacement draw.
+- In the current ruleset the exchange does not open a qiang-gang response
+  window. A future Mahjong ruleset may enable that behavior, but it must not be
+  enabled for this version.
+- The returned yao ji becomes immediately available in the concealed hand. It
+  may participate in another legal continuation or hu during the same turn,
+  while the active yao-ji discard prohibition still applies.
+- If returning the yao ji creates a legal winning hand, that win is treated as
+  self-draw. The server offers hu to the player; it does not force an automatic
+  win.
+- Original physical source identity must remain traceable for settlement and
+  replay even after the displayed meld changes.
+
 If a discarded yao ji is used in a gang, it remains a laizi. Chicken settlement
 still depends on the final yao ji count at settlement.
 
@@ -340,6 +408,34 @@ The implementation should separate these modules:
 - Cha jiao settlement.
 - Event log and replay.
 
+## Hand Arrangement UX
+
+- The local concealed hand must support touch/drag reordering so a player can
+  visually group yao ji beside the tiles they are considering it to represent.
+- The initial deal uses the standard bamboo/dot/character and rank order.
+- Each automatic draw inserts only the new physical tile into its default
+  position. It must not re-sort the whole hand or destroy the player's existing
+  custom order.
+- The client does not provide a separate manual arrange/sort button.
+- Dragging changes only the local display order. It does not resolve a yao ji
+  target, change the authoritative hand, or create a legal action.
+- Stable client-safe physical tile identifiers will be needed so equal printed
+  tiles can be moved independently and a reconnect can rebuild the order
+  without exposing hidden information.
+
+Implementation invariants:
+
+- Every authoritative dealt tile receives a server-only random physical id.
+  The owner receives an opaque `tileId` alias for concealed-hand interaction;
+  opponents, public events, the wall, and settlement summaries never receive it.
+- Continue-gang and yao-ji-exchange choices use descriptor-scoped opaque
+  candidate ids. Clients do not encode or infer meld indexes or physical ids.
+- A delayed-natural zero-point ba gang still freezes an immutable established
+  gang fact with its original physical tiles, payer set, and eligibility. It
+  creates no ledger transfer, but later exchanges cannot rewrite its history.
+- Each established gang is linked internally to its frozen fact. Exchanging a
+  yao ji changes only current physical ownership and the displayed meld.
+
 The UI should never decide rule legality by itself. It should ask the game
 engine for legal actions and settlement results.
 
@@ -359,3 +455,17 @@ engine for legal actions and settlement results.
 - Wu ji is 2 fan, can stack with other patterns, and is broken by any original
   `1 bamboo` or `1 dot` in the player's own final settlement tiles.
 - The MVP should enforce a no-active-yao-ji-discard rule.
+- Ba gang is optional, candidate-driven, and never automatic.
+- A natural matching tile drawn and used to continue a peng immediately can
+  receive normal ba-gang points; delaying that physical tile until a later turn
+  makes the continuation zero-point.
+- A yao ji used to continue a peng receives the normal with-laizi ba-gang
+  points and is not subject to the natural matching tile's delayed-use expiry.
+- A yao ji inside an established four-tile gang may be exchanged for a newly
+  drawn or retained natural matching tile, but a yao ji inside a three-tile
+  peng cannot be taken back this way.
+- The current ruleset allows repeated yao-ji exchanges in all three established
+  gang types without new gang points, replacement draws, or qiang-gang windows.
+  An exchange-created hu is self-draw and remains the player's decision.
+- The local phone hand should be manually reorderable while deal/draw placement
+  inserts only the new tile and preserves the player's existing custom order.

@@ -311,6 +311,7 @@ function handleRoomServiceAction(
         | "claimMingGang"
         | "claimAnGang"
         | "claimBaGang"
+        | "exchangeGangYaoJi"
         | "passQiangGang"
         | "claimQiangGangHu";
     }
@@ -377,6 +378,7 @@ function clientMessageToRoomAction(
         | "claimMingGang"
         | "claimAnGang"
         | "claimBaGang"
+        | "exchangeGangYaoJi"
         | "passQiangGang"
         | "claimQiangGangHu";
     }
@@ -415,7 +417,12 @@ function clientMessageToRoomAction(
   }
 
   if (message.type === "discardTile") {
-    return { type: "discardTile", tile: message.payload.tile, expectedActionId: message.payload.expectedActionId };
+    return {
+      type: "discardTile",
+      tile: message.payload.tile,
+      tileId: message.payload.tileId,
+      expectedActionId: message.payload.expectedActionId,
+    };
   }
 
   if (message.type === "passClaim") {
@@ -443,7 +450,17 @@ function clientMessageToRoomAction(
   }
 
   if (message.type === "claimBaGang") {
-    return { type: "claimBaGang", tile: message.payload.tile, expectedActionId: message.payload.expectedActionId };
+    return message.payload.candidateId !== undefined
+      ? { type: "claimBaGang", candidateId: message.payload.candidateId, expectedActionId: message.payload.expectedActionId }
+      : { type: "claimBaGang", tile: message.payload.tile!, expectedActionId: message.payload.expectedActionId };
+  }
+
+  if (message.type === "exchangeGangYaoJi") {
+    return {
+      type: "exchangeGangYaoJi",
+      candidateId: message.payload.candidateId,
+      expectedActionId: message.payload.expectedActionId,
+    };
   }
 
   if (message.type === "passQiangGang") {
@@ -564,6 +581,7 @@ function errorMessage(code: RoomSocketErrorCode): string {
     claimAlreadyResponded: "This player has already responded to the claim window.",
     cannotAnGang: "This player cannot claim an gang with this tile.",
     cannotBaGang: "This player cannot claim ba gang with this tile.",
+    cannotExchangeGangYaoJi: "This player cannot exchange yao ji in this gang.",
     roundNotFinished: "The current round has not reached the between-rounds state.",
     gameFinished: "The game has already finished.",
     nextDealerUnavailable: "The next dealer decision is unavailable.",

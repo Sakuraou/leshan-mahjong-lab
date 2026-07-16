@@ -11,6 +11,7 @@ import {
   discardRoomTile,
   drawGangTile,
   drawRoomTile,
+  exchangeGangYaoJi,
   finishGame,
   joinRoom,
   passClaim,
@@ -36,6 +37,7 @@ import {
   type DiscardRoomTileResult,
   type DrawGangTileResult,
   type DrawRoomTileResult,
+  type ExchangeGangYaoJiResult,
   type FinishGameResult,
   type JoinRoomResult,
   type PassClaimResult,
@@ -96,14 +98,16 @@ export type RoomAction =
   | { type: "chooseMissingSuit"; suit: Suit }
   | { type: "drawTile"; expectedActionId?: string }
   | { type: "drawGangTile"; expectedActionId?: string }
-  | { type: "discardTile"; tile: Tile; expectedActionId?: string }
+  | { type: "discardTile"; tile: Tile; tileId?: string; expectedActionId?: string }
   | { type: "passClaim"; expectedActionId?: string }
   | { type: "claimHu"; expectedActionId?: string }
   | { type: "claimSelfDrawHu"; expectedActionId?: string }
   | { type: "claimPeng"; expectedActionId?: string }
   | { type: "claimMingGang"; expectedActionId?: string }
   | { type: "claimAnGang"; tile: Tile; expectedActionId?: string }
-  | { type: "claimBaGang"; tile: Tile; expectedActionId?: string }
+  | { type: "claimBaGang"; candidateId: string; tile?: never; expectedActionId?: string }
+  | { type: "claimBaGang"; tile: Tile; candidateId?: never; expectedActionId?: string }
+  | { type: "exchangeGangYaoJi"; candidateId: string; expectedActionId?: string }
   | { type: "passQiangGang"; expectedActionId?: string }
   | { type: "claimQiangGangHu"; expectedActionId?: string };
 
@@ -124,6 +128,7 @@ export type RoomServiceError =
   | ResultFailureReason<DiscardRoomTileResult>
   | ResultFailureReason<ClaimAnGangResult>
   | ResultFailureReason<ClaimBaGangResult>
+  | ResultFailureReason<ExchangeGangYaoJiResult>
   | ResultFailureReason<ClaimHuResult>
   | ResultFailureReason<ClaimMingGangResult>
   | ResultFailureReason<ClaimPengResult>
@@ -283,6 +288,22 @@ export function handleRoomAction(
     if (descriptor?.actionId !== action.expectedActionId) {
       return { ok: false, reason: "staleAction", service: currentService };
     }
+    if (
+      action.type === "claimBaGang" &&
+      "candidateId" in action &&
+      action.candidateId !== undefined &&
+      (descriptor?.action !== "claimBaGang" ||
+        !descriptor.candidates.some((candidate) => candidate.candidateId === action.candidateId))
+    ) {
+      return { ok: false, reason: "staleAction", service: currentService };
+    }
+    if (
+      action.type === "exchangeGangYaoJi" &&
+      (descriptor?.action !== "exchangeGangYaoJi" ||
+        !descriptor.candidates.some((candidate) => candidate.candidateId === action.candidateId))
+    ) {
+      return { ok: false, reason: "staleAction", service: currentService };
+    }
   }
   const result = applyRoomAction(currentService, session.playerId, action, now);
 
@@ -418,6 +439,7 @@ function applyRoomAction(
   | DiscardRoomTileResult
   | ClaimAnGangResult
   | ClaimBaGangResult
+  | ExchangeGangYaoJiResult
   | ClaimHuResult
   | ClaimMingGangResult
   | ClaimPengResult
@@ -462,6 +484,7 @@ function applyRoomAction(
     return discardRoomTile(room, playerId, action.tile, {
       now,
       timeoutMs: service.responseWindowTimeoutMs,
+      tileId: action.tileId,
     });
   }
 
@@ -490,10 +513,16 @@ function applyRoomAction(
   }
 
   if (action.type === "claimBaGang") {
-    return claimBaGang(room, playerId, action.tile, {
+    return claimBaGang(room, playerId, "candidateId" in action && action.candidateId !== undefined
+      ? action.candidateId
+      : action.tile, {
       now,
       timeoutMs: service.responseWindowTimeoutMs,
     });
+  }
+
+  if (action.type === "exchangeGangYaoJi") {
+    return exchangeGangYaoJi(room, playerId, action.candidateId);
   }
 
   if (action.type === "passQiangGang") {

@@ -60,26 +60,24 @@ test("websocket room transport tracks session snapshots over a real dev server",
     assert.ok(hostHand);
     const hostDiscard = findDiscardCandidate(hostHand);
 
-    const chosen = await transports[1].chooseMissingSuit("player-2", "characters");
-    assert.equal(chosen.ok, true);
-    await waitForMissingSuitSnapshots(transports, 1, "characters");
+    const requestedSuits: Suit[] = [hostDiscard.suit, "characters", "dots", "bamboos"];
+    const expectedSuits: Suit[] = [];
 
-    const suits: Suit[] = [hostDiscard.suit, "characters", "dots", "bamboos"];
-
-    for (const [index, suit] of suits.entries()) {
+    for (const [index, suit] of requestedSuits.entries()) {
       const playerId = `player-${index + 1}`;
       const view = transports[index].getClientView(playerId);
+      const automaticMissingSuit = view?.round?.players[index].missingSuit ?? null;
 
-      if (view?.round?.players[index].missingSuit !== null) {
-        continue;
+      if (automaticMissingSuit === null) {
+        assert.equal((await transports[index].chooseMissingSuit(playerId, suit)).ok, true);
       }
 
-      assert.equal((await transports[index].chooseMissingSuit(playerId, suit)).ok, true);
+      expectedSuits.push(automaticMissingSuit ?? suit);
     }
 
-    await waitForMissingSuitSnapshots(transports, 0, hostDiscard.suit);
-    await waitForMissingSuitSnapshots(transports, 2, "dots");
-    await waitForMissingSuitSnapshots(transports, 3, "bamboos");
+    for (const [index, suit] of expectedSuits.entries()) {
+      await waitForMissingSuitSnapshots(transports, index, suit);
+    }
 
     const dealerDraw = await transports[0].drawTile("player-1");
     assert.equal(dealerDraw.ok, false);

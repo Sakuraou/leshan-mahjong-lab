@@ -340,14 +340,24 @@ test("maps discardTile and broadcasts redacted snapshots to every session", () =
     assert.ok(dealer);
     assert.equal(dealer.handCount, 13);
     assert.equal(dealer.hand !== null, index === 0);
-    assert.deepEqual(dealer.discards, [prepared.discard]);
+    assert.deepEqual(dealer.discards, [{ suit: prepared.discard.suit, rank: prepared.discard.rank }]);
     assert.equal(message.payload.view.round?.currentPlayer, 1);
     assert.equal(message.payload.view.phase, "claim");
     assert.equal(message.payload.view.legalActions.includes("passClaim"), index !== 0);
   });
   assert.deepEqual(snapshots[0].payload.events, [
-    { type: "tileDiscarded", seatId: 0, playerId: "player-1", tile: prepared.discard },
-    { type: "claimWindowOpened", discardedBySeatId: 0, tile: prepared.discard, pendingResponderCount: 3 },
+    {
+      type: "tileDiscarded",
+      seatId: 0,
+      playerId: "player-1",
+      tile: { suit: prepared.discard.suit, rank: prepared.discard.rank },
+    },
+    {
+      type: "claimWindowOpened",
+      discardedBySeatId: 0,
+      tile: { suit: prepared.discard.suit, rank: prepared.discard.rank },
+      pendingResponderCount: 3,
+    },
   ]);
   assert.equal(snapshots[1].payload.view.claimWindow?.pendingResponderCount, 3);
 });

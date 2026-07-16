@@ -41,6 +41,13 @@ export const mobileRoomSessionStore: RoomSessionStore = {
         ...(typeof value.lastCompletedAutoDrawActionId === "string"
           ? { lastCompletedAutoDrawActionId: value.lastCompletedAutoDrawActionId }
           : {}),
+        ...(typeof value.handOrderRoundNumber === "number" && Number.isSafeInteger(value.handOrderRoundNumber) &&
+            Array.isArray(value.handOrderTileIds) && value.handOrderTileIds.every((tileId) => typeof tileId === "string")
+          ? {
+              handOrderRoundNumber: value.handOrderRoundNumber,
+              handOrderTileIds: [...value.handOrderTileIds],
+            }
+          : {}),
       };
     } catch {
       return null;

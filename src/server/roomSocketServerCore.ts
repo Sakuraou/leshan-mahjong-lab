@@ -438,9 +438,31 @@ function isRoomSocketClientMessage(value: unknown): value is RoomSocketClientMes
     return isSessionRoomMessage(value) && isRecord(value.payload) && hasValidExpectedActionId(value.payload);
   }
 
-  if (value.type === "discardTile" || value.type === "claimAnGang" || value.type === "claimBaGang") {
+  if (value.type === "discardTile") {
+    return isSessionRoomMessage(value) && isRecord(value.payload) &&
+      isTile(value.payload.tile) &&
+      (value.payload.tileId === undefined || (typeof value.payload.tileId === "string" && value.payload.tileId.length > 0)) &&
+      hasValidExpectedActionId(value.payload);
+  }
+
+  if (value.type === "claimAnGang") {
     return isSessionRoomMessage(value) && isRecord(value.payload) &&
       isTile(value.payload.tile) && hasValidExpectedActionId(value.payload);
+  }
+
+  if (value.type === "claimBaGang") {
+    if (!isSessionRoomMessage(value) || !isRecord(value.payload) || !hasValidExpectedActionId(value.payload)) {
+      return false;
+    }
+    const hasCandidate = typeof value.payload.candidateId === "string" && value.payload.candidateId.length > 0;
+    const hasLegacyTile = isTile(value.payload.tile);
+    return hasCandidate !== hasLegacyTile;
+  }
+
+  if (value.type === "exchangeGangYaoJi") {
+    return isSessionRoomMessage(value) && isRecord(value.payload) &&
+      typeof value.payload.candidateId === "string" && value.payload.candidateId.length > 0 &&
+      hasValidExpectedActionId(value.payload);
   }
 
   if (

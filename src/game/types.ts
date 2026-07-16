@@ -7,6 +7,12 @@ export type Tile = {
   rank: Rank;
 };
 
+// Server-only identity for one physical copy. Plain Tile values remain valid in
+// rule tests and decomposition code, while authoritative rounds assign ids.
+export type PhysicalTile = Tile & {
+  readonly instanceId?: string;
+};
+
 export type GangType = "mingGang" | "anGang" | "baGang";
 
 export type WinMethod = "discard" | "selfDraw";
@@ -35,13 +41,15 @@ export type Meld = {
   // Logical target value after resolving any laizi used by the meld.
   tile: Tile;
   // Original physical tiles, retained for wu ji and chicken settlement.
-  tiles: Tile[];
+  tiles: PhysicalTile[];
   fromPlayer: PlayerId | null;
+  // Server-only link to the immutable fact captured when a gang became final.
+  gangId?: string;
 };
 
 export type ClaimedWinningTile = {
   // Original physical winning tile. A yao ji keeps its source identity here.
-  tile: Tile;
+  tile: PhysicalTile;
   source: "discard" | "qiangGang";
   sourceWindowId: string;
   responsibleSeatId: PlayerId;
@@ -50,8 +58,8 @@ export type ClaimedWinningTile = {
 
 export type PlayerState = {
   id: PlayerId;
-  hand: Tile[];
-  discards: Tile[];
+  hand: PhysicalTile[];
+  discards: PhysicalTile[];
   melds: Meld[];
   hasWon: boolean;
   // Server-only source record for a physical tile received from another player.
@@ -63,6 +71,6 @@ export type RoundState = {
   seed: string;
   dealer: PlayerId;
   players: PlayerState[];
-  wall: Tile[];
+  wall: PhysicalTile[];
   currentPlayer: PlayerId;
 };

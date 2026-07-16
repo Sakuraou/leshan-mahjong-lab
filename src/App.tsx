@@ -3014,7 +3014,11 @@ function PlayerSeat({ player, current, local }: { player: VisiblePlayerState; cu
 function toVisiblePlayerState(player: PlayerState): VisiblePlayerState {
   return {
     id: player.id,
-    hand: player.hand,
+    hand: player.hand.map((tile, index) => ({
+      suit: tile.suit,
+      rank: tile.rank,
+      tileId: tile.instanceId ?? `local-${player.id}-${index}-${tile.suit}-${tile.rank}`,
+    })),
     handCount: player.hand.length,
     discards: player.discards,
     melds: player.melds,
@@ -3263,6 +3267,10 @@ function roomEventText(event: RoomEvent, room: RoomState): string {
       return `${roomPlayerName(room, event.playerId)} 声明巴杠 ${tileText(event.tile)}，等待其他玩家抢杠胡。`;
     case "baGangClaimed":
       return `${roomPlayerName(room, event.playerId)} 巴杠 ${tileText(event.tile)}。`;
+    case "gangYaoJiExchanged":
+      return event.gangType === "anGang"
+        ? `${roomPlayerName(room, event.playerId)} 从暗杠中换回幺鸡。`
+        : `${roomPlayerName(room, event.playerId)} 从 ${tileText(event.targetTile)} 杠中换回幺鸡。`;
     case "qiangGangPassed":
       return `${roomPlayerName(room, event.playerId)} 对抢杠胡过牌。`;
     case "qiangGangHuClaimed":

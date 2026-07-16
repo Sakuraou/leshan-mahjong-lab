@@ -159,6 +159,10 @@ function mobilePublicEventText(event: MobilePublicEvent, view: ClientVisibleRoom
       return `${seatName(view, event.seatId)} 暗杠${event.usesLaizi ? "（含幺鸡）" : ""}`;
     case "baGangClaimed":
       return `${seatName(view, event.seatId)} 巴杠 ${tileLabel(event.tile)}`;
+    case "gangYaoJiExchanged":
+      return event.targetTile === null
+        ? `${seatName(view, event.seatId)} 完成暗杠换幺鸡`
+        : `${seatName(view, event.seatId)} 从 ${tileLabel(event.targetTile)} 杠中换回幺鸡`;
     case "huClaimed":
       return `${seatName(view, event.seatId)} 点炮胡 ${tileLabel(event.tile)}，${event.points} 分`;
     case "selfDrawHuClaimed":

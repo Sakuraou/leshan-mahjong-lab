@@ -542,15 +542,16 @@ type ClientActionDescriptor =
   | { action: ClientLegalAction; actionId: string }
   | { action: "takeSeat"; actionId: string; seatIds: Array<0 | 1 | 2 | 3> }
   | { action: "chooseMissingSuit"; actionId: string; suits: Suit[] }
-  | {
-      action: "discardTile" | "claimAnGang" | "claimBaGang";
-      actionId: string;
-      tiles: Tile[];
-    };
+  | { action: "discardTile"; actionId: string; tiles: ClientOwnedTile[] }
+  | { action: "claimAnGang"; actionId: string; tiles: Tile[] }
+  | { action: "claimBaGang"; actionId: string; candidates: ClientBaGangCandidate[] }
+  | { action: "exchangeGangYaoJi"; actionId: string; candidates: ClientYaoJiExchangeCandidate[] };
+
+type ClientOwnedTile = Tile & { tileId: string };
 
 type VisiblePlayerState = {
   id: 0 | 1 | 2 | 3;
-  hand: Tile[] | null;
+  hand: ClientOwnedTile[] | null;
   handCount: number;
   discards: Tile[];
   hasWon: boolean;
@@ -580,7 +581,7 @@ type GuardedTilePayload = GuardedTurnPayload & {
 ```
 
 `drawTile`, `drawGangTile`, all discard/qiang-gang response commands, and
-`claimAnGang` / `claimBaGang` use this precondition. The Expo transport always
+`claimAnGang`, `claimBaGang`, and `exchangeGangYaoJi` use this precondition. The Expo transport always
 sends it; protocol-v1 Web debug messages may omit it temporarily. If a supplied
 id does not match the requesting session's current descriptor, the service
 returns `actionRejected` with code `staleAction`, publishes the current safe
@@ -593,8 +594,11 @@ old discard or pass/hu/peng/gang click from landing in a later turn or window.
 
 Active gang parameter rules:
 
-- `claimAnGang.payload.tile` and `claimBaGang.payload.tile` must be selected
-  from the corresponding session-scoped descriptor.
+- `claimAnGang.payload.tile` comes from its descriptor. `claimBaGang` and
+  `exchangeGangYaoJi` submit only `{ candidateId, expectedActionId }` from the
+  latest session-scoped descriptor.
+- An unknown candidate under an otherwise current descriptor is rejected as
+  `staleAction`; candidate ids are opaque and carry no meld index or tile id.
 - The server still validates the physical hand/meld, phase, player, and laizi
   sources. The client does not derive candidates.
 - An accepted an-gang enters `gangDraw` immediately.
@@ -952,6 +956,7 @@ type ClientLegalAction =
   | "claimMingGang"
   | "claimAnGang"
   | "claimBaGang"
+  | "exchangeGangYaoJi"
   | "passQiangGang"
   | "claimQiangGangHu";
 ```
@@ -966,6 +971,13 @@ avoid desync. Lobby actions remain outside this round-phase list.
 enters `qiangGang`, keeps the original `peng`, and stores both the peng's
 logical `targetTile` and the actual added tile. The latter may be a yao ji and
 is the tile passed to hu parsing.
+
+Ba gang is never automatic. The owner descriptor contains one candidate per
+eligible physical hand tile and exposed peng, including `usesLaizi`,
+`paymentEligibility`, `payerSeatIds`, and `pointsPerPayer`. A newly drawn
+matching natural tile and any yao ji can score normally; the same natural tile
+used after its draw turn remains legal with `zeroDelayedNatural` and zero gang
+transfers. Both paths still open `qiangGang`.
 
 Eligible, not-yet-won opponents receive `passQiangGang` and, when the ordinary
 discard-hu check succeeds, `claimQiangGangHu` in their own `legalActions`.
@@ -983,6 +995,19 @@ When every eligible player has responded:
 The client-visible ba-gang window omits the internal meld index. Clients render
 the state and buttons from `phase`, `legalActions`, and the redacted window;
 they do not commit or roll back a meld locally.
+
+### Established Gang Yao-Ji Exchange
+
+`exchangeGangYaoJi` is available only in the owner's discard phase for a
+four-tile ming/an/ba gang linked to an established gang fact. The selected
+candidate atomically puts one matching natural hand tile into the gang and
+returns one physical yao ji to the same hand. The server keeps the frozen gang
+fact and payer set unchanged, stays in `discard`, opens no qiang-gang window,
+and grants no replacement draw. If the exchange newly creates a legal hu, the
+next snapshot offers `claimSelfDrawHu`; it never claims hu automatically.
+
+Only the owner sees natural/returned-tile candidate details and hand `tileId`s.
+Other sessions see a safe public gang summary; an-gang targets remain hidden.
 
 ## Reconnect And Recovery
 

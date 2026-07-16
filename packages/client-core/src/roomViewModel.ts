@@ -1,5 +1,6 @@
 import type {
   ClientActionDescriptor,
+  ClientOwnedTile,
   ClientLegalAction,
   ClientResponseChoice,
   ClientVisibleMeld,
@@ -20,7 +21,7 @@ export type ClientSeatViewModel = {
   isLocal: boolean;
   isDealer: boolean;
   isCurrentPlayer: boolean;
-  hand: Tile[] | null;
+  hand: ClientOwnedTile[] | null;
   handCount: number;
   discards: Tile[];
   melds: ClientVisibleMeld[];
@@ -103,14 +104,27 @@ export function descriptorForAction(
 
 export function legalTilesForAction(
   view: ClientVisibleRoomState | ClientRoomViewModel | null,
-  action: "discardTile" | "claimAnGang" | "claimBaGang",
+  action: "discardTile",
+): ClientOwnedTile[];
+export function legalTilesForAction(
+  view: ClientVisibleRoomState | ClientRoomViewModel | null,
+  action: "claimAnGang",
+): Tile[];
+export function legalTilesForAction(
+  view: ClientVisibleRoomState | ClientRoomViewModel | null,
+  action: "discardTile" | "claimAnGang",
 ): Tile[] {
   const descriptor = descriptorForAction(view, action);
-  return descriptor !== null && "tiles" in descriptor ? descriptor.tiles.map(cloneTile) : [];
+  if (descriptor === null || !("tiles" in descriptor)) {
+    return [];
+  }
+  return descriptor.action === "discardTile"
+    ? descriptor.tiles.map(cloneOwnedTile)
+    : descriptor.tiles.map(cloneTile);
 }
 
-export function sortTilesForHand(tiles: Tile[]): Tile[] {
-  return tiles.map(cloneTile).sort((left, right) => {
+export function sortTilesForHand<TTile extends Tile>(tiles: readonly TTile[]): TTile[] {
+  return tiles.map((value) => ({ ...value })).sort((left, right) => {
     const suitDifference = suitOrder[left.suit] - suitOrder[right.suit];
     return suitDifference === 0 ? left.rank - right.rank : suitDifference;
   });
@@ -140,6 +154,10 @@ function cloneTile(tile: Tile): Tile {
   return { suit: tile.suit, rank: tile.rank };
 }
 
+function cloneOwnedTile(tile: ClientOwnedTile): ClientOwnedTile {
+  return { suit: tile.suit, rank: tile.rank, tileId: tile.tileId };
+}
+
 function cloneMeld(meld: ClientVisibleMeld): ClientVisibleMeld {
   if (meld.type === "anGang" && meld.tile === null) {
     return { type: "anGang", tile: null, tiles: [], fromPlayer: null };
@@ -160,8 +178,33 @@ function cloneActionDescriptor(descriptor: ClientActionDescriptor): ClientAction
   if (descriptor.action === "chooseMissingSuit") {
     return { ...descriptor, suits: [...descriptor.suits] };
   }
-  if (descriptor.action === "discardTile" || descriptor.action === "claimAnGang" || descriptor.action === "claimBaGang") {
+  if (descriptor.action === "discardTile") {
+    return { ...descriptor, tiles: descriptor.tiles.map(cloneOwnedTile) };
+  }
+  if (descriptor.action === "claimAnGang") {
     return { ...descriptor, tiles: descriptor.tiles.map(cloneTile) };
+  }
+  if (descriptor.action === "claimBaGang") {
+    return {
+      ...descriptor,
+      candidates: descriptor.candidates.map((candidate) => ({
+        ...candidate,
+        targetTile: cloneTile(candidate.targetTile),
+        addedTile: cloneOwnedTile(candidate.addedTile),
+        payerSeatIds: [...candidate.payerSeatIds],
+      })),
+    };
+  }
+  if (descriptor.action === "exchangeGangYaoJi") {
+    return {
+      ...descriptor,
+      candidates: descriptor.candidates.map((candidate) => ({
+        ...candidate,
+        targetTile: cloneTile(candidate.targetTile),
+        naturalTile: cloneOwnedTile(candidate.naturalTile),
+        returnedYaoJi: cloneTile(candidate.returnedYaoJi),
+      })),
+    };
   }
   return { ...descriptor };
 }

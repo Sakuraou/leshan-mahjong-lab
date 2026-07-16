@@ -1,6 +1,6 @@
-import type { PlayerId, PlayerState, RoundState, Tile } from "./types.ts";
+import type { PhysicalTile, PlayerId, PlayerState, RoundState, Tile } from "./types.ts";
 import { checkDiscardLegal, type DiscardCheckResult } from "./rules.ts";
-import { createWall, sameTile } from "./tiles.ts";
+import { createWall, samePhysicalTile } from "./tiles.ts";
 
 const playerCount = 4;
 const dealerHandSize = 14;
@@ -9,10 +9,11 @@ const nonDealerHandSize = 13;
 export type StartRoundInput = {
   seed: string;
   dealer?: PlayerId;
+  tileInstanceIdFactory?: (tile: Tile, index: number) => string;
 };
 
 export type DrawTileResult =
-  | { ok: true; round: RoundState; tile: Tile }
+  | { ok: true; round: RoundState; tile: PhysicalTile }
   | { ok: false; reason: "wallEmpty" | "playerAlreadyWon" };
 
 export type DiscardTileResult =
@@ -38,7 +39,12 @@ export function seededShuffle<T>(values: readonly T[], seed: string): T[] {
 
 export function startRound(input: StartRoundInput): RoundState {
   const dealer = input.dealer ?? 0;
-  const wall = seededShuffle(createWall(), input.seed);
+  const tileInstanceIdFactory = input.tileInstanceIdFactory ?? secureTileInstanceId;
+  const physicalWall = createWall().map((value, index): PhysicalTile => ({
+    ...value,
+    instanceId: tileInstanceIdFactory(value, index),
+  }));
+  const wall = seededShuffle(physicalWall, input.seed);
   const players = createPlayers();
 
   let drawIndex = 0;
@@ -99,7 +105,7 @@ export function drawTile(round: RoundState): DrawTileResult {
   };
 }
 
-export function discardTile(round: RoundState, playerId: PlayerId, discard: Tile): DiscardTileResult {
+export function discardTile(round: RoundState, playerId: PlayerId, discard: PhysicalTile): DiscardTileResult {
   if (playerId !== round.currentPlayer) {
     return { ok: false, reason: "notCurrentPlayer" };
   }
@@ -159,14 +165,22 @@ function replacePlayer(players: PlayerState[], playerId: PlayerId, nextPlayer: P
   return players.map((player) => (player.id === playerId ? nextPlayer : player));
 }
 
-function removeFirstMatchingTile(hand: Tile[], target: Tile): Tile[] {
-  const index = hand.findIndex((value) => sameTile(value, target));
+function removeFirstMatchingTile(hand: PhysicalTile[], target: PhysicalTile): PhysicalTile[] {
+  const index = hand.findIndex((value) => samePhysicalTile(value, target));
 
   if (index === -1) {
     return hand;
   }
 
   return [...hand.slice(0, index), ...hand.slice(index + 1)];
+}
+
+function secureTileInstanceId(): string {
+  if (typeof globalThis.crypto?.randomUUID !== "function") {
+    throw new Error("Secure random UUID support is required for physical tile identity.");
+  }
+
+  return globalThis.crypto.randomUUID();
 }
 
 function createSeededRandom(seed: string): () => number {

@@ -1,4 +1,4 @@
-import type { Rank, Suit, Tile } from "./types.ts";
+import type { PhysicalTile, Rank, Suit, Tile } from "./types.ts";
 
 export const SUITS: Suit[] = ["characters", "dots", "bamboos"];
 export const RANKS: Rank[] = [1, 2, 3, 4, 5, 6, 7, 8, 9];
@@ -19,6 +19,18 @@ export function tileKey(value: Tile): string {
 
 export function sameTile(left: Tile, right: Tile): boolean {
   return left.suit === right.suit && left.rank === right.rank;
+}
+
+export function samePhysicalTile(left: PhysicalTile, right: PhysicalTile): boolean {
+  if (left.instanceId !== undefined && right.instanceId !== undefined) {
+    return left.instanceId === right.instanceId;
+  }
+
+  return sameTile(left, right);
+}
+
+export function tileFace(value: Tile): Tile {
+  return { suit: value.suit, rank: value.rank };
 }
 
 export function tileLabel(value: Tile): string {
@@ -46,4 +58,3 @@ export function countTile(values: Tile[], target: Tile): number {
 export function containsTile(values: Tile[], target: Tile): boolean {
   return countTile(values, target) > 0;
 }
-

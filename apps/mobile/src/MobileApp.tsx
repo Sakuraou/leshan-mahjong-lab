@@ -1,10 +1,13 @@
 import type {
+  ClientBaGangCandidate,
   ClientLegalAction,
+  ClientOwnedTile,
   ClientRoomViewModel,
   ClientSeatViewModel,
   ClientTransportActionResult,
   ClientVisibleMeld,
   ClientVisibleRoomState,
+  ClientYaoJiExchangeCandidate,
   MobilePublicEvent,
   MobileDevelopmentTarget,
   MobileServerMode,
@@ -26,8 +29,11 @@ import {
   inferMobileDevelopmentTarget,
   inferMobileServerMode,
   legalTilesForAction,
+  moveMobileHandTile,
   mobileConnectionDiagnosticText,
   nextAutomaticDrawAction,
+  orderMobileHand,
+  reconcileMobileHandOrder,
   suitLabel,
   tileLabel,
   toClientRoomViewModel,
@@ -36,8 +42,10 @@ import {
 import NetInfo from "@react-native-community/netinfo";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Animated,
   AppState,
   type AppStateStatus,
+  PanResponder,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -75,12 +83,11 @@ type PendingActionConfirmation = {
   action: ClientLegalAction;
   actionId: string | null;
 };
-type SelectedDiscard = { tile: Tile; actionId: string };
-type SelectedGang = {
-  action: "claimAnGang" | "claimBaGang";
-  tile: Tile;
-  actionId: string;
-};
+type SelectedDiscard = { tile: ClientOwnedTile; actionId: string };
+type SelectedGang =
+  | { action: "claimAnGang"; tile: Tile; actionId: string }
+  | { action: "claimBaGang"; candidate: ClientBaGangCandidate; actionId: string }
+  | { action: "exchangeGangYaoJi"; candidate: ClientYaoJiExchangeCandidate; actionId: string };
 
 const seatIds: PlayerId[] = [0, 1, 2, 3];
 const suits: Suit[] = ["bamboos", "dots", "characters"];
@@ -112,6 +119,7 @@ export function MobileApp() {
   const [storedSession, setStoredSession] = useState<PersistedRoomSession | null>(null);
   const [selectedDiscard, setSelectedDiscard] = useState<SelectedDiscard | null>(null);
   const [selectedGang, setSelectedGang] = useState<SelectedGang | null>(null);
+  const [handOrderIds, setHandOrderIds] = useState<string[]>([]);
   const [pendingConfirmation, setPendingConfirmation] = useState<PendingActionConfirmation | null>(null);
   const [reconnectState, setReconnectState] = useState<ReconnectState>(initialReconnectState);
   const [reconnectActive, setReconnectActive] = useState(false);
@@ -133,10 +141,18 @@ export function MobileApp() {
   const networkConnectedRef = useRef<boolean | null>(null);
   const lastPersistedEventId = useRef(-1);
   const autoDrawInFlight = useRef<string | null>(null);
-  const viewModel = useMemo(
-    () => (snapshot === null ? null : toClientRoomViewModel(snapshot)),
-    [snapshot],
-  );
+  const handOrderIdsRef = useRef<string[]>([]);
+  const viewModel = useMemo(() => {
+    if (snapshot === null) {
+      return null;
+    }
+    const model = toClientRoomViewModel(snapshot);
+    const seat = model.seats.find((value) => value.isLocal);
+    if (seat?.hand !== null && seat?.hand !== undefined) {
+      seat.hand = orderMobileHand(seat.hand, handOrderIds);
+    }
+    return model;
+  }, [snapshot, handOrderIds]);
   reconnectAttemptRef.current = performReconnectAttempt;
   if (reconnectCoordinatorRef.current === null) {
     reconnectCoordinatorRef.current = createReconnectCoordinator({
@@ -310,6 +326,33 @@ export function MobileApp() {
   }, [gateway]);
 
   useEffect(() => {
+    const localSeatId = snapshot?.localSeatId;
+    const hand = localSeatId === null || localSeatId === undefined
+      ? null
+      : snapshot?.round?.players[localSeatId]?.hand ?? null;
+    if (hand === null) {
+      return;
+    }
+    setHandOrderIds((previous) => reconcileMobileHandOrder(previous, hand));
+  }, [snapshot]);
+
+  useEffect(() => {
+    handOrderIdsRef.current = handOrderIds;
+    const record = sessionRef.current;
+    if (record === null || snapshot === null) {
+      return;
+    }
+    const nextRecord: PersistedRoomSession = {
+      ...record,
+      handOrderRoundNumber: snapshot.roundNumber,
+      handOrderTileIds: [...handOrderIds],
+    };
+    sessionRef.current = nextRecord;
+    setStoredSession(nextRecord);
+    void mobileRoomSessionStore.save(nextRecord).catch(() => undefined);
+  }, [handOrderIds, snapshot?.roundNumber]);
+
+  useEffect(() => {
     const drawAction = nextAutomaticDrawAction(
       snapshot,
       autoDrawInFlight.current,
@@ -366,7 +409,7 @@ export function MobileApp() {
     }
     const descriptor = descriptorForAction(snapshot, "discardTile");
     const stillLegal = descriptor?.actionId === selectedDiscard.actionId
-      && legalTilesForAction(snapshot, "discardTile").some((tile) => sameTile(tile, selectedDiscard.tile));
+      && legalTilesForAction(snapshot, "discardTile").some((tile) => tile.tileId === selectedDiscard.tile.tileId);
     if (!stillLegal) {
       setSelectedDiscard(null);
     }
@@ -377,8 +420,13 @@ export function MobileApp() {
       return;
     }
     const descriptor = descriptorForAction(snapshot, selectedGang.action);
-    const stillLegal = descriptor?.actionId === selectedGang.actionId
-      && legalTilesForAction(snapshot, selectedGang.action).some((tile) => sameTile(tile, selectedGang.tile));
+    const stillLegal = descriptor?.actionId === selectedGang.actionId && (
+      selectedGang.action === "claimAnGang"
+        ? descriptor.action === "claimAnGang" && descriptor.tiles.some((tile) => sameTile(tile, selectedGang.tile))
+        : descriptor.action === selectedGang.action && descriptor.candidates.some(
+            (candidate) => candidate.candidateId === selectedGang.candidate.candidateId,
+          )
+    );
     if (!stillLegal) {
       setSelectedGang(null);
     }
@@ -403,6 +451,7 @@ export function MobileApp() {
     closeCurrentGateway();
     publicEventsRef.current = [];
     setPublicEvents([]);
+    setHandOrderIds([]);
     setConnectionStatus("connecting");
     setStatusText(mode === "create" ? "正在创建房间" : "正在加入房间");
 
@@ -589,6 +638,11 @@ export function MobileApp() {
     sessionRef.current = record;
     setGateway(nextGateway);
     setIdentity({ playerId });
+    setHandOrderIds(
+      previousRecord?.handOrderRoundNumber === nextSnapshot.roundNumber
+        ? [...(previousRecord.handOrderTileIds ?? [])]
+        : [],
+    );
     setSnapshot(nextSnapshot);
     publicEventsRef.current = nextEvents;
     setPublicEvents(nextEvents);
@@ -672,10 +726,16 @@ export function MobileApp() {
     if (selectedGang === null) {
       return;
     }
-    const { action, tile, actionId } = selectedGang;
-    await runRoomAction(action, (activeGateway) => action === "claimAnGang"
-      ? activeGateway.claimAnGang(tile, actionId)
-      : activeGateway.claimBaGang(tile, actionId));
+    if (selectedGang.action === "claimAnGang") {
+      await runRoomAction("claimAnGang", (activeGateway) =>
+        activeGateway.claimAnGang(selectedGang.tile, selectedGang.actionId));
+    } else if (selectedGang.action === "claimBaGang") {
+      await runRoomAction("claimBaGang", (activeGateway) =>
+        activeGateway.claimBaGang(selectedGang.candidate.candidateId, selectedGang.actionId));
+    } else {
+      await runRoomAction("exchangeGangYaoJi", (activeGateway) =>
+        activeGateway.exchangeGangYaoJi(selectedGang.candidate.candidateId, selectedGang.actionId));
+    }
     setSelectedGang(null);
   }
 
@@ -703,6 +763,7 @@ export function MobileApp() {
     setStoredSession(null);
     setIdentity(null);
     setSnapshot(null);
+    setHandOrderIds([]);
     publicEventsRef.current = [];
     setPublicEvents([]);
     clearPendingConfirmation();
@@ -957,6 +1018,9 @@ export function MobileApp() {
                       setSelectedDiscard({ tile, actionId: descriptor.actionId });
                     }
                   } : undefined}
+                  onMoveHandTile={seat.isLocal ? (movingTileId, targetTileId) => {
+                    setHandOrderIds((previous) => moveMobileHandTile(previous, movingTileId, targetTileId));
+                  } : undefined}
                 />
               ))}
               {canUseAction(viewModel, "discardTile") ? (
@@ -1024,6 +1088,8 @@ export function MobileApp() {
     const nextRecord = {
       ...record,
       lastEventId: latestServerEventId(activeGateway),
+      handOrderRoundNumber: snapshot?.roundNumber,
+      handOrderTileIds: [...handOrderIdsRef.current],
     };
     sessionRef.current = nextRecord;
     setStoredSession(nextRecord);
@@ -1139,12 +1205,15 @@ function TableSeat({
   legalDiscardTiles,
   selectedDiscard,
   onSelectDiscard,
+  onMoveHandTile,
 }: {
   seat: ClientSeatViewModel;
-  legalDiscardTiles: Tile[];
-  selectedDiscard: Tile | null;
-  onSelectDiscard?: (tile: Tile) => void;
+  legalDiscardTiles: ClientOwnedTile[];
+  selectedDiscard: ClientOwnedTile | null;
+  onSelectDiscard?: (tile: ClientOwnedTile) => void;
+  onMoveHandTile?: (movingTileId: string, targetTileId: string) => void;
 }) {
+  const [dragging, setDragging] = useState(false);
   return (
     <View style={[styles.tableSeat, seat.isLocal && styles.tableSeatLocal]}>
       <View style={styles.tableSeatHeader}>
@@ -1165,21 +1234,27 @@ function TableSeat({
           ))}
         </View>
       ) : (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.handRow}>
+        <ScrollView
+          horizontal
+          scrollEnabled={!dragging}
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.handRow}
+        >
           {seat.hand.map((tile, index) => {
-            const selectable = legalDiscardTiles.some((candidate) => sameTile(candidate, tile));
-            const selected = selectedDiscard !== null && sameTile(selectedDiscard, tile);
+            const selectable = legalDiscardTiles.some((candidate) => candidate.tileId === tile.tileId);
+            const selected = selectedDiscard?.tileId === tile.tileId;
             return (
-              <Pressable
-                key={`${tile.suit}-${tile.rank}-${index}`}
-                accessibilityRole="button"
-                accessibilityLabel={`${tileLabel(tile)}${selectable ? "，可出牌" : "，当前不可出"}`}
-                disabled={!selectable || onSelectDiscard === undefined}
-                onPress={() => onSelectDiscard?.(tile)}
-                style={[styles.handTileButton, !selectable && styles.handTileDisabled, selected && styles.handTileSelected]}
-              >
-                <TileFace tile={tile} />
-              </Pressable>
+              <DraggableHandTile
+                key={tile.tileId}
+                tile={tile}
+                index={index}
+                tiles={seat.hand ?? []}
+                selectable={selectable}
+                selected={selected}
+                onPress={onSelectDiscard}
+                onMove={onMoveHandTile}
+                onDragStateChange={setDragging}
+              />
             );
           })}
         </ScrollView>
@@ -1188,6 +1263,76 @@ function TableSeat({
         <Text style={styles.meldText}>副露：{seat.melds.map(meldLabel).join(" · ")}</Text>
       )}
     </View>
+  );
+}
+
+const handTileExtent = 45;
+
+function DraggableHandTile({
+  tile,
+  index,
+  tiles,
+  selectable,
+  selected,
+  onPress,
+  onMove,
+  onDragStateChange,
+}: {
+  tile: ClientOwnedTile;
+  index: number;
+  tiles: ClientOwnedTile[];
+  selectable: boolean;
+  selected: boolean;
+  onPress?: (tile: ClientOwnedTile) => void;
+  onMove?: (movingTileId: string, targetTileId: string) => void;
+  onDragStateChange: (dragging: boolean) => void;
+}) {
+  const translateX = useRef(new Animated.Value(0)).current;
+  const moved = useRef(false);
+  const responder = useMemo(() => PanResponder.create({
+    onMoveShouldSetPanResponder: (_event, gesture) =>
+      onMove !== undefined && Math.abs(gesture.dx) > 6 && Math.abs(gesture.dx) > Math.abs(gesture.dy),
+    onPanResponderGrant: () => {
+      moved.current = false;
+      onDragStateChange(true);
+    },
+    onPanResponderMove: (_event, gesture) => {
+      moved.current = true;
+      translateX.setValue(gesture.dx);
+    },
+    onPanResponderRelease: (_event, gesture) => {
+      const targetIndex = Math.max(0, Math.min(tiles.length - 1, index + Math.round(gesture.dx / handTileExtent)));
+      const target = tiles[targetIndex];
+      if (target !== undefined && target.tileId !== tile.tileId) {
+        onMove?.(tile.tileId, target.tileId);
+      }
+      Animated.spring(translateX, { toValue: 0, useNativeDriver: true }).start();
+      onDragStateChange(false);
+    },
+    onPanResponderTerminate: () => {
+      Animated.spring(translateX, { toValue: 0, useNativeDriver: true }).start();
+      onDragStateChange(false);
+    },
+  }), [index, onDragStateChange, onMove, tile.tileId, tiles, translateX]);
+
+  return (
+    <Animated.View
+      {...responder.panHandlers}
+      style={[styles.draggableHandTile, { transform: [{ translateX }] }]}
+    >
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${tileLabel(tile)}${selectable ? "，可出牌" : "，当前不可出；可拖动排序"}`}
+        onPress={() => {
+          if (!moved.current && selectable) {
+            onPress?.(tile);
+          }
+        }}
+        style={[styles.handTileButton, !selectable && styles.handTileDisabled, selected && styles.handTileSelected]}
+      >
+        <TileFace tile={tile} />
+      </Pressable>
+    </Animated.View>
   );
 }
 
@@ -1254,27 +1399,47 @@ function ActiveGangActions({
   onSelect: (selection: SelectedGang) => void;
   onConfirm: () => void;
 }) {
-  const candidates = (["claimAnGang", "claimBaGang"] as const).flatMap((action) => {
-    const descriptor = descriptorForAction(viewModel, action);
-    if (descriptor === null || !("tiles" in descriptor)) {
-      return [];
-    }
-    return descriptor.tiles.map((tile) => ({ action, actionId: descriptor.actionId, tile }));
-  });
+  const anGangDescriptor = descriptorForAction(viewModel, "claimAnGang");
+  const baGangDescriptor = descriptorForAction(viewModel, "claimBaGang");
+  const exchangeDescriptor = descriptorForAction(viewModel, "exchangeGangYaoJi");
+  const candidates: SelectedGang[] = [
+    ...(anGangDescriptor?.action === "claimAnGang"
+      ? anGangDescriptor.tiles.map((tile): SelectedGang => ({
+          action: "claimAnGang",
+          actionId: anGangDescriptor.actionId,
+          tile,
+        }))
+      : []),
+    ...(baGangDescriptor?.action === "claimBaGang"
+      ? baGangDescriptor.candidates.map((candidate): SelectedGang => ({
+          action: "claimBaGang",
+          actionId: baGangDescriptor.actionId,
+          candidate,
+        }))
+      : []),
+    ...(exchangeDescriptor?.action === "exchangeGangYaoJi"
+      ? exchangeDescriptor.candidates.map((candidate): SelectedGang => ({
+          action: "exchangeGangYaoJi",
+          actionId: exchangeDescriptor.actionId,
+          candidate,
+        }))
+      : []),
+  ];
   if (candidates.length === 0) {
     return null;
   }
   return (
     <View style={styles.turnActionBand}>
-      <Text style={styles.turnActionTitle}>服务端可用杠牌</Text>
+      <Text style={styles.turnActionTitle}>续杠与换幺鸡</Text>
       <View style={styles.responseActionRow}>
         {candidates.map((candidate) => {
-          const active = selected?.action === candidate.action && sameTile(selected.tile, candidate.tile);
-          const label = `${candidate.action === "claimAnGang" ? "暗杠" : "巴杠"} ${tileLabel(candidate.tile)}`;
+          const candidateKey = selectedGangKey(candidate);
+          const active = selected !== null && selectedGangKey(selected) === candidateKey;
+          const label = selectedGangLabel(candidate);
           return (
             <CommandButton
-              key={`${candidate.action}-${candidate.tile.suit}-${candidate.tile.rank}`}
-              label={active ? `已选 ${label}` : label}
+              key={candidateKey}
+              label={active ? `已选：${label}` : label}
               tone={active ? "primary" : "secondary"}
               disabled={busy}
               onPress={() => onSelect(candidate)}
@@ -1284,13 +1449,9 @@ function ActiveGangActions({
       </View>
       {selected === null ? null : (
         <>
-          <Text style={styles.turnNoticeText}>
-            {selected.action === "claimBaGang"
-              ? "确认后会进入抢杠胡等待；无人抢杠时系统自动补牌。"
-              : "暗杠牌面只会向你本人显示，其他玩家仅看到安全摘要。"}
-          </Text>
+          <Text style={styles.turnNoticeText}>{selectedGangNotice(selected)}</Text>
           <CommandButton
-            label={`确认${selected.action === "claimAnGang" ? "暗杠" : "巴杠"} ${tileLabel(selected.tile)}`}
+            label={`确认${selectedGangLabel(selected)}`}
             onPress={onConfirm}
             disabled={busy}
           />
@@ -1298,6 +1459,40 @@ function ActiveGangActions({
       )}
     </View>
   );
+}
+
+function selectedGangKey(selection: SelectedGang): string {
+  if (selection.action === "claimAnGang") {
+    return `${selection.actionId}:an:${selection.tile.suit}:${selection.tile.rank}`;
+  }
+  return `${selection.actionId}:${selection.candidate.candidateId}`;
+}
+
+function selectedGangLabel(selection: SelectedGang): string {
+  if (selection.action === "claimAnGang") {
+    return `暗杠 ${tileLabel(selection.tile)}`;
+  }
+  if (selection.action === "exchangeGangYaoJi") {
+    return `换回幺鸡 ${tileLabel(selection.candidate.targetTile)}`;
+  }
+  const payment = selection.candidate.paymentEligibility === "zeroDelayedNatural"
+    ? "本次杠分为 0"
+    : `每位付款人 ${selection.candidate.pointsPerPayer} 分`;
+  return `续杠 ${tileLabel(selection.candidate.targetTile)}（${payment}）`;
+}
+
+function selectedGangNotice(selection: SelectedGang): string {
+  if (selection.action === "claimAnGang") {
+    return "暗杠牌面只向你本人显示；成立后进入杠后补牌。";
+  }
+  if (selection.action === "exchangeGangYaoJi") {
+    return `用手中的 ${tileLabel(selection.candidate.naturalTile)} 换回一张幺鸡；不重新计杠分、不补牌，也不触发抢杠胡。`;
+  }
+  const source = selection.candidate.usesLaizi ? "这组续杠包含幺鸡" : "这组续杠使用真牌";
+  const payment = selection.candidate.paymentEligibility === "zeroDelayedNatural"
+    ? "该真牌错过了摸到当回合，续杠合法但本次杠分为 0。"
+    : `成立时由 ${selection.candidate.payerSeatIds.length} 位未胡玩家每人支付 ${selection.candidate.pointsPerPayer} 分。`;
+  return `${source}。${payment}确认后先进入抢杠胡窗口；无人抢杠才正式成立并补牌。`;
 }
 
 function MetaItem({ label, value }: { label: string; value: string }) {
@@ -1380,6 +1575,7 @@ function actionLabel(action: ClientLegalAction): string {
     claimMingGang: "明杠",
     claimAnGang: "暗杠",
     claimBaGang: "巴杠",
+    exchangeGangYaoJi: "换回幺鸡",
     passQiangGang: "过抢杠",
     claimQiangGangHu: "抢杠胡",
     readyNextRound: "准备下一局",
@@ -1842,6 +2038,9 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     alignItems: "center",
     justifyContent: "flex-end",
+  },
+  draggableHandTile: {
+    zIndex: 1,
   },
   handTileDisabled: {
     opacity: 0.34,

@@ -1,5 +1,6 @@
 import type {
   ClientVisibleRoomState,
+  ClientOwnedTile,
   MobilePublicEvent,
   PlayerId,
   ProtocolErrorCode,
@@ -48,14 +49,15 @@ export type MobileRoomTransport = {
   chooseMissingSuit: (suit: Suit) => Promise<ClientTransportActionResult>;
   drawTile: (expectedActionId: string) => Promise<ClientTransportActionResult>;
   drawGangTile: (expectedActionId: string) => Promise<ClientTransportActionResult>;
-  discardTile: (tile: Tile, expectedActionId: string) => Promise<ClientTransportActionResult>;
+  discardTile: (tile: ClientOwnedTile, expectedActionId: string) => Promise<ClientTransportActionResult>;
   passClaim: (expectedActionId: string) => Promise<ClientTransportActionResult>;
   claimHu: (expectedActionId: string) => Promise<ClientTransportActionResult>;
   claimSelfDrawHu: (expectedActionId: string) => Promise<ClientTransportActionResult>;
   claimPeng: (expectedActionId: string) => Promise<ClientTransportActionResult>;
   claimMingGang: (expectedActionId: string) => Promise<ClientTransportActionResult>;
   claimAnGang: (tile: Tile, expectedActionId: string) => Promise<ClientTransportActionResult>;
-  claimBaGang: (tile: Tile, expectedActionId: string) => Promise<ClientTransportActionResult>;
+  claimBaGang: (candidateId: string, expectedActionId: string) => Promise<ClientTransportActionResult>;
+  exchangeGangYaoJi: (candidateId: string, expectedActionId: string) => Promise<ClientTransportActionResult>;
   passQiangGang: (expectedActionId: string) => Promise<ClientTransportActionResult>;
   claimQiangGangHu: (expectedActionId: string) => Promise<ClientTransportActionResult>;
   getState: () => MobileRoomTransportState;
@@ -71,6 +73,8 @@ export type PersistedRoomSession = {
   sessionToken: string;
   lastEventId: number;
   lastCompletedAutoDrawActionId?: string;
+  handOrderRoundNumber?: number;
+  handOrderTileIds?: string[];
 };
 
 export type RoomSessionStore = {

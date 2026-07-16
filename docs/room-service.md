@@ -23,6 +23,7 @@ The room service owns the authoritative in-memory state for one room:
   - `startRoomRound`
   - `readyNextRound`, `startNextRound`, and `finishGame`
   - dingque, draw/discard, claim, gang, hu, and deadline transitions
+  - voluntary candidate-based ba gang and established-gang yao-ji exchange
 - A stable API that can be called by both the current frontend mock transport
   and a future real WebSocket adapter.
 
@@ -344,6 +345,16 @@ lookup, event ids, and redacted room views.
 - A ba gang fact is created only after the qiang-gang window closes without hu.
   Client views expose safe established summaries, hide every physical source
   array and internal gang ID, and replace an-gang target tiles with `null`.
+- Normal and delayed-natural zero-point ba gangs both create immutable facts.
+  Zero-point facts preserve replay/provenance but are filtered from ledger
+  transfers. The selected physical tile and payer set are frozen at commit.
+- Every established gang links to its fact internally. `exchangeGangYaoJi`
+  swaps an exact natural hand tile with one yao ji in that gang while preserving
+  the fact, score, payer set, phase, and draw state. The current ruleset does not
+  open qiang-gang for this exchange.
+- Service-side candidate checks run after deadline advancement and
+  `expectedActionId` validation. Missing/expired candidate ids return
+  `staleAction` without mutating the room.
 - On `wallEmpty`, the service evaluates only players who have not already won.
   It freezes each listener's best current-engine discard-hu result and creates
   one zero-sum `chaJiao` transfer from every non-listener to every listener,

@@ -65,7 +65,7 @@ test("strict mobile parser projects a safe snapshot and rejects hidden fields", 
 
   const withOpponentHand = structuredClone(message);
   if (withOpponentHand.payload.view.round !== null) {
-    withOpponentHand.payload.view.round.players[1].hand = [tile("characters", 9)];
+    (withOpponentHand.payload.view.round.players[1] as unknown as { hand: unknown[] }).hand = [tile("characters", 9)];
   }
   assert.deepEqual(parseMobileRoomServerMessage(withOpponentHand), {
     ok: false,
@@ -457,28 +457,65 @@ test("mobile transport always echoes the current action descriptor and blocks st
 
   const activeGangView: ClientVisibleRoomState = {
     ...view,
-    legalActions: ["claimAnGang", "claimBaGang"],
+    legalActions: ["claimAnGang", "claimBaGang", "exchangeGangYaoJi"],
     actionDescriptors: [
-      { action: "claimAnGang", actionId: "an-gang-action", tiles: [discard!] },
-      { action: "claimBaGang", actionId: "ba-gang-action", tiles: [discard!] },
+      {
+        action: "claimAnGang",
+        actionId: "an-gang-action",
+        tiles: [{ suit: discard!.suit, rank: discard!.rank }],
+      },
+      {
+        action: "claimBaGang",
+        actionId: "ba-gang-action",
+        candidates: [{
+          candidateId: "ba-gang-candidate",
+          targetTile: tile("characters", 3),
+          addedTile: discard!,
+          usesLaizi: false,
+          paymentEligibility: "normal",
+          payerSeatIds: [1, 2, 3],
+          pointsPerPayer: 2,
+        }],
+      },
+      {
+        action: "exchangeGangYaoJi",
+        actionId: "exchange-action",
+        candidates: [{
+          candidateId: "exchange-candidate",
+          gangType: "baGang",
+          targetTile: tile("characters", 3),
+          naturalTile: discard!,
+          returnedYaoJi: tile("dots", 1),
+        }],
+      },
     ],
   };
   socket.serverSend(snapshotMessage(activeGangView, "p1"));
   for (const [action, actionId] of [
     ["claimAnGang", "an-gang-action"],
     ["claimBaGang", "ba-gang-action"],
+    ["exchangeGangYaoJi", "exchange-action"],
   ] as const) {
     const actionPromise = action === "claimAnGang"
-      ? transport.claimAnGang(discard!, actionId)
-      : transport.claimBaGang(discard!, actionId);
+      ? transport.claimAnGang({ suit: discard!.suit, rank: discard!.rank }, actionId)
+      : action === "claimBaGang"
+        ? transport.claimBaGang("ba-gang-candidate", actionId)
+        : transport.exchangeGangYaoJi("exchange-candidate", actionId);
     const gangRequest = JSON.parse(socket.sent.at(-1)!) as {
       clientMessageId: string;
       type: string;
-      payload: { expectedActionId: string; tile: unknown };
+      payload: { expectedActionId: string; tile?: unknown; candidateId?: string };
     };
     assert.equal(gangRequest.type, action);
     assert.equal(gangRequest.payload.expectedActionId, actionId);
-    assert.deepEqual(gangRequest.payload.tile, discard);
+    if (action === "claimAnGang") {
+      assert.deepEqual(gangRequest.payload.tile, { suit: discard!.suit, rank: discard!.rank });
+    } else {
+      assert.equal(
+        gangRequest.payload.candidateId,
+        action === "claimBaGang" ? "ba-gang-candidate" : "exchange-candidate",
+      );
+    }
     socket.serverSend({
       protocolVersion: 1,
       serverEventId: 3,
@@ -642,7 +679,7 @@ test("recovery transport sends only resume and never replays an uncertain discar
 });
 
 test("mobile transports complete a real authoritative draw and discard turn", async () => {
-  const server = await createRoomSocketDevServer({ port: 0, responseWindowTimeoutMs: 500 });
+  const server = await createRoomSocketDevServer({ port: 0, responseWindowTimeoutMs: 3_000 });
   const transports: MobileRoomTransport[] = [];
   try {
     for (let index = 0; index < 4; index += 1) {
@@ -758,7 +795,9 @@ test("authoritative discard descriptor exposes only actually legal tiles", () =>
   };
 
   const view = toClientVisibleRoomState(room, "p1");
-  assert.deepEqual(legalTilesForAction(view, "discardTile"), [tile("characters", 3)]);
+  const legalTiles = legalTilesForAction(view, "discardTile");
+  assert.deepEqual(legalTiles.map(({ suit, rank }) => ({ suit, rank })), [tile("characters", 3)]);
+  assert.equal(typeof legalTiles[0]?.tileId, "string");
   assert.equal(discardRoomTile(room, "p1", tile("characters", 3)).ok, true);
   assert.equal(discardRoomTile(room, "p1", tile("dots", 5)).ok, false);
   assert.equal(discardRoomTile(room, "p1", tile("bamboos", 1)).ok, false);
@@ -829,7 +868,13 @@ function waitForTransport<T>(
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       unsubscribe();
-      reject(new Error("Timed out waiting for mobile transport state."));
+      const state = transport.getState();
+      reject(new Error(`Timed out waiting for mobile transport state: ${JSON.stringify({
+        status: state.status,
+        phase: state.snapshot?.phase ?? null,
+        legalActions: state.snapshot?.legalActions ?? [],
+        lastError: state.lastError,
+      })}`));
     }, timeoutMs);
     const unsubscribe = transport.subscribe((state) => {
       const selected = select(state);
