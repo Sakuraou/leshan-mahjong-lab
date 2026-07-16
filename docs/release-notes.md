@@ -2,6 +2,22 @@
 
 ## 2026-07-16
 
+- Prepared Android internal-beta candidate `0.2.0` without replacing the Vite
+  rule and multiplayer debug client.
+- Selected Render for the first single-instance room server and added a
+  Singapore-region `render.yaml` Blueprint with Docker, readiness, heartbeat,
+  payload, Origin, and shutdown settings.
+- Added a hosted-WSS smoke runner that uses four strict mobile transports to
+  create/join a room, take seats, ready, start, dingque, draw, discard, pass,
+  disconnect, and resume. It also probes untrusted Origin rejection, oversized
+  messages, heartbeat health, and stale-socket expiry without printing session
+  credentials.
+- Expanded the four-device checklist for voluntary ba gang, immediate versus
+  delayed-natural scoring, yao-ji continuation, qiang-gang, repeated gang
+  exchange, exchange-created self-draw prompts, touch ordering, reconnect, and
+  multi-round cumulative scoring.
+- Render service creation, the public WSS URL, Expo project binding, and the
+  signed preview APK remain pending one-time owner account authorization.
 - Added server-authoritative voluntary ba-gang candidates for each physical
   hand tile and peng, including normal, yao-ji, and delayed-natural zero-point
   payment previews.

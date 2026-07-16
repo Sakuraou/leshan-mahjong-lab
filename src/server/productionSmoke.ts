@@ -1,7 +1,7 @@
 import { pathToFileURL } from "node:url";
 
 import { createRoomSocketProductionServer } from "./productionServer.ts";
-import { runRoomSocketSmokeClient } from "./smokeClient.ts";
+import { runRemoteRoomSmoke } from "./remoteSmoke.ts";
 
 export async function runProductionServerSmoke() {
   const server = await createRoomSocketProductionServer({
@@ -10,27 +10,25 @@ export async function runProductionServerSmoke() {
       PORT: "0",
       WS_PATH: "/ws",
       ALLOWED_ORIGINS: "https://smoke.example",
-      ALLOW_MISSING_ORIGIN: "false",
+      ALLOW_MISSING_ORIGIN: "true",
       SHUTDOWN_GRACE_MS: "100",
+      HEARTBEAT_INTERVAL_MS: "100",
+      CONNECTION_TIMEOUT_MS: "500",
     },
     onStructuredLog: () => undefined,
   });
 
   try {
-    const health = await fetch(server.liveUrl);
-    if (!health.ok) {
-      throw new Error(`Production health check failed with ${health.status}.`);
-    }
-    const result = await runRoomSocketSmokeClient({
+    return await runRemoteRoomSmoke({
       url: server.wsUrl,
-      origin: "https://smoke.example",
-      roomId: `production-smoke-${Date.now()}`,
+      healthUrl: server.readyUrl,
+      roomId: `production-full-smoke-${Date.now()}`,
+      actionTimeoutMs: 5_000,
+      healthTimeoutMs: 5_000,
+      heartbeatObservationMs: 250,
+      staleConnectionObservationMs: 1_500,
+      allowInsecureLocal: true,
     });
-    return {
-      health: health.status,
-      hostMessages: result.hostMessages.map((message) => message.type),
-      guestMessages: result.guestMessages.map((message) => message.type),
-    };
   } finally {
     await server.close();
   }

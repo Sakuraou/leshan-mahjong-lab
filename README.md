@@ -25,8 +25,8 @@ after the GitHub repository is imported in Vercel.
 
 ## Remote Mobile Beta
 
-The repository now contains the first remote-beta delivery path without
-removing the browser debug table:
+Android candidate version `0.2.0` now has a repeatable remote-beta delivery path
+without removing the browser debug table:
 
 - `src/server/productionServer.ts` exposes `/ws`, liveness/readiness health
   checks, Origin filtering, payload limits, heartbeat/deadline ticks,
@@ -34,16 +34,31 @@ removing the browser debug table:
 - `Dockerfile` runs the in-memory authoritative room server as a single Node 24
   container. A hosting proxy terminates TLS, so phones use its public
   `wss://.../ws` URL.
+- `render.yaml` defines a one-instance Render service in Singapore with the
+  Docker runtime, readiness check, native-client Origin policy, payload limit,
+  heartbeat, and graceful shutdown settings.
 - The Expo client offers development, Android-emulator, LAN, and production
   endpoint modes. Production refuses `ws://`, localhost, and an unconfigured
   endpoint instead of falling back to `127.0.0.1`.
 - `apps/mobile/eas.json` includes LAN internal, preview internal-distribution
   APK, and production profiles. The public WebSocket URL is supplied through
   `EXPO_PUBLIC_ROOM_SERVER_URL`; room session tokens remain in SecureStore.
+- `npm run smoke:server:remote` drives four strict mobile transports through a
+  real hosted create/join/seat/ready/dingque/draw/discard/resume flow and probes
+  Origin rejection, payload limits, healthy heartbeat, and stale-socket expiry.
 
-The code and build profiles are ready, but a hosted URL and signed EAS artifact
-still require the project owner's hosting and Expo/Apple accounts. See the
-[deployment runbook](docs/internal-beta-deployment.md).
+Render Free is selected for the first server and EAS `preview` for the Android
+APK. The checked-in setup is ready; the public URL and signed artifact remain
+pending the project owner's one-time Render and Expo authorization. See the
+[deployment runbook](docs/internal-beta-deployment.md) and
+[four-device checklist](docs/physical-device-test-checklist.md).
+
+### Deploy The Room Server
+
+[Deploy the GitHub repository to Render](https://render.com/deploy?repo=https://github.com/Sakuraou/leshan-mahjong-lab),
+wait for `/health/ready`, then use `wss://HOST/ws` for the preview build. Keep
+the service at one instance: rooms are still in memory, so restarts clear active
+matches and multiple replicas would split state.
 
 ## Deploy To Vercel
 
@@ -223,6 +238,7 @@ npm run dev:server
 npm run dev:server:lan
 npm run smoke:server
 npm run smoke:server:production
+npm run smoke:server:remote
 npm run start:server
 npm run check:all
 ```
@@ -235,10 +251,11 @@ npm run check:all
 - TypeScript
 - Node test runner
 - Node 24 + `ws` production room server
-- Docker and Expo EAS internal distribution configuration
+- Docker, Render Blueprint, and Expo EAS internal distribution configuration
 - Pure TypeScript game engine under `src/game`
 - GitHub for project history and portfolio presentation
-- Planned deployment: Vercel
+- Planned Web portfolio deployment: Vercel
+- Selected Android beta room-server deployment: Render
 
 ## Architecture
 
@@ -266,7 +283,8 @@ src/
     devServer.ts         Local Node ws runtime with heartbeat and deadline ticks
     nodeServer.ts        Shared HTTP/WebSocket runtime and graceful shutdown
     productionServer.ts  Validated production entry and safe structured logs
-    productionSmoke.ts   Health, Origin, and real-socket production smoke
+    productionSmoke.ts   Full local production-runtime smoke
+    remoteSmoke.ts       Full hosted WSS and transport/security smoke
 apps/
   mobile/               Expo phone client, reconnect flow, timeline, result UI
 packages/

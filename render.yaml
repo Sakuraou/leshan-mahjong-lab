@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: leshan-mahjong-room-server
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health/ready
+    maxShutdownDelaySeconds: 15
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: WS_PATH
+        value: /ws
+      - key: HEALTH_LIVE_PATH
+        value: /health/live
+      - key: HEALTH_READY_PATH
+        value: /health/ready
+      - key: ALLOWED_ORIGINS
+        value: ""
+      - key: ALLOW_MISSING_ORIGIN
+        value: "true"
+      - key: MAX_PAYLOAD_BYTES
+        value: "65536"
+      - key: SHUTDOWN_GRACE_MS
+        value: "5000"
+      - key: HEARTBEAT_INTERVAL_MS
+        value: "10000"
+      - key: CONNECTION_TIMEOUT_MS
+        value: "30000"
+      - key: DEADLINE_POLL_INTERVAL_MS
+        value: "250"

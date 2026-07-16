@@ -2,7 +2,7 @@
   "expo": {
     "name": "乐山麻将",
     "slug": "leshan-mahjong",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "scheme": "leshanmahjong",
     "orientation": "portrait",
     "icon": "./assets/icon.png",

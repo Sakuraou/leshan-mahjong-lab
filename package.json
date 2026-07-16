@@ -1,6 +1,6 @@
 {
   "name": "leshan-mahjong-lab",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "workspaces": [
@@ -15,11 +15,13 @@
     "smoke:server": "node --experimental-strip-types src/server/smokeClient.ts",
     "smoke:server:prod": "node --experimental-strip-types src/server/productionSmoke.ts",
     "smoke:server:production": "npm run smoke:server:prod",
+    "smoke:server:remote": "node --experimental-strip-types src/server/remoteSmoke.ts",
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm test && npm run build",
     "check:all": "npm run check && npm run mobile:typecheck",
     "build": "vite build",
     "mobile": "npm run start --workspace @leshan-mahjong/mobile",
+    "mobile:doctor": "npx expo-doctor apps/mobile",
     "mobile:typecheck": "npm run typecheck --workspace @leshan-mahjong/mobile",
     "mobile:export": "npm run export:android --workspace @leshan-mahjong/mobile",
     "preview": "vite preview --host 127.0.0.1",

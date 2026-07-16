@@ -233,10 +233,20 @@ phone-first product.
 - [x] Add production/mobile endpoint tests and a four-device beta checklist
 - [x] Add touch/drag local-hand ordering with stable tile ids, sorted initial deal,
   one-tile draw insertion, reconnect restoration, and no manual arrange action
+- [x] Select Render for the first one-instance Docker beta, add a Blueprint, and
+  add a reusable remote WSS smoke for full room actions, security probes, and
+  session recovery
+- [ ] Authorize the GitHub repository in Render, record the public WSS/health
+  endpoints, and pass the remote smoke against the deployed container
+- [ ] Bind the Expo owner/project, create the preview WSS environment variable,
+  and generate the first signed Android `0.2.0` internal APK
+- [ ] Complete and record the four-device acceptance matrix for voluntary ba
+  gang, delayed zero-point continuation, yao-ji exchange, reconnect, and
+  multi-round cumulative settlement
 - Add vibration/audio feedback
 - Test Android and iOS layouts on physical devices
-- Link owner hosting and Expo accounts, deploy the WSS server, and generate the
-  first signed internal APK/IPA
+- Generate the first iOS internal build after Android beta acceptance and Apple
+  developer device registration
 
 ## Phase 6: Portfolio Polish
 

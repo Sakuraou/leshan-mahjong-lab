@@ -70,28 +70,41 @@ now owns a single authenticated session and can continue across authoritative
 round boundaries without storing debug message history or other players'
 snapshots.
 
-## Next Interaction Milestone: Continue Gang And Hand Arrangement
+## Completed Interaction Milestone: Continue Gang And Hand Arrangement
 
-The next phone interaction pass will keep ba gang voluntary. The server will
-describe each legal exposed-meld target, the physical fourth tile, and whether
-that continuation still qualifies for payment. The player chooses whether to
-continue and which candidate to use; declining never blocks an ordinary
-discard. A yao-ji continuation receives the normal with-laizi payment; only a
-natural matching tile retained after its draw turn loses payment eligibility.
-A zero-point delayed continuation still uses the authoritative qiang-gang and
-gang-draw flow.
+Ba gang is now voluntary and parameterized by a server-provided candidate. The
+player chooses whether to continue and which exposed peng to upgrade; declining
+never blocks an ordinary discard. A yao-ji continuation receives the normal
+with-laizi payment. A natural matching tile is paid only when used during its
+draw turn, while a later continuation stays legal with a frozen zero-point gang
+fact. Both paths still pass through the authoritative qiang-gang and gang-draw
+phases.
 
-The server will also offer safe candidates for exchanging a natural tile into
-an established ming/an/ba gang and returning one yao ji to the hand. The current
-ruleset changes neither the frozen gang score nor the draw phase and opens no
-qiang-gang window. An exchange-created hu is offered as self-draw and remains a
-player decision.
+The server also offers owner-only candidates for exchanging a natural hand tile
+into an established ming/an/ba gang and returning one yao ji to the hand. Under
+the current ruleset this changes neither the frozen gang score nor the draw
+phase and opens no qiang-gang window. If the exchange completes a winning hand,
+the App presents self-draw hu as a choice and never confirms it automatically.
 
-The same milestone will add local drag ordering for the concealed hand. Deal
-snapshots get a default bamboo/dot/character rank order. Later draws insert only
-the new tile without re-sorting the player's custom layout. Dragging remains
-presentation-only and never tells the server what a yao ji represents, and the
-phone UI will not add a separate arrange button.
+The concealed hand supports touch drag ordering. The initial deal is sorted by
+suit and rank once; later draws and exchanges insert only newly received tiles
+without rearranging the rest of the hand. The order is a local presentation
+overlay, survives session recovery for tiles still held, never tells the server
+what a yao ji represents, and has no separate arrange button.
+
+## Android Internal Beta Delivery
+
+Version `0.2.0` is the first remote-beta candidate. Render is the selected
+single-instance Docker host for the authoritative room server, and EAS `preview`
+is the selected internal-distribution APK profile. The production endpoint is a
+public `wss://.../ws` build variable; it is not a session credential. Expo
+SecureStore remains the only phone persistence for `sessionToken`.
+
+The checked-in `render.yaml` and remote smoke runner make deployment repeatable,
+but creating the hosted service and signed APK still requires the repository
+owner to authorize Render and Expo. The exact handoff and verification commands
+live in `internal-beta-deployment.md`; physical acceptance lives in
+`physical-device-test-checklist.md`.
 
 ## Architecture
 

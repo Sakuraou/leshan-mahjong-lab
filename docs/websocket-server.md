@@ -25,6 +25,12 @@ hosting provider; phones use public `wss://` while the single container receives
 HTTP/WS. Keep one replica because active rooms are process memory. See
 [internal-beta-deployment.md](internal-beta-deployment.md).
 
+The first Android internal beta selects Render. `render.yaml` defines a
+single-instance Docker Web Service in Singapore, points its health check at
+`/health/ready`, and leaves `PORT` to the platform. Render terminates public TLS;
+the App consumes `wss://HOST/ws`. The service and public address remain pending
+the repository owner's one-time GitHub/Render authorization.
+
 ## Current Scope
 
 The server core owns:
@@ -48,9 +54,8 @@ It does not own:
 - Authentication.
 - Secure token generation.
 - Database persistence.
-- Production deployment, load balancing, and durable reconnect cleanup.
-- Gameplay actions beyond the room lifecycle and `chooseMissingSuit` already
-  supported by `roomSocketAdapter`.
+- Shared-state load balancing and durable reconnect cleanup.
+- Mahjong rule decisions; those remain in `roomService` and the game modules.
 
 ## State Model
 
@@ -266,6 +271,26 @@ npm run smoke:server
 
 The smoke helper starts a temporary server on an ephemeral port, so it does not
 require `npm run dev:server` to already be running.
+
+`npm run smoke:server:production` starts the validated production entry on an
+ephemeral local port and uses the strict phone transport to complete a four-seat
+room through dingque, draw/discard, private passes, disconnect, and resume. It
+also checks HTTP readiness, Origin rejection, the 64 KiB message limit, and a
+live socket across heartbeat ticks.
+
+After deployment, point the same flow at the public service:
+
+```powershell
+$env:ROOM_SERVER_URL='wss://HOST/ws'
+$env:ROOM_SERVER_HEALTH_URL='https://HOST/health/ready'
+npm run smoke:server:remote
+```
+
+The remote runner refuses cleartext non-local endpoints and never prints the
+session tokens it uses internally. A successful result includes four occupied
+seats, two accepted discards, one accepted draw, a resumed fourth player, and
+all four transport/security probes, including server expiry of a socket that
+deliberately ignores ping.
 
 ## Frontend Transport Wrapper
 
