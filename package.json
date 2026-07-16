@@ -16,6 +16,7 @@
     "smoke:server:prod": "node --experimental-strip-types src/server/productionSmoke.ts",
     "smoke:server:production": "npm run smoke:server:prod",
     "smoke:server:remote": "node --experimental-strip-types src/server/remoteSmoke.ts",
+    "smoke:server:remote:security": "node --experimental-strip-types src/server/remoteSmoke.ts --security",
     "typecheck": "tsc --noEmit",
     "check": "npm run typecheck && npm test && npm run build",
     "check:all": "npm run check && npm run mobile:typecheck",

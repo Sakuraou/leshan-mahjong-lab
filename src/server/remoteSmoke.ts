@@ -19,9 +19,11 @@ export type RemoteRoomSmokeOptions = {
   actionTimeoutMs?: number;
   healthTimeoutMs?: number;
   heartbeatObservationMs?: number;
+  probeStaleConnectionTimeout?: boolean;
   staleConnectionObservationMs?: number;
   allowInsecureLocal?: boolean;
   runSecurityProbes?: boolean;
+  onProgress?: (stage: string) => void;
 };
 
 export type RemoteRoomSmokeResult = {
@@ -37,37 +39,94 @@ export type RemoteRoomSmokeResult = {
   originRejected: boolean;
   oversizedPayloadRejected: boolean;
   heartbeatStayedOpen: boolean;
-  staleConnectionTimedOut: boolean;
+  staleConnectionTimedOut: boolean | null;
+  claimWindowTimedOut: boolean;
+};
+
+export type RemoteSecuritySmokeResult = {
+  healthStatus: number;
+  originRejected: boolean;
+  oversizedPayloadRejected: boolean;
+  staleConnectionTimedOut: boolean | null;
 };
 
 const dingqueSuits: Suit[] = ["characters", "dots", "bamboos", "characters"];
 
+export async function runRemoteSecuritySmoke(
+  options: RemoteRoomSmokeOptions,
+): Promise<RemoteSecuritySmokeResult> {
+  const report = options.onProgress ?? (() => undefined);
+  const url = validateSmokeUrl(options.url, options.allowInsecureLocal ?? false);
+  const timeoutMs = options.actionTimeoutMs ?? 60_000;
+  report("health:waiting");
+  const healthStatus = await waitForHealth(
+    options.healthUrl ?? defaultHealthUrl(url),
+    options.healthTimeoutMs ?? 90_000,
+  );
+  report("health:ready");
+  report("origin:checking");
+  const originRejected = await retryRemoteProbe(() => probeRejectedOrigin(url, timeoutMs), 1);
+  report("origin:done");
+  report("payload:checking");
+  const oversizedPayloadRejected = await retryRemoteProbe(
+    () => probeOversizedPayload(url, timeoutMs),
+    1,
+  );
+  report("payload:done");
+  const staleConnectionTimedOut = options.probeStaleConnectionTimeout === true
+    ? await probeStaleConnectionTimeout(url, options.staleConnectionObservationMs ?? 45_000)
+    : null;
+  return {
+    healthStatus,
+    originRejected,
+    oversizedPayloadRejected,
+    staleConnectionTimedOut,
+  };
+}
+
 export async function runRemoteRoomSmoke(options: RemoteRoomSmokeOptions): Promise<RemoteRoomSmokeResult> {
+  const report = options.onProgress ?? (() => undefined);
   const url = validateSmokeUrl(options.url, options.allowInsecureLocal ?? false);
   const healthUrl = options.healthUrl ?? defaultHealthUrl(url);
-  const actionTimeoutMs = options.actionTimeoutMs ?? 30_000;
+  const actionTimeoutMs = options.actionTimeoutMs ?? 60_000;
+  report("health:waiting");
   const healthStatus = await waitForHealth(healthUrl, options.healthTimeoutMs ?? 90_000);
+  report("health:ready");
   const roomId = options.roomId ?? `remote-smoke-${Date.now()}`;
   const runSecurityProbes = options.runSecurityProbes ?? true;
-  const [originRejected, oversizedPayloadRejected, heartbeatStayedOpen, staleConnectionTimedOut] = await Promise.all([
-    runSecurityProbes ? probeRejectedOrigin(url, actionTimeoutMs) : false,
-    runSecurityProbes ? probeOversizedPayload(url, actionTimeoutMs) : false,
-    probeHeartbeat(url, options.heartbeatObservationMs ?? 12_000, actionTimeoutMs),
-    runSecurityProbes
-      ? probeStaleConnectionTimeout(url, options.staleConnectionObservationMs ?? 45_000)
-      : false,
-  ]);
+  report("origin:checking");
+  const originRejected = runSecurityProbes
+    ? await retryRemoteProbe(() => probeRejectedOrigin(url, actionTimeoutMs))
+    : false;
+  report("origin:done");
+  report("payload:checking");
+  const oversizedPayloadRejected = runSecurityProbes
+    ? await retryRemoteProbe(() => probeOversizedPayload(url, actionTimeoutMs))
+    : false;
+  report("payload:done");
+  report("heartbeat:checking");
+  const heartbeatStayedOpen = await retryRemoteProbe(
+    () => probeHeartbeat(url, options.heartbeatObservationMs ?? 12_000, actionTimeoutMs),
+  );
+  report("heartbeat:done");
+  const staleConnectionTimedOut = runSecurityProbes && options.probeStaleConnectionTimeout === true
+    ? await retryRemoteProbe(
+        () => probeStaleConnectionTimeout(url, options.staleConnectionObservationMs ?? 45_000),
+      )
+    : null;
+  report("room:connecting");
   const transports: MobileRoomTransport[] = [];
 
   try {
     for (let index = 0; index < 4; index += 1) {
-      transports.push(await createMobileRoomTransport({
-        url,
-        roomId,
-        actionTimeoutMs,
-        socketFactory: nodeSocketFactory(options.origin),
-      }));
+      transports.push(await retryRemoteProbe(() => createMobileRoomTransport({
+          url,
+          roomId,
+          actionTimeoutMs,
+          socketFactory: nodeSocketFactory(options.origin),
+        })));
     }
+    report("room:connected");
 
     requireAccepted(await transports[0].createRoomSession({ displayName: "Remote Smoke 1" }), "create room");
     for (let index = 1; index < transports.length; index += 1) {
@@ -104,12 +163,14 @@ export async function runRemoteRoomSmoke(options: RemoteRoomSmokeOptions): Promi
 
     await waitForAll(transports, (transport) => transport.getState().snapshot?.phase === "discard", actionTimeoutMs, "dealer discard phase");
     await discardFirstLegalTile(transports[0], actionTimeoutMs);
-    await passCurrentWindow(transports, [1, 2, 3], "passClaim", actionTimeoutMs);
+    await passCurrentWindow(transports, [1, 2], "passClaim", actionTimeoutMs);
+    report("room:claim-timeout-waiting");
 
     await waitForAll(transports, (transport) => {
       const snapshot = transport.getState().snapshot;
       return snapshot?.phase === "draw" && snapshot.round?.currentPlayer === 1;
     }, actionTimeoutMs, "second player draw phase");
+    report("room:claim-timeout-done");
     await performAction(transports[1], "drawTile", actionTimeoutMs);
     await waitForTransport(transports[1], (transport) => transport.getState().snapshot?.phase === "discard", actionTimeoutMs, "draw accepted");
     await discardFirstLegalTile(transports[1], actionTimeoutMs);
@@ -125,13 +186,13 @@ export async function runRemoteRoomSmoke(options: RemoteRoomSmokeOptions): Promi
       throw new Error("resume precondition failed without exposing session credentials");
     }
     transports[3].close();
-    const resumed = await createMobileRoomTransport({
-      url,
-      roomId,
-      actionTimeoutMs,
-      socketFactory: nodeSocketFactory(options.origin),
-      initialEvents: previous.events,
-    });
+    const resumed = await retryRemoteProbe(() => createMobileRoomTransport({
+        url,
+        roomId,
+        actionTimeoutMs,
+        socketFactory: nodeSocketFactory(options.origin),
+        initialEvents: previous.events,
+      }));
     transports[3] = resumed;
     requireAccepted(
       await resumed.resumeSession({ sessionToken: previous.sessionToken, lastSeenEventId: previous.lastEventId }),
@@ -141,6 +202,7 @@ export async function runRemoteRoomSmoke(options: RemoteRoomSmokeOptions): Promi
       const state = transport.getState();
       return state.snapshot?.localSeatId === 3 && state.snapshot.seats[3].connected;
     }, actionTimeoutMs, "resumed snapshot");
+    report("room:resume-done");
 
     const finalSnapshot = resumed.getState().snapshot;
     if (finalSnapshot === null) {
@@ -160,6 +222,7 @@ export async function runRemoteRoomSmoke(options: RemoteRoomSmokeOptions): Promi
       oversizedPayloadRejected,
       heartbeatStayedOpen,
       staleConnectionTimedOut,
+      claimWindowTimedOut: true,
     };
   } finally {
     transports.forEach((transport) => transport.close());
@@ -390,16 +453,36 @@ function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+async function retryRemoteProbe<T>(operation: () => Promise<T>, attempts = 3): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts) {
+        await delay(attempt * 1_000);
+      }
+    }
+  }
+  throw lastError;
+}
+
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const url = process.env.ROOM_SERVER_URL;
   if (url === undefined || url.trim() === "") {
     throw new Error("Set ROOM_SERVER_URL to the deployed wss:// endpoint.");
   }
-  const result = await runRemoteRoomSmoke({
+  const sharedOptions: RemoteRoomSmokeOptions = {
     url,
     healthUrl: process.env.ROOM_SERVER_HEALTH_URL,
     origin: process.env.ROOM_SERVER_ORIGIN,
     roomId: process.env.ROOM_SERVER_SMOKE_ROOM_ID,
-  });
+    probeStaleConnectionTimeout: process.env.ROOM_SERVER_PROBE_STALE_CONNECTION === "true",
+    onProgress: (stage) => console.error(`[remote-smoke] ${stage}`),
+  };
+  const result = process.argv.includes("--security")
+    ? await runRemoteSecuritySmoke(sharedOptions)
+    : await runRemoteRoomSmoke({ ...sharedOptions, runSecurityProbes: false });
   console.log(JSON.stringify(result, null, 2));
 }

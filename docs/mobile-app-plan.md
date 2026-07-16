@@ -94,16 +94,18 @@ what a yao ji represents, and has no separate arrange button.
 
 ## Android Internal Beta Delivery
 
-Version `0.2.0` is the first remote-beta candidate. Render is the selected
-single-instance Docker host for the authoritative room server, and EAS `preview`
-is the selected internal-distribution APK profile. The production endpoint is a
-public `wss://.../ws` build variable; it is not a session credential. Expo
+Version `0.2.0` is the first remote-beta candidate. Its single-instance Render
+server is live at `wss://leshan-mahjong-room-server.onrender.com/ws`, and EAS
+`preview` is the selected internal-distribution APK profile. The endpoint is a
+public build variable, not a session credential. Expo
 SecureStore remains the only phone persistence for `sessionToken`.
 
-The checked-in `render.yaml` and remote smoke runner make deployment repeatable,
-but creating the hosted service and signed APK still requires the repository
-owner to authorize Render and Expo. The exact handoff and verification commands
-live in `internal-beta-deployment.md`; physical acceptance lives in
+The checked-in `render.yaml` and remote smoke runner make deployment repeatable.
+Render authorization and the first remote four-client flow are complete. Expo
+project `@twilight111/leshan-mahjong` is bound, its preview WSS environment is
+configured, and signed Android build
+`ac719fc4-730a-4236-8b3c-bdbde3fb5495` is queued. The commands live in
+`internal-beta-deployment.md`; physical acceptance lives in
 `physical-device-test-checklist.md`.
 
 ## Architecture
@@ -222,9 +224,9 @@ Address rules:
 - Physical phone: run `npm run dev:server:lan`, then use
   `ws://<computer-LAN-IP>:8787`; Windows Firewall must allow the Node process.
 - Production: use `wss://`; plain `ws://` is development-only.
-- Remote beta: deploy the production Docker service, set
-  `EXPO_PUBLIC_ROOM_SERVER_URL=wss://HOST/ws` in the EAS preview environment,
-  then build from `apps/mobile` with the `preview` profile.
+- Remote beta: the `preview` profile embeds the public
+  `wss://leshan-mahjong-room-server.onrender.com/ws` endpoint, then EAS produces
+  an internally distributed APK. No session credential is stored in the build.
 
 Quality commands:
 

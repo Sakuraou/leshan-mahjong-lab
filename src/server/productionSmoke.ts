@@ -5,6 +5,7 @@ import { runRemoteRoomSmoke } from "./remoteSmoke.ts";
 
 export async function runProductionServerSmoke() {
   const server = await createRoomSocketProductionServer({
+    responseWindowTimeoutMs: 200,
     env: {
       HOST: "127.0.0.1",
       PORT: "0",
@@ -26,6 +27,7 @@ export async function runProductionServerSmoke() {
       actionTimeoutMs: 5_000,
       healthTimeoutMs: 5_000,
       heartbeatObservationMs: 250,
+      probeStaleConnectionTimeout: true,
       staleConnectionObservationMs: 1_500,
       allowInsecureLocal: true,
     });

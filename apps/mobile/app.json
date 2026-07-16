@@ -1,6 +1,7 @@
 {
   "expo": {
     "name": "乐山麻将",
+    "owner": "twilight111",
     "slug": "leshan-mahjong",
     "version": "0.2.0",
     "scheme": "leshanmahjong",
@@ -25,6 +26,11 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "f5f69fff-2b00-4a9d-b979-d3d6964b113c"
+      }
     }
   }
 }

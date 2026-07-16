@@ -33,7 +33,8 @@
       },
       "env": {
         "APP_VARIANT": "preview",
-        "EXPO_PUBLIC_ROOM_SERVER_MODE": "production"
+        "EXPO_PUBLIC_ROOM_SERVER_MODE": "production",
+        "EXPO_PUBLIC_ROOM_SERVER_URL": "wss://leshan-mahjong-room-server.onrender.com/ws"
       }
     },
     "production": {

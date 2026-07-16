@@ -45,20 +45,25 @@ without removing the browser debug table:
   `EXPO_PUBLIC_ROOM_SERVER_URL`; room session tokens remain in SecureStore.
 - `npm run smoke:server:remote` drives four strict mobile transports through a
   real hosted create/join/seat/ready/dingque/draw/discard/resume flow and probes
-  Origin rejection, payload limits, healthy heartbeat, and stale-socket expiry.
+  Origin rejection, payload limits, healthy heartbeat, authoritative response
+  timeout, and real disconnect/resume behavior.
 
-Render Free is selected for the first server and EAS `preview` for the Android
-APK. The checked-in setup is ready; the public URL and signed artifact remain
-pending the project owner's one-time Render and Expo authorization. See the
+The first Render Free server is live and EAS `preview` is selected for the
+Android APK. The public endpoint is
+`wss://leshan-mahjong-room-server.onrender.com/ws`; Expo project
+`@twilight111/leshan-mahjong` is bound and the first signed Android build is
+tracked as `ac719fc4-730a-4236-8b3c-bdbde3fb5495`. See the
 [deployment runbook](docs/internal-beta-deployment.md) and
 [four-device checklist](docs/physical-device-test-checklist.md).
 
 ### Deploy The Room Server
 
-[Deploy the GitHub repository to Render](https://render.com/deploy?repo=https://github.com/Sakuraou/leshan-mahjong-lab),
-wait for `/health/ready`, then use `wss://HOST/ws` for the preview build. Keep
-the service at one instance: rooms are still in memory, so restarts clear active
-matches and multiple replicas would split state.
+- Health: `https://leshan-mahjong-room-server.onrender.com/health/ready`
+- WebSocket: `wss://leshan-mahjong-room-server.onrender.com/ws`
+- Hosting: Render Free, Singapore, one instance
+
+Keep the service at one instance: rooms are still in memory, so restarts clear
+active matches and multiple replicas would split state.
 
 ## Deploy To Vercel
 

@@ -10,8 +10,9 @@
 - Added a hosted-WSS smoke runner that uses four strict mobile transports to
   create/join a room, take seats, ready, start, dingque, draw, discard, pass,
   disconnect, and resume. It also probes untrusted Origin rejection, oversized
-  messages, heartbeat health, and stale-socket expiry without printing session
-  credentials.
+  messages, heartbeat health, and an authoritative response deadline without
+  printing session credentials. Native stale-socket expiry remains in the local
+  production smoke because Render's edge answers proxied control-frame pings.
 - Kept the Render Free Blueprint compatible by relying on the platform's
   default shutdown window while retaining the server's own 5-second graceful
   drain.
@@ -19,8 +20,12 @@
   delayed-natural scoring, yao-ji continuation, qiang-gang, repeated gang
   exchange, exchange-created self-draw prompts, touch ordering, reconnect, and
   multi-round cumulative scoring.
-- Render service creation, the public WSS URL, Expo project binding, and the
-  signed preview APK remain pending one-time owner account authorization.
+- Deployed the server at
+  `wss://leshan-mahjong-room-server.onrender.com/ws`; readiness, four-client
+  gameplay, actual disconnect/resume, Origin rejection, and the 64 KiB payload
+  boundary passed remotely. Expo project `@twilight111/leshan-mahjong` is now
+  bound, its preview WSS environment is configured, and signed Android build
+  `ac719fc4-730a-4236-8b3c-bdbde3fb5495` has entered the EAS Free Tier queue.
 - Added server-authoritative voluntary ba-gang candidates for each physical
   hand tile and peng, including normal, yao-ji, and delayed-natural zero-point
   payment previews.

@@ -25,11 +25,10 @@ hosting provider; phones use public `wss://` while the single container receives
 HTTP/WS. Keep one replica because active rooms are process memory. See
 [internal-beta-deployment.md](internal-beta-deployment.md).
 
-The first Android internal beta selects Render. `render.yaml` defines a
+The first Android internal beta is live on Render. `render.yaml` defines a
 single-instance Docker Web Service in Singapore, points its health check at
 `/health/ready`, and leaves `PORT` to the platform. Render terminates public TLS;
-the App consumes `wss://HOST/ws`. The service and public address remain pending
-the repository owner's one-time GitHub/Render authorization.
+the App consumes `wss://leshan-mahjong-room-server.onrender.com/ws`.
 
 ## Current Scope
 
@@ -281,16 +280,21 @@ live socket across heartbeat ticks.
 After deployment, point the same flow at the public service:
 
 ```powershell
-$env:ROOM_SERVER_URL='wss://HOST/ws'
-$env:ROOM_SERVER_HEALTH_URL='https://HOST/health/ready'
+$env:ROOM_SERVER_URL='wss://leshan-mahjong-room-server.onrender.com/ws'
+$env:ROOM_SERVER_HEALTH_URL='https://leshan-mahjong-room-server.onrender.com/health/ready'
 npm run smoke:server:remote
 ```
 
 The remote runner refuses cleartext non-local endpoints and never prints the
 session tokens it uses internally. A successful result includes four occupied
-seats, two accepted discards, one accepted draw, a resumed fourth player, and
-all four transport/security probes, including server expiry of a socket that
-deliberately ignores ping.
+seats, two accepted discards, one accepted draw, a timed-out claim window, a
+resumed fourth player, Origin rejection, payload rejection, and a healthy
+long-lived connection.
+
+The local production smoke additionally disables automatic pong and proves the
+server's native stale-connection timer. Render's public edge answers control
+frames on the proxied connection, so the hosted check records that boundary
+instead of falsely claiming it can make the backend observe a missing pong.
 
 ## Frontend Transport Wrapper
 

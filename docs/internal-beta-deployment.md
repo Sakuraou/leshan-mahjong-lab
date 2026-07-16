@@ -23,9 +23,9 @@ References:
 - [Render free instances](https://render.com/docs/free)
 - [Expo internal distribution](https://docs.expo.dev/build/internal-distribution/)
 
-## One-Time Render Authorization
+## Render Deployment
 
-The repository owner must perform this account-bound step:
+The repository owner completed this account-bound step on 2026-07-16:
 
 1. Push `render.yaml` to GitHub.
 2. Open [Deploy to Render](https://render.com/deploy?repo=https://github.com/Sakuraou/leshan-mahjong-lab).
@@ -45,7 +45,12 @@ HTTPS readiness: https://HOST/health/ready
 WebSocket:        wss://HOST/ws
 ```
 
-Current deployed endpoints: pending the one-time Render authorization above.
+Current deployed endpoints:
+
+```text
+HTTPS readiness: https://leshan-mahjong-room-server.onrender.com/health/ready
+WebSocket:        wss://leshan-mahjong-room-server.onrender.com/ws
+```
 
 ## Render Blueprint
 
@@ -73,27 +78,47 @@ The production runtime provides:
 
 ## Remote Server Verification
 
-After Render reports Live, run the same strict single-session transport used by
-the phone App against the public service:
+Run the same strict single-session transport used by the phone App against the
+public service:
 
 ```powershell
-$env:ROOM_SERVER_URL='wss://HOST/ws'
-$env:ROOM_SERVER_HEALTH_URL='https://HOST/health/ready'
+$env:ROOM_SERVER_URL='wss://leshan-mahjong-room-server.onrender.com/ws'
+$env:ROOM_SERVER_HEALTH_URL='https://leshan-mahjong-room-server.onrender.com/health/ready'
 npm run smoke:server:remote
 ```
 
 The remote smoke waits for readiness, rejects an untrusted browser Origin,
 rejects an oversized payload, observes a healthy connection across heartbeat,
-expires a connection that deliberately ignores ping, then drives four clients
-through create, join, seats, ready, start, dingque,
-two discards, one draw, private passes, disconnect, and `resumeSession`.
+lets one response window close by its authoritative deadline, then drives four
+clients through create, join, seats, ready, start, dingque, two discards, one
+draw, private passes, disconnect, and `resumeSession`.
 Output contains no session token or concealed hand.
 
-Graceful shutdown and stale-connection expiry are deterministic core tests and
-also run in the local production smoke. During the physical test, a Render
-redeploy verifies the provider sends shutdown and the App enters recovery.
+The first hosted verification returned readiness `200`, rejected an untrusted
+Origin with `403`, closed a 70 KiB message, kept a healthy socket connected, and
+completed the four-player flow plus session recovery. Render's public edge
+answers WebSocket control-frame pings, so a public client that disables automatic
+pong cannot force the backend's native stale timer to expire. That timer remains
+covered by the local production smoke; remote acceptance instead covers the
+authoritative response deadline and an actual socket close/resume.
 
-## One-Time Expo Authorization
+Graceful shutdown remains a local deterministic test until a controlled Render
+redeploy is observed with a connected client. During physical acceptance, that
+redeploy must confirm the App enters recovery; because state is in memory, the
+old room is expected to be unavailable after the new instance starts.
+
+## Expo Project Binding
+
+The one-time authorization is complete:
+
+- Owner: `twilight111`
+- Project: `@twilight111/leshan-mahjong`
+- EAS project id: `f5f69fff-2b00-4a9d-b979-d3d6964b113c`
+- Preview environment: public
+  `EXPO_PUBLIC_ROOM_SERVER_URL=wss://leshan-mahjong-room-server.onrender.com/ws`
+
+The commands below are retained for reproducing the setup on a new owner
+account. They do not need to be rerun for the current project.
 
 From `apps/mobile`, the repository owner must sign in and bind the project:
 
@@ -109,7 +134,7 @@ other credential must never be committed.
 Create the public preview endpoint in the EAS `preview` environment:
 
 ```powershell
-npx eas-cli env:create --name EXPO_PUBLIC_ROOM_SERVER_URL --value wss://HOST/ws --environment preview --visibility plaintext
+npx eas-cli env:create --name EXPO_PUBLIC_ROOM_SERVER_URL --value wss://leshan-mahjong-room-server.onrender.com/ws --environment preview --visibility plaintext
 ```
 
 `EXPO_PUBLIC_*` values are readable in the APK, so this variable may contain
@@ -118,13 +143,26 @@ and never enter EAS variables, logs, screenshots, or error messages.
 
 ## Build The APK
 
+First signed preview build:
+
+- Build id: `ac719fc4-730a-4236-8b3c-bdbde3fb5495`
+- Build page:
+  `https://expo.dev/accounts/twilight111/projects/leshan-mahjong/builds/ac719fc4-730a-4236-8b3c-bdbde3fb5495`
+- Version: `0.2.0` (`versionCode` 1)
+- Distribution: internal Android APK
+- Current status: EAS Free Tier queue; replace this line with the artifact URL
+  after the build completes
+
 Build the internal Android artifact:
 
 ```powershell
 npx eas-cli build --platform android --profile preview
 ```
 
-The `preview` profile uses production endpoint rules and `android.buildType=apk`
+The `preview` profile also commits this same public WSS endpoint as a profile
+environment value, so the beta cannot silently fall back to localhost. EAS may
+override it with the matching account environment value. The profile uses
+production endpoint rules and `android.buildType=apk`
 with internal distribution. On the first build, EAS may ask the owner to create
 or upload Android signing credentials; letting EAS generate the keystore is the
 recommended internal-beta path. Record the returned build id and APK install
