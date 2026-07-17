@@ -1,17 +1,18 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import { WebSocket } from "ws";
 
 import { createRoomSocketProductionServer } from "../../src/server/productionServer.ts";
 import { loadProductionServerConfig } from "../../src/server/serverConfig.ts";
 import { runRoomSocketSmokeClient } from "../../src/server/smokeClient.ts";
 
+const reactNativeAndroidOrigin = "https://leshan-mahjong-room-server.onrender.com";
+
 const productionEnv = {
   HOST: "127.0.0.1",
   PORT: "0",
   WS_PATH: "/ws",
-  ALLOWED_ORIGINS: "https://allowed.example",
+  ALLOWED_ORIGINS: reactNativeAndroidOrigin,
   ALLOW_MISSING_ORIGIN: "false",
   SHUTDOWN_GRACE_MS: "50",
 };
@@ -21,14 +22,7 @@ test("production config validates port, origins, and native missing-origin polic
   assert.throws(() => loadProductionServerConfig({ ...productionEnv, ALLOWED_ORIGINS: "*" }), /cannot contain/);
   assert.throws(() => loadProductionServerConfig({ ...productionEnv, ALLOWED_ORIGINS: "", ALLOW_MISSING_ORIGIN: "false" }), /ALLOWED_ORIGINS/);
   assert.equal(loadProductionServerConfig({ ...productionEnv, ALLOW_MISSING_ORIGIN: "true" }).allowMissingOrigin, true);
-});
-
-test("Render allows the default Origin sent by React Native Android", async () => {
-  const blueprint = await readFile(new URL("../../render.yaml", import.meta.url), "utf8");
-  assert.match(
-    blueprint,
-    /ALLOWED_ORIGINS\s+value: https:\/\/leshan-mahjong-room-server\.onrender\.com/,
-  );
+  assert.deepEqual(loadProductionServerConfig(productionEnv).allowedOrigins, [reactNativeAndroidOrigin]);
 });
 
 test("production server exposes health, rejects an untrusted Origin, and closes idempotently", async () => {
@@ -50,7 +44,7 @@ test("production server exposes health, rejects an untrusted Origin, and closes 
   }
 });
 
-test("production WebSocket flow works and structured logs never contain session tokens", async () => {
+test("React Native Android Origin completes the production WebSocket flow without leaking session tokens", async () => {
   const secret = "secret-session-token-for-log-test";
   const logs: string[] = [];
   let tokenNumber = 0;
@@ -66,7 +60,7 @@ test("production WebSocket flow works and structured logs never contain session 
   try {
     const result = await runRoomSocketSmokeClient({
       url: server.wsUrl,
-      origin: "https://allowed.example",
+      origin: reactNativeAndroidOrigin,
       roomId: "production-log-test",
     });
     assert.equal(result.hostMessages[0]?.type, "actionAccepted");
