@@ -2,6 +2,21 @@
 
 ## 2026-07-17
 
+- Published the production Expo Web/PWA client at
+  `https://leshan-mahjong-play.expo.app`. Windows, macOS, Android, and iPhone
+  browsers now use the same single-session mobile contract and authoritative
+  Render WSS service instead of the default Vite mock table.
+- Added a responsive wide-screen layout while preserving the phone vertical
+  layout, plus one shared touch/mouse hand-ordering interaction.
+- Added a Web session adapter backed by per-tab `sessionStorage`. Runtime parsing
+  keeps only the recovery contract and drops seed, wall, opponent-hand, and
+  private-response fields.
+- Added PWA metadata and an install manifest, production Web export scripts,
+  and CI coverage for the Expo production Web bundle. The Android APK remains
+  available unchanged.
+- Expanded the production Origin allowlist to the exact EAS Hosting origin and
+  added local regression coverage for both Android and Web handshakes while
+  continuing to reject unrelated origins.
 - Fixed the first physical-Android connection blocker: React Native adds the
   WSS endpoint's HTTPS Origin to its WebSocket handshake, while the initial
   Render Blueprint allowed only clients with a missing Origin. The production
@@ -155,11 +170,9 @@ privacy, protocol, and portfolio debugging surface.
   labels beyond the existing authoritative hu flow.
 - The phone UI is functional but still needs real Mahjong artwork, audio,
   vibration, accessibility review, and physical-device layout testing.
-- There is no login, persistence, replay system, or production deployment for
-  the WebSocket server yet.
-- The main room/table mode is still powered by the local mock transport; the
-  browser's real WebSocket path remains an experiment/preview. The Expo client
-  is the production-oriented single-session gameplay path.
+- There is no login, durable server persistence, or replay system.
+- The Vite main room/table remains a mock-backed debug surface. The production
+  browser gameplay path is now the Expo Web/PWA single-session client.
 - Room/session state is still in memory; server restarts lose active rooms.
 - Screenshot assets are still pending until the first production deployment is
   captured.
@@ -177,11 +190,11 @@ privacy, protocol, and portfolio debugging surface.
 
 ### Next Steps
 
-1. Paste the Vercel production URL into the README.
-2. Capture the first portfolio screenshots and replace the screenshot
+1. Complete and record the cross-platform four-client physical/browser matrix.
+2. Capture the first production Web/PWA portfolio screenshots and replace the screenshot
    placeholders.
-3. Validate the complete multi-round Expo flow on physical Android and iOS
-   devices.
+3. Validate the complete multi-round Expo flow on physical Android and iPhone
+   browsers, then produce a native iOS build when Apple registration is ready.
 4. Add durable room/session persistence and production monitoring beyond the
    current single-instance `wss://` beta.
 5. Add real tile artwork, sound/vibration controls, and accessibility polish.

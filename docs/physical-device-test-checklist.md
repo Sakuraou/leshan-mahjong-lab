@@ -1,7 +1,7 @@
-# Four-Device Android Internal Test Checklist
+# Four-Client Cross-Platform Internal Test Checklist
 
-Use four phones or four independent App installations connected to the same
-production room server. Keep screenshots or a short screen recording for every
+Use four phones/computers or four independent browser/App sessions connected to
+the same production room server. Keep screenshots or a short recording for every
 rule-specific scenario; rare gang scenarios are not adequately proved by a
 normal round alone.
 
@@ -15,23 +15,29 @@ Fill this in before each run:
 | EAS build id | `ac719fc4-730a-4236-8b3c-bdbde3fb5495` |
 | APK URL | [Install version 0.2.0 build 1](https://expo.dev/artifacts/eas/RO_ovhmgw0dcbkEypy1Y2fyWB2xsjHXhHoQKWuhc9vg.apk) |
 | Artifact | 66.7 MiB Android internal APK; available through 2026-07-30 |
-| Server commit | `d226682` |
+| Web/PWA URL | [https://leshan-mahjong-play.expo.app](https://leshan-mahjong-play.expo.app) |
+| Server/client commit | `2485909` |
 | WSS endpoint | `wss://leshan-mahjong-room-server.onrender.com/ws` |
 | Test date and network | |
-| Device A model / Android | |
-| Device B model / Android | |
-| Device C model / Android | |
-| Device D model / Android | |
+| Client A platform/browser | |
+| Client B platform/browser | |
+| Client C platform/browser | |
+| Client D platform/browser | |
 
 ## Install And Security
 
-- [ ] Install the same EAS `preview` APK on all four devices.
+- [ ] Open the production Web/PWA on Windows, Mac, Android, and iPhone where
+  available; retain at least one run with the Android APK.
+- [ ] Confirm the production page uses the Expo single-session UI and never
+  exposes the Vite mock-table mode selector.
+- [ ] Install the Web/PWA from one supported browser and verify its standalone
+  launch still uses the production WSS endpoint.
 - [ ] Confirm production mode connects to the configured `wss://` endpoint.
 - [ ] Confirm `ws://`, localhost, LAN addresses, and `10.0.2.2` are rejected in
   the preview build.
 - [ ] Search server logs, screenshots, errors, and EAS configuration for a real
   session token; there must be no match.
-- [ ] Restart the App after joining and confirm only the owning device restores
+- [ ] Refresh or restart after joining and confirm only the owning client restores
   its seat and hand.
 
 ## Four-Player Room

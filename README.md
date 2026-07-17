@@ -1,16 +1,15 @@
 # Leshan Mahjong Lab
 
-A phone-first Leshan eight-chicken Mahjong project with an Expo mobile client,
-a tested TypeScript rule engine, and a Vite browser table retained as the
-multiplayer, privacy, and portfolio validation surface.
+A cross-platform Leshan eight-chicken Mahjong project with one Expo client for
+Web/PWA and mobile, a tested TypeScript rule engine, and a Vite browser table
+retained as the rule, privacy, and protocol debugging surface.
 
 ## Online Demo
 
-Deployment is prepared for Vercel. The production URL should be pasted here
-after the GitHub repository is imported in Vercel.
-
-- Live URL: `TBD - paste the Vercel production URL here`
-- Deployment status: Vercel-ready, production URL pending
+- Play online: [https://leshan-mahjong-play.expo.app](https://leshan-mahjong-play.expo.app)
+- Deployment status: Expo EAS Hosting production deployment
+- Supported clients: Windows, macOS, Android, and iPhone browsers
+- Android APK: [install version 0.2.0 build 1](https://expo.dev/artifacts/eas/RO_ovhmgw0dcbkEypy1Y2fyWB2xsjHXhHoQKWuhc9vg.apk)
 - Repository: `https://github.com/Sakuraou/leshan-mahjong-lab`
 - Case study: [docs/case-study.md](docs/case-study.md)
 - Release notes: [docs/release-notes.md](docs/release-notes.md)
@@ -23,10 +22,10 @@ after the GitHub repository is imported in Vercel.
 - Internal beta deployment: [docs/internal-beta-deployment.md](docs/internal-beta-deployment.md)
 - Four-device test checklist: [docs/physical-device-test-checklist.md](docs/physical-device-test-checklist.md)
 
-## Remote Mobile Beta
+## Cross-Platform Multiplayer Beta
 
-Android candidate version `0.2.0` now has a repeatable remote-beta delivery path
-without removing the browser debug table:
+The same Expo client now ships as a responsive production Web/PWA and as the
+existing Android `0.2.0` internal APK, without removing the Vite debug table:
 
 - `src/server/productionServer.ts` exposes `/ws`, liveness/readiness health
   checks, Origin filtering, payload limits, heartbeat/deadline ticks,
@@ -43,6 +42,12 @@ without removing the browser debug table:
 - `apps/mobile/eas.json` includes LAN internal, preview internal-distribution
   APK, and production profiles. The public WebSocket URL is supplied through
   `EXPO_PUBLIC_ROOM_SERVER_URL`; room session tokens remain in SecureStore.
+- EAS Hosting publishes the production Expo Web export at
+  `https://leshan-mahjong-play.expo.app`. Desktop browsers use a two-column
+  layout; narrow screens use the same phone-first vertical layout.
+- Web recovery stores only the whitelisted single-session record in per-tab
+  `sessionStorage`. It does not persist raw messages, wall state, other hands,
+  or private response choices.
 - `npm run smoke:server:remote` drives four strict mobile transports through a
   real hosted create/join/seat/ready/dingque/draw/discard/resume flow and probes
   Origin rejection, payload limits, healthy heartbeat, authoritative response
@@ -63,6 +68,15 @@ See the
 [deployment runbook](docs/internal-beta-deployment.md) and
 [four-device checklist](docs/physical-device-test-checklist.md).
 
+### Start A Four-Player Game
+
+1. All four players open the [production game](https://leshan-mahjong-play.expo.app).
+2. Player 1 enters a nickname and creates a room, then shares the room number.
+3. Players 2-4 enter that room number and join. Everyone takes a different seat
+   and presses ready.
+4. Player 1 starts the round. Every client sees only its own hand and uses only
+   the actions supplied by the authoritative server.
+
 ### Deploy The Room Server
 
 - Health: `https://leshan-mahjong-room-server.onrender.com/health/ready`
@@ -72,33 +86,23 @@ See the
 Keep the service at one instance: rooms are still in memory, so restarts clear
 active matches and multiple replicas would split state.
 
-## Deploy To Vercel
+## Web/PWA Deployment
 
-The project is a Vite single-page app and is ready for Vercel deployment.
+The consumer Web build comes from `apps/mobile`, not the default Vite mock
+table. It consumes the same strict client contract, `legalActions`, action
+descriptors, reconnect flow, and production WSS endpoint as the native App.
 
-Recommended Vercel settings:
+```powershell
+$env:APP_VARIANT='production'
+$env:EXPO_PUBLIC_ROOM_SERVER_MODE='production'
+$env:EXPO_PUBLIC_ROOM_SERVER_URL='wss://leshan-mahjong-room-server.onrender.com/ws'
+npm run mobile:export:web
+cd apps/mobile
+npx eas-cli deploy --prod --export-dir dist --environment production
+```
 
-| Setting | Value |
-| --- | --- |
-| Framework Preset | `Vite` |
-| Install Command | `npm install` |
-| Build Command | `npm run build` |
-| Output Directory | `dist` |
-| Root Directory | `.` |
-| Node.js Version | `24.x` |
-
-Import steps:
-
-1. Open [Vercel New Project](https://vercel.com/new).
-2. Choose `Sakuraou/leshan-mahjong-lab` from GitHub.
-3. Keep the detected framework as `Vite`.
-4. Confirm the settings above.
-5. Click Deploy.
-6. After deployment, replace the `Live URL` placeholder in this README with
-   the Vercel production URL.
-
-The repo includes `vercel.json` so direct SPA routes can rewrite to
-`/index.html`.
+The checked-in manifest enables installation from supported browsers. Offline
+gameplay is intentionally not cached because room state is server-authoritative.
 
 ## Why This Project
 
@@ -246,6 +250,7 @@ npm run dev
 npm run mobile
 npm run mobile:typecheck
 npm run mobile:export
+npm run mobile:export:web
 npm run dev:server
 npm run dev:server:lan
 npm run smoke:server
@@ -259,15 +264,15 @@ npm run check:all
 
 - Vite
 - React
-- Expo / React Native
+- Expo / React Native / React Native Web
 - TypeScript
 - Node test runner
 - Node 24 + `ws` production room server
-- Docker, Render Blueprint, and Expo EAS internal distribution configuration
+- Docker, Render Blueprint, Expo EAS Hosting, and EAS internal distribution
 - Pure TypeScript game engine under `src/game`
 - GitHub for project history and portfolio presentation
-- Planned Web portfolio deployment: Vercel
-- Selected Android beta room-server deployment: Render
+- Production Web/PWA deployment: Expo EAS Hosting
+- Production room-server deployment: Render
 
 ## Architecture
 
@@ -298,7 +303,7 @@ src/
     productionSmoke.ts   Full local production-runtime smoke
     remoteSmoke.ts       Full hosted WSS and transport/security smoke
 apps/
-  mobile/               Expo phone client, reconnect flow, timeline, result UI
+  mobile/               Expo mobile + Web/PWA client, reconnect, timeline, results
 packages/
   client-core/          Strict mobile DTOs, transport, events, presentation
 tests/
@@ -337,20 +342,20 @@ recovery by saving host/guest sessions locally, reconnecting after a simulated
 refresh, and calling `resumeSession` for fresh redacted snapshots. The default
 playable table still uses the local mock transport for a stable portfolio demo.
 
-The phone client under `apps/mobile` now continues across authoritative rounds: it
+The production Expo client under `apps/mobile` now runs on phones and browsers
+and continues across authoritative rounds: it
 uses server legal actions for every command, auto-requests eligible draws,
 keeps hu as a player choice, survives weak-network reconnects, merges a bounded
 public event timeline, preserves cumulative scores, re-readies all four players,
-and renders final scores plus hu/chicken/gang/cha-jiao payments. Session tokens
-stay in Expo SecureStore and sockets are closed and
-resumed across AppState transitions. See
+and renders final scores plus hu/chicken/gang/cha-jiao payments. Native session
+tokens stay in Expo SecureStore; Web sessions use a per-tab storage adapter.
+Sockets are closed and resumed across AppState or browser connection changes. See
 [docs/mobile-app-plan.md](docs/mobile-app-plan.md) for run addresses, privacy
 boundaries, and the Android/iOS roadmap.
 
-The browser keeps a limited "真实 WebSocket 桌面预览" and the original mock table
-as debugging and portfolio surfaces. The production-oriented playable path is
-the single-session Expo client; the browser's multi-client experiment remains
-useful for privacy and protocol inspection.
+The Vite browser keeps a limited "真实 WebSocket 桌面预览" and the original mock
+table as debugging and portfolio surfaces. The production playable browser path
+is the single-session Expo Web/PWA at `leshan-mahjong-play.expo.app`.
 
 ## AI-Assisted Workflow
 
@@ -396,6 +401,9 @@ roles were used to split work into reviewable concerns:
   rounds, recover across weak networks, retain a bounded safe event timeline,
   and show authoritative dealer decisions, cumulative scores, final ranking,
   and hu, chicken, gang, and cha-jiao details.
+- Shipped that client as a responsive EAS-hosted Web/PWA so Windows, Mac,
+  Android, and iPhone players can join the same authoritative room by URL while
+  retaining the signed Android APK.
 - Used a multi-agent AI-assisted workflow to split product planning, rule
   modeling, implementation, test-case design, and review.
 - Prepared the repository as a portfolio case study with rule documentation,

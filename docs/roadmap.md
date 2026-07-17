@@ -243,7 +243,15 @@ phone-first product.
   environment variable without storing session credentials
 - [x] Finish EAS build `ac719fc4-730a-4236-8b3c-bdbde3fb5495` and record the
   first signed Android `0.2.0` internal APK install URL
-- [ ] Complete and record the four-device acceptance matrix for voluntary ba
+- [x] Adapt the Expo consumer client to React Native Web with a responsive
+  desktop layout and shared mouse/touch hand ordering
+- [x] Add a per-tab, whitelisted Web session store without exposing wall, seed,
+  opponent hands, or private response state
+- [x] Publish the Expo Web/PWA to EAS Hosting at
+  `https://leshan-mahjong-play.expo.app` and keep the Android APK available
+- [x] Add the exact EAS Web origin to the production WSS policy and cover both
+  Android and Web origins in deployment regression tests
+- [ ] Complete and record the cross-platform four-client acceptance matrix for voluntary ba
   gang, delayed zero-point continuation, yao-ji exchange, reconnect, and
   multi-round cumulative settlement
 - Add vibration/audio feedback
@@ -258,7 +266,7 @@ Goal: make the project easy to understand in a resume or personal homepage.
 - Add screenshots
 - Add case study page
 - Add development process notes
-- Deploy to Vercel
+- Capture and link the production EAS-hosted Web/PWA
 - Link from personal homepage
 
 ## Phase 7: Advanced Features

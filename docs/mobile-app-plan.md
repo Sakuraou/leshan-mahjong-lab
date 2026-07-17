@@ -1,8 +1,10 @@
 # Mobile App Plan
 
-The final product is a phone-first Leshan Mahjong App. The Vite Web client stays
-in the repository as a rule, protocol, privacy, and portfolio validation tool;
-it is not the final gameplay shell.
+The final product remains a phone-first Leshan Mahjong App. Its Expo presentation
+also ships as the production Web/PWA client so Windows, macOS, Android, and
+iPhone players can join by URL. The older Vite Web client stays in the repository
+as a rule, protocol, privacy, and portfolio validation tool; it is not the
+consumer gameplay shell.
 
 ## First Complete Multi-Round Mobile Milestone
 
@@ -109,6 +111,26 @@ version `0.2.0` internal APK. The commands live in
 `internal-beta-deployment.md`; physical acceptance lives in
 `physical-device-test-checklist.md`.
 
+## Production Web/PWA Delivery
+
+The Expo client is deployed at
+`https://leshan-mahjong-play.expo.app` through EAS Hosting. It uses the same
+single-session `MobileRoomTransport`, strict runtime parser, `legalActions`,
+parameterized action descriptors, public timeline, settlement DTOs, and
+production WSS endpoint as the native client. The default Vite mock table is not
+part of this deployment.
+
+The layout remains vertical below 960 px and becomes a control-sidebar plus
+table layout on wider desktop screens. The existing PanResponder hand ordering
+works with touch and mouse. Initial hands are sorted once; later tiles are
+inserted without rearranging the player's surviving local order.
+
+Native clients keep recovery data in SecureStore. The Web client stores only
+the whitelisted `PersistedRoomSession` in `sessionStorage`, which isolates
+sessions by browser tab and survives a same-tab refresh. It never stores raw
+messages, other hands, wall order, seed, or private response arrays. A second
+tab therefore starts as a separate player unless it independently joins a room.
+
 ## Architecture
 
 ```text
@@ -120,7 +142,7 @@ Authoritative Node WebSocket server
   -> bounded MobilePublicEvent timeline + safe settlement summaries
   -> single-session MobileRoomTransport
   -> injectable reconnect coordinator
-  -> Expo mobile presentation
+  -> Expo mobile and production Web/PWA presentation
 
 Vite Web debug client
   -> same transport implementation and snapshots
@@ -136,7 +158,7 @@ Ownership boundaries:
 | `src/webSocketRoomTransport.ts` | Multi-client browser experiment transport and debug history |
 | `packages/client-core` | Standalone client DTOs, strict parser, view model, single-session transport, reconnect coordinator, labels, sorting |
 | `src/App.tsx` | Browser debug and portfolio surface |
-| `apps/mobile` | Phone layout, SecureStore, AppState recovery, user commands |
+| `apps/mobile` | Responsive native/Web layout, platform session storage, recovery, user commands |
 
 The mobile app must not import `RoomState`, `RoundState`, `roomService`,
 `roomSocketAdapter`, or `localRoomTransport` into presentation components. Its
@@ -157,8 +179,8 @@ opponent hands, private claim arrays, or concealed an-gang tiles.
 - Other seats: `hand` remains `null`; only `handCount` is rendered as tile backs.
 - Response windows: only `pendingResponderCount`, `hasRespondedByMe`, and
   `responseByMe` cross the view-model boundary.
-- Session token: kept in the transport closure and Expo SecureStore, never
-  rendered in the UI.
+- Session token: kept in the transport closure and Expo SecureStore on native;
+  Web uses per-tab `sessionStorage`. It is never rendered in the UI.
 - Build configuration: public server URLs may enter `EXPO_PUBLIC_*`; session
   tokens and credentials never enter `.env`, EAS profiles, logs, or screenshots.
 - Commands: every visible button is gated by server `legalActions`.
@@ -235,18 +257,21 @@ Quality commands:
 npm run check
 npm run mobile:typecheck
 npm run mobile:export
+npm run mobile:export:web
 npm run smoke:server
 npm run smoke:server:production
 ```
 
-## Android And iOS Roadmap
+## Native And Web Roadmap
 
-1. Link owner hosting and Expo accounts, deploy the single-instance Docker
-   server, and generate the first signed `preview` build.
-2. Run the complete [four-device checklist](physical-device-test-checklist.md),
+1. Keep the EAS-hosted Web/PWA and signed Android `preview` build on the same
+   production contract and WSS endpoint.
+2. Run the complete [four-client checklist](physical-device-test-checklist.md),
    including reconnect, multi-round totals, responsibility dealer, and finish.
-3. Add vibration/audio settings and accessibility labels for real tile artwork.
-4. Add durable room/session storage after the in-memory beta is stable.
+3. Generate the first iOS native internal build after Apple device registration;
+   iPhone users can use the production Web/PWA before that native build exists.
+4. Add vibration/audio settings and accessibility labels for real tile artwork.
+5. Add durable room/session storage after the in-memory beta is stable.
 
 The provider-neutral server and EAS steps are documented in
 [internal-beta-deployment.md](internal-beta-deployment.md).

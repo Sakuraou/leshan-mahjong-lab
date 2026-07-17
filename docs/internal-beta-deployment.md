@@ -1,8 +1,9 @@
-# Android Internal Beta Deployment
+# Cross-Platform Internal Beta Deployment
 
-This runbook publishes the authoritative room server and produces the first
+This runbook publishes the authoritative room server, the Expo Web/PWA, and the
 installable Android preview APK. Version `0.2.0` uses Render for the single Node
-WebSocket service and Expo EAS internal distribution for the signed APK.
+WebSocket service, EAS Hosting for browser delivery, and EAS internal
+distribution for the signed APK.
 
 ## Why Render For The First Beta
 
@@ -62,7 +63,9 @@ React Native Android derives a default HTTPS Origin from the WSS endpoint, so
 the deployed service origin
 `https://leshan-mahjong-room-server.onrender.com` is explicitly included in
 `ALLOWED_ORIGINS`. `ALLOW_MISSING_ORIGIN=true` remains enabled for native
-clients that omit the header. Other origins are rejected; never use `*`.
+clients that omit the header. The production Web/PWA origin
+`https://leshan-mahjong-play.expo.app` is also explicitly allowed. Other origins
+are rejected; never use `*`.
 
 The production runtime provides:
 
@@ -181,6 +184,32 @@ cleartext traffic. Preview and production builds refuse `ws://`, localhost,
 `10.0.2.2`, LAN addresses, or a missing endpoint instead of silently falling
 back to a developer machine.
 
+## Deploy The Web/PWA
+
+The production browser client is the Expo app in `apps/mobile`; it is not the
+root Vite mock table. Export and deploy it with the public production WSS URL:
+
+```powershell
+$env:APP_VARIANT='production'
+$env:EXPO_PUBLIC_ROOM_SERVER_MODE='production'
+$env:EXPO_PUBLIC_ROOM_SERVER_URL='wss://leshan-mahjong-room-server.onrender.com/ws'
+npm run mobile:export:web
+cd apps/mobile
+npx eas-cli deploy --prod --export-dir dist --environment production
+```
+
+Current deployment:
+
+- Production URL: `https://leshan-mahjong-play.expo.app`
+- EAS deployment id: `019f6e54-7878-7252-9249-f9adb95e95fb`
+- Deployment identifier: `4vd837qgot`
+- Immutable deployment URL:
+  `https://leshan-mahjong-play--4vd837qgot.expo.app`
+
+The manifest supports installation from compatible browsers. The app does not
+cache authoritative gameplay for offline use. Native recovery remains in
+SecureStore; Web recovery uses the whitelisted per-tab `sessionStorage` record.
+
 ## Local Preflight
 
 Run these before deployment and again before documenting an APK:
@@ -190,6 +219,7 @@ npm run check
 npm run mobile:typecheck
 npm run mobile:doctor
 npm run mobile:export
+npm run mobile:export:web
 npm run smoke:server
 npm run smoke:server:production
 ```
