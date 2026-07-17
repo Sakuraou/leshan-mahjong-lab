@@ -19,7 +19,7 @@ services:
       - key: HEALTH_READY_PATH
         value: /health/ready
       - key: ALLOWED_ORIGINS
-        value: ""
+        value: https://leshan-mahjong-room-server.onrender.com
       - key: ALLOW_MISSING_ORIGIN
         value: "true"
       - key: MAX_PAYLOAD_BYTES

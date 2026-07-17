@@ -1,5 +1,15 @@
 # Release Notes
 
+## 2026-07-17
+
+- Fixed the first physical-Android connection blocker: React Native adds the
+  WSS endpoint's HTTPS Origin to its WebSocket handshake, while the initial
+  Render Blueprint allowed only clients with a missing Origin. The production
+  service now allowlists its exact Render HTTPS origin, keeps missing-Origin
+  native support, and continues rejecting wildcard or unrelated origins.
+- Added a deployment regression test so the Render Blueprint cannot silently
+  drop the Android Origin allowlist in a later edit.
+
 ## 2026-07-16
 
 - Prepared Android internal-beta candidate `0.2.0` without replacing the Vite

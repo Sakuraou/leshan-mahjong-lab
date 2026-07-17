@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { WebSocket } from "ws";
 
 import { createRoomSocketProductionServer } from "../../src/server/productionServer.ts";
@@ -20,6 +21,14 @@ test("production config validates port, origins, and native missing-origin polic
   assert.throws(() => loadProductionServerConfig({ ...productionEnv, ALLOWED_ORIGINS: "*" }), /cannot contain/);
   assert.throws(() => loadProductionServerConfig({ ...productionEnv, ALLOWED_ORIGINS: "", ALLOW_MISSING_ORIGIN: "false" }), /ALLOWED_ORIGINS/);
   assert.equal(loadProductionServerConfig({ ...productionEnv, ALLOW_MISSING_ORIGIN: "true" }).allowMissingOrigin, true);
+});
+
+test("Render allows the default Origin sent by React Native Android", async () => {
+  const blueprint = await readFile(new URL("../../render.yaml", import.meta.url), "utf8");
+  assert.match(
+    blueprint,
+    /ALLOWED_ORIGINS\s+value: https:\/\/leshan-mahjong-room-server\.onrender\.com/,
+  );
 });
 
 test("production server exposes health, rejects an untrusted Origin, and closes idempotently", async () => {

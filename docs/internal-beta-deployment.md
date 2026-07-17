@@ -58,10 +58,11 @@ WebSocket:        wss://leshan-mahjong-room-server.onrender.com/ws
 Free instance, and the production server environment. Render injects `PORT`, so
 the Blueprint intentionally does not hard-code it.
 
-Native Expo clients normally omit a browser Origin, so
-`ALLOW_MISSING_ORIGIN=true` is required. Browser clients that send an Origin are
-still rejected unless it exactly matches `ALLOWED_ORIGINS`. Add the deployed Web
-debug origin later as a comma-separated HTTPS origin; never use `*`.
+React Native Android derives a default HTTPS Origin from the WSS endpoint, so
+the deployed service origin
+`https://leshan-mahjong-room-server.onrender.com` is explicitly included in
+`ALLOWED_ORIGINS`. `ALLOW_MISSING_ORIGIN=true` remains enabled for native
+clients that omit the header. Other origins are rejected; never use `*`.
 
 The production runtime provides:
 

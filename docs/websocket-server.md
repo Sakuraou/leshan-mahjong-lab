@@ -12,8 +12,9 @@ The existing dev server keeps its root-path socket for browser compatibility;
 `productionServer.ts` adds validated environment configuration:
 
 - WebSocket upgrades only on `WS_PATH` (default `/ws`).
-- Exact browser Origin allowlisting and an explicit missing-Origin policy for
-  native clients; wildcard production origins are rejected.
+- Exact Origin allowlisting, including the default HTTPS Origin sent by React
+  Native Android, plus an explicit missing-Origin policy for other native
+  clients; wildcard production origins are rejected.
 - `/health/live` and `/health/ready`; readiness returns `503` while draining.
 - A 64 KiB default payload limit, guarded sends, ping/pong health, response
   deadline ticks, and idempotent graceful shutdown.
@@ -29,6 +30,9 @@ The first Android internal beta is live on Render. `render.yaml` defines a
 single-instance Docker Web Service in Singapore, points its health check at
 `/health/ready`, and leaves `PORT` to the platform. Render terminates public TLS;
 the App consumes `wss://leshan-mahjong-room-server.onrender.com/ws`.
+The Blueprint allowlists the matching
+`https://leshan-mahjong-room-server.onrender.com` Origin because React Native
+Android adds it automatically during the WebSocket handshake.
 
 ## Current Scope
 
