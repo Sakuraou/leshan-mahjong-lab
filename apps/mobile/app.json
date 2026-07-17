@@ -25,6 +25,11 @@
       "versionCode": 1
     },
     "web": {
+      "bundler": "metro",
+      "output": "single",
+      "name": "乐山麻将",
+      "shortName": "乐山麻将",
+      "lang": "zh-CN",
       "favicon": "./assets/favicon.png"
     },
     "extra": {

@@ -7,12 +7,13 @@ import { loadProductionServerConfig } from "../../src/server/serverConfig.ts";
 import { runRoomSocketSmokeClient } from "../../src/server/smokeClient.ts";
 
 const reactNativeAndroidOrigin = "https://leshan-mahjong-room-server.onrender.com";
+const easWebOrigin = "https://leshan-mahjong-play.expo.app";
 
 const productionEnv = {
   HOST: "127.0.0.1",
   PORT: "0",
   WS_PATH: "/ws",
-  ALLOWED_ORIGINS: reactNativeAndroidOrigin,
+  ALLOWED_ORIGINS: `${reactNativeAndroidOrigin},${easWebOrigin}`,
   ALLOW_MISSING_ORIGIN: "false",
   SHUTDOWN_GRACE_MS: "50",
 };
@@ -22,7 +23,7 @@ test("production config validates port, origins, and native missing-origin polic
   assert.throws(() => loadProductionServerConfig({ ...productionEnv, ALLOWED_ORIGINS: "*" }), /cannot contain/);
   assert.throws(() => loadProductionServerConfig({ ...productionEnv, ALLOWED_ORIGINS: "", ALLOW_MISSING_ORIGIN: "false" }), /ALLOWED_ORIGINS/);
   assert.equal(loadProductionServerConfig({ ...productionEnv, ALLOW_MISSING_ORIGIN: "true" }).allowMissingOrigin, true);
-  assert.deepEqual(loadProductionServerConfig(productionEnv).allowedOrigins, [reactNativeAndroidOrigin]);
+  assert.deepEqual(loadProductionServerConfig(productionEnv).allowedOrigins, [reactNativeAndroidOrigin, easWebOrigin]);
 });
 
 test("production server exposes health, rejects an untrusted Origin, and closes idempotently", async () => {
@@ -44,7 +45,7 @@ test("production server exposes health, rejects an untrusted Origin, and closes 
   }
 });
 
-test("React Native Android Origin completes the production WebSocket flow without leaking session tokens", async () => {
+test("Android and EAS Web Origins complete the production WebSocket flow without leaking session tokens", async () => {
   const secret = "secret-session-token-for-log-test";
   const logs: string[] = [];
   let tokenNumber = 0;
@@ -61,9 +62,15 @@ test("React Native Android Origin completes the production WebSocket flow withou
     const result = await runRoomSocketSmokeClient({
       url: server.wsUrl,
       origin: reactNativeAndroidOrigin,
-      roomId: "production-log-test",
+      roomId: "production-android-log-test",
+    });
+    const webResult = await runRoomSocketSmokeClient({
+      url: server.wsUrl,
+      origin: easWebOrigin,
+      roomId: "production-web-log-test",
     });
     assert.equal(result.hostMessages[0]?.type, "actionAccepted");
+    assert.equal(webResult.hostMessages[0]?.type, "actionAccepted");
     assert.equal(logs.join("\n").includes(secret), false);
   } finally {
     await server.close();

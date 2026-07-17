@@ -25,6 +25,7 @@
     "mobile:doctor": "npx expo-doctor apps/mobile",
     "mobile:typecheck": "npm run typecheck --workspace @leshan-mahjong/mobile",
     "mobile:export": "npm run export:android --workspace @leshan-mahjong/mobile",
+    "mobile:export:web": "npm run export:web --workspace @leshan-mahjong/mobile",
     "preview": "vite preview --host 127.0.0.1",
     "test": "node --test --experimental-strip-types tests/game/*.test.ts"
   },

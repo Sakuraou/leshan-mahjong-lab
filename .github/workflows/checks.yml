@@ -29,6 +29,12 @@ jobs:
         run: npm run build
       - name: Mobile TypeScript
         run: npm run mobile:typecheck
+      - name: Mobile production Web export
+        env:
+          APP_VARIANT: production
+          EXPO_PUBLIC_ROOM_SERVER_MODE: production
+          EXPO_PUBLIC_ROOM_SERVER_URL: wss://rooms.example.test/ws
+        run: npm run mobile:export:web
       - name: Production WebSocket smoke
         run: npm run smoke:server:production
       - name: Expo production config

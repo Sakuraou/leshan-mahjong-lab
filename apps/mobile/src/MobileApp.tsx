@@ -46,11 +46,13 @@ import {
   AppState,
   type AppStateStatus,
   PanResponder,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -92,6 +94,7 @@ type SelectedGang =
 const seatIds: PlayerId[] = [0, 1, 2, 3];
 const suits: Suit[] = ["bamboos", "dots", "characters"];
 const serverModes: MobileServerMode[] = ["development", "lan", "production"];
+const productionWebClient = Platform.OS === "web" && initialMobileServerConfig.mode === "production";
 const initialReconnectState: ReconnectState = {
   phase: "offline",
   attempt: 0,
@@ -103,12 +106,14 @@ const initialReconnectState: ReconnectState = {
 };
 
 export function MobileApp() {
+  const { width: viewportWidth } = useWindowDimensions();
+  const wideLayout = Platform.OS === "web" && viewportWidth >= 960;
   const [serverMode, setServerMode] = useState<MobileServerMode>(initialMobileServerConfig.mode);
   const [developmentTarget, setDevelopmentTarget] = useState<MobileDevelopmentTarget>(
     initialMobileServerConfig.developmentTarget,
   );
   const [serverUrl, setServerUrl] = useState(initialMobileServerConfig.url);
-  const [roomId, setRoomId] = useState("LSMJ-MOBILE");
+  const [roomId, setRoomId] = useState(createInitialRoomId);
   const [displayName, setDisplayName] = useState("手机玩家");
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("idle");
   const [statusText, setStatusText] = useState("尚未连接");
@@ -857,7 +862,8 @@ export function MobileApp() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["top", "right", "bottom", "left"]}>
-      <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
+        <View style={styles.pageShell}>
         <View style={styles.header}>
           <View>
             <Text style={styles.brand}>乐山麻将</Text>
@@ -885,7 +891,19 @@ export function MobileApp() {
           onAction={(action, actionId) => void runIntermissionAction(action, actionId)}
         />
 
+        <View style={[styles.primaryLayout, wideLayout && styles.primaryLayoutWide]}>
+          <View style={[styles.controlColumn, wideLayout && styles.controlColumnWide]}>
         <Section title="服务器与房间">
+          {productionWebClient ? (
+            <View style={styles.productionServerSummary}>
+              <View style={styles.productionServerDot} />
+              <View style={styles.productionServerCopy}>
+                <Text style={styles.productionServerTitle}>生产联机服务器</Text>
+                <Text style={styles.productionServerAddress}>{serverUrl}</Text>
+              </View>
+            </View>
+          ) : (
+            <>
           <View style={styles.serverModeControl}>
             {serverModes.map((mode) => (
               <Pressable
@@ -931,6 +949,8 @@ export function MobileApp() {
           )}
           <Field label="服务器地址" value={serverUrl} onChangeText={setServerUrl} autoCapitalize="none" />
           <Text style={styles.serverModeHint}>{serverModeHint(serverMode)}</Text>
+            </>
+          )}
           <View style={styles.fieldRow}>
             <View style={styles.flexField}>
               <Field label="房间号" value={roomId} onChangeText={setRoomId} autoCapitalize="characters" />
@@ -991,6 +1011,9 @@ export function MobileApp() {
             </View>
           </Section>
         ) : null}
+          </View>
+
+          <View style={[styles.tableColumn, wideLayout && styles.tableColumnWide]}>
 
         <Section title="牌桌预览" trailing={phaseText(viewModel)}>
           {viewModel === null || snapshot?.round === null ? (
@@ -1076,6 +1099,9 @@ export function MobileApp() {
           )}
         </Section>
         <RoundTimelineSection events={publicEvents} snapshot={snapshot} />
+          </View>
+        </View>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -1318,7 +1344,11 @@ function DraggableHandTile({
   return (
     <Animated.View
       {...responder.panHandlers}
-      style={[styles.draggableHandTile, { transform: [{ translateX }] }]}
+      style={[
+        styles.draggableHandTile,
+        Platform.OS === "web" && styles.draggableHandTileWeb,
+        { transform: [{ translateX }] },
+      ]}
     >
       <Pressable
         accessibilityRole="button"
@@ -1641,14 +1671,63 @@ function meldLabel(meld: ClientVisibleMeld): string {
   return `${type}${tileLabel(meld.tile)}`;
 }
 
+function createInitialRoomId(): string {
+  if (Platform.OS !== "web") {
+    return "LSMJ-MOBILE";
+  }
+
+  const search = (globalThis as { location?: { search?: string } }).location?.search;
+  if (search !== undefined) {
+    const invitedRoomId = new URLSearchParams(search).get("room")?.trim().toUpperCase();
+    if (invitedRoomId !== undefined && /^[A-Z0-9-]{3,32}$/.test(invitedRoomId)) {
+      return invitedRoomId;
+    }
+  }
+
+  return `LSMJ-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+}
+
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: "#173A2C",
   },
+  scrollView: {
+    flex: 1,
+    backgroundColor: "#F4F5F0",
+  },
   page: {
+    flexGrow: 1,
     paddingBottom: 32,
     backgroundColor: "#F4F5F0",
+  },
+  pageShell: {
+    width: "100%",
+    maxWidth: 1280,
+    alignSelf: "center",
+    backgroundColor: "#F4F5F0",
+  },
+  primaryLayout: {
+    width: "100%",
+  },
+  primaryLayoutWide: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+  },
+  controlColumn: {
+    width: "100%",
+  },
+  controlColumnWide: {
+    width: 390,
+    borderRightWidth: 1,
+    borderRightColor: "#D9DDD5",
+  },
+  tableColumn: {
+    width: "100%",
+  },
+  tableColumnWide: {
+    flex: 1,
+    minWidth: 0,
   },
   header: {
     minHeight: 92,
@@ -1766,6 +1845,40 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginTop: -4,
     marginBottom: 8,
+  },
+  productionServerSummary: {
+    minHeight: 58,
+    marginBottom: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: "#BED1C5",
+    borderRadius: 6,
+    backgroundColor: "#E6F0E9",
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  productionServerDot: {
+    width: 10,
+    height: 10,
+    marginRight: 10,
+    borderRadius: 5,
+    backgroundColor: "#24704B",
+  },
+  productionServerCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  productionServerTitle: {
+    color: "#174A36",
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "800",
+  },
+  productionServerAddress: {
+    color: "#52635A",
+    fontSize: 11,
+    lineHeight: 16,
   },
   pendingConfirmationBand: {
     paddingHorizontal: 20,
@@ -2041,6 +2154,10 @@ const styles = StyleSheet.create({
   },
   draggableHandTile: {
     zIndex: 1,
+  },
+  draggableHandTileWeb: {
+    cursor: "pointer",
+    userSelect: "none",
   },
   handTileDisabled: {
     opacity: 0.34,
