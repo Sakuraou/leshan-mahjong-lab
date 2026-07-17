@@ -104,7 +104,8 @@ The checked-in `render.yaml` and remote smoke runner make deployment repeatable.
 Render authorization and the first remote four-client flow are complete. Expo
 project `@twilight111/leshan-mahjong` is bound, its preview WSS environment is
 configured, and signed Android build
-`ac719fc4-730a-4236-8b3c-bdbde3fb5495` is queued. The commands live in
+`ac719fc4-730a-4236-8b3c-bdbde3fb5495` completed as the first installable
+version `0.2.0` internal APK. The commands live in
 `internal-beta-deployment.md`; physical acceptance lives in
 `physical-device-test-checklist.md`.
 

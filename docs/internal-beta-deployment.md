@@ -152,8 +152,13 @@ First signed preview build:
   `https://expo.dev/accounts/twilight111/projects/leshan-mahjong/builds/ac719fc4-730a-4236-8b3c-bdbde3fb5495`
 - Version: `0.2.0` (`versionCode` 1)
 - Distribution: internal Android APK
-- Current status: EAS Free Tier queue; replace this line with the artifact URL
-  after the build completes
+- Status: finished successfully at 2026-07-17 00:13 HKT
+- Artifact:
+  `https://expo.dev/artifacts/eas/RO_ovhmgw0dcbkEypy1Y2fyWB2xsjHXhHoQKWuhc9vg.apk`
+- Verified response: `200 OK`, `application/octet-stream`, 69,896,889 bytes
+  (approximately 66.7 MiB)
+- Availability: EAS Free build artifact through 2026-07-30; keep the build page
+  as the durable record after the direct artifact expires
 
 Build the internal Android artifact:
 
@@ -191,6 +196,12 @@ npm run smoke:server:production
 Docker is also built by Render from the checked-in `Dockerfile`. A local Docker
 build is optional when Docker Desktop is unavailable, but the first successful
 Render build must be recorded as the container proof.
+
+The final 2026-07-17 preflight for build
+`ac719fc4-730a-4236-8b3c-bdbde3fb5495` passed all commands above. It included
+211 rule/transport/server tests, Expo Doctor 20/20, Android export, the local
+production security smoke, and the hosted four-client create/join/seat/ready/
+dingque/draw/discard/deadline/resume flow.
 
 ## Known Internal-Beta Limits
 

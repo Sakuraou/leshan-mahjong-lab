@@ -48,11 +48,18 @@ without removing the browser debug table:
   Origin rejection, payload limits, healthy heartbeat, authoritative response
   timeout, and real disconnect/resume behavior.
 
-The first Render Free server is live and EAS `preview` is selected for the
-Android APK. The public endpoint is
+The first Render Free server is live and the signed EAS `preview` Android APK
+is ready. The App connects to
 `wss://leshan-mahjong-room-server.onrender.com/ws`; Expo project
-`@twilight111/leshan-mahjong` is bound and the first signed Android build is
-tracked as `ac719fc4-730a-4236-8b3c-bdbde3fb5495`. See the
+`@twilight111/leshan-mahjong` produced build
+`ac719fc4-730a-4236-8b3c-bdbde3fb5495` for version `0.2.0` (build 1).
+
+- [Install the Android APK](https://expo.dev/artifacts/eas/RO_ovhmgw0dcbkEypy1Y2fyWB2xsjHXhHoQKWuhc9vg.apk)
+- [View the EAS build record](https://expo.dev/accounts/twilight111/projects/leshan-mahjong/builds/ac719fc4-730a-4236-8b3c-bdbde3fb5495)
+- Artifact size: approximately 66.7 MiB
+- Free-build artifact availability: through July 30, 2026
+
+See the
 [deployment runbook](docs/internal-beta-deployment.md) and
 [four-device checklist](docs/physical-device-test-checklist.md).
 

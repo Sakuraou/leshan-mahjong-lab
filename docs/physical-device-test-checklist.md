@@ -12,7 +12,9 @@ Fill this in before each run:
 | Field | Value |
 | --- | --- |
 | App version | `0.2.0` |
-| EAS build id / APK URL | `ac719fc4-730a-4236-8b3c-bdbde3fb5495` / pending queue completion |
+| EAS build id | `ac719fc4-730a-4236-8b3c-bdbde3fb5495` |
+| APK URL | [Install version 0.2.0 build 1](https://expo.dev/artifacts/eas/RO_ovhmgw0dcbkEypy1Y2fyWB2xsjHXhHoQKWuhc9vg.apk) |
+| Artifact | 66.7 MiB Android internal APK; available through 2026-07-30 |
 | Server commit | `d226682` |
 | WSS endpoint | `wss://leshan-mahjong-room-server.onrender.com/ws` |
 | Test date and network | |

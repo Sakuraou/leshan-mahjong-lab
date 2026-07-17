@@ -25,10 +25,16 @@
   gameplay, actual disconnect/resume, Origin rejection, and the 64 KiB payload
   boundary passed remotely. Expo project `@twilight111/leshan-mahjong` is now
   bound, its preview WSS environment is configured, and signed Android build
-  `ac719fc4-730a-4236-8b3c-bdbde3fb5495` has entered the EAS Free Tier queue.
+  `ac719fc4-730a-4236-8b3c-bdbde3fb5495` finished successfully. The version
+  `0.2.0` internal APK is approximately 66.7 MiB and is available from the EAS
+  build record through July 30, 2026.
 - Observed the `d226682` Render redeploy with a live public WebSocket: the old
   connection closed, readiness returned, and the four-client remote smoke
   passed on the replacement instance.
+- Completed the final 2026-07-17 artifact preflight: 211 tests, strict
+  type-checking, Vite production build, Expo Doctor 20/20, mobile type-check,
+  Android export, local development/production server smokes, and the hosted
+  four-client room/recovery smoke all passed.
 - Added server-authoritative voluntary ba-gang candidates for each physical
   hand tile and peng, including normal, yao-ji, and delayed-natural zero-point
   payment previews.
@@ -166,7 +172,8 @@ privacy, protocol, and portfolio debugging surface.
    placeholders.
 3. Validate the complete multi-round Expo flow on physical Android and iOS
    devices.
-4. Add production `wss://` hosting and durable room/session persistence.
+4. Add durable room/session persistence and production monitoring beyond the
+   current single-instance `wss://` beta.
 5. Add real tile artwork, sound/vibration controls, and accessibility polish.
 6. Add a clearer portfolio page or route for case-study presentation.
 

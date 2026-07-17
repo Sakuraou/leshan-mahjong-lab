@@ -241,7 +241,7 @@ phone-first product.
   response deadline, Origin, payload, and reconnect checks
 - [x] Bind Expo project `@twilight111/leshan-mahjong` and create the preview WSS
   environment variable without storing session credentials
-- [ ] Finish EAS build `ac719fc4-730a-4236-8b3c-bdbde3fb5495` and record the
+- [x] Finish EAS build `ac719fc4-730a-4236-8b3c-bdbde3fb5495` and record the
   first signed Android `0.2.0` internal APK install URL
 - [ ] Complete and record the four-device acceptance matrix for voluntary ba
   gang, delayed zero-point continuation, yao-ji exchange, reconnect, and
