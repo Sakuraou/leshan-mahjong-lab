@@ -201,9 +201,9 @@ npx eas-cli deploy --prod --export-dir dist --environment production
 Current deployment:
 
 - Production URL: `https://leshan-mahjong-play.expo.app`
-- Deployment identifier: `mb044pj322`
+- Deployment identifier: `5tsri5nbuh`
 - Immutable deployment URL:
-  `https://leshan-mahjong-play--mb044pj322.expo.app`
+  `https://leshan-mahjong-play--5tsri5nbuh.expo.app`
 
 The 2026-07-18 browser acceptance opened four isolated sessions against this
 production URL, completed create/join/seat/ready/start/dingque, verified

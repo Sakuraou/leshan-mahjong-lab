@@ -27,7 +27,7 @@
   rejects a tile that is no longer legal.
 - Published the verified Web/PWA build at
   `https://leshan-mahjong-play.expo.app` with immutable deployment
-  `https://leshan-mahjong-play--mb044pj322.expo.app`.
+  `https://leshan-mahjong-play--5tsri5nbuh.expo.app`.
 - Aligned the Expo SDK 57 patch dependencies and restored a clean 20/20 Expo
   Doctor result before the final Android and Web exports.
 

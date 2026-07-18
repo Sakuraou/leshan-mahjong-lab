@@ -32,7 +32,3 @@ services:
         value: "30000"
       - key: DEADLINE_POLL_INTERVAL_MS
         value: "250"
-      - key: RESPONSE_WINDOW_TIMEOUT_MS
-        value: "15000"
-      - key: TURN_ACTION_TIMEOUT_MS
-        value: "30000"
