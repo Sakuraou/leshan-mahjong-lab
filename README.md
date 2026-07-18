@@ -52,6 +52,10 @@ existing Android `0.2.0` internal APK, without removing the Vite debug table:
   real hosted create/join/seat/ready/dingque/draw/discard/resume flow and probes
   Origin rejection, payload limits, healthy heartbeat, authoritative response
   timeout, and real disconnect/resume behavior.
+- The 2026-07-18 production browser acceptance used four isolated sessions in
+  one real room: all four joined, took seats, readied, started, and chose dingque.
+  Each session saw only its own hand, and the shared hand control passed both
+  legal-tile selection and mouse drag ordering.
 
 The first Render Free server is live and the signed EAS `preview` Android APK
 is ready. The App connects to

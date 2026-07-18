@@ -40,11 +40,12 @@ import {
   validateMobileServerUrl,
 } from "@leshan-mahjong/client-core";
 import NetInfo from "@react-native-community/netinfo";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import {
   Animated,
   AppState,
   type AppStateStatus,
+  type GestureResponderEvent,
   PanResponder,
   Platform,
   Pressable,
@@ -413,10 +414,14 @@ export function MobileApp() {
       return;
     }
     const descriptor = descriptorForAction(snapshot, "discardTile");
-    const stillLegal = descriptor?.actionId === selectedDiscard.actionId
+    const stillLegal = descriptor !== null
       && legalTilesForAction(snapshot, "discardTile").some((tile) => tile.tileId === selectedDiscard.tile.tileId);
     if (!stillLegal) {
       setSelectedDiscard(null);
+      return;
+    }
+    if (descriptor.actionId !== selectedDiscard.actionId) {
+      setSelectedDiscard({ tile: selectedDiscard.tile, actionId: descriptor.actionId });
     }
   }, [selectedDiscard, snapshot]);
 
@@ -1293,6 +1298,7 @@ function TableSeat({
 }
 
 const handTileExtent = 45;
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 function DraggableHandTile({
   tile,
@@ -1315,8 +1321,129 @@ function DraggableHandTile({
 }) {
   const translateX = useRef(new Animated.Value(0)).current;
   const moved = useRef(false);
+  const mouseStartX = useRef<number | null>(null);
+  const mouseDragging = useRef(false);
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
+  const touchLastX = useRef<number | null>(null);
+  const touchDragging = useRef(false);
+
+  const finishDrag = useCallback((dx: number) => {
+    const targetIndex = Math.max(0, Math.min(tiles.length - 1, index + Math.round(dx / handTileExtent)));
+    const target = tiles[targetIndex];
+    if (target !== undefined && target.tileId !== tile.tileId) {
+      onMove?.(tile.tileId, target.tileId);
+    }
+    Animated.spring(translateX, { toValue: 0, useNativeDriver: true }).start();
+    onDragStateChange(false);
+    setTimeout(() => {
+      moved.current = false;
+    }, 0);
+  }, [index, onDragStateChange, onMove, tile.tileId, tiles, translateX]);
+
+  const cancelDrag = useCallback(() => {
+    Animated.spring(translateX, { toValue: 0, useNativeDriver: true }).start();
+    onDragStateChange(false);
+  }, [onDragStateChange, translateX]);
+
+  const handleMouseDown = useCallback((event: ReactMouseEvent) => {
+    if (event.button !== 0) {
+      return;
+    }
+    mouseStartX.current = event.pageX;
+    mouseDragging.current = false;
+    moved.current = false;
+  }, []);
+
+  const handleTouchStart = useCallback((event: GestureResponderEvent) => {
+    const touch = event.nativeEvent.touches[0];
+    if (touch === undefined) {
+      return;
+    }
+    touchStart.current = { x: touch.pageX, y: touch.pageY };
+    touchLastX.current = touch.pageX;
+    touchDragging.current = false;
+    moved.current = false;
+  }, []);
+
+  useEffect(() => {
+    if (Platform.OS !== "web" || typeof document === "undefined") {
+      return undefined;
+    }
+    const handleMouseMove = (event: MouseEvent) => {
+      if (mouseStartX.current === null) {
+        return;
+      }
+      const dx = event.pageX - mouseStartX.current;
+      if (!mouseDragging.current && Math.abs(dx) > 6) {
+        mouseDragging.current = true;
+        moved.current = true;
+        onDragStateChange(true);
+      }
+      if (mouseDragging.current) {
+        event.preventDefault();
+        translateX.setValue(dx);
+      }
+    };
+    const handleMouseUp = (event: MouseEvent) => {
+      if (mouseStartX.current === null) {
+        return;
+      }
+      const dx = event.pageX - mouseStartX.current;
+      const wasDragging = mouseDragging.current;
+      mouseStartX.current = null;
+      mouseDragging.current = false;
+      if (wasDragging) {
+        finishDrag(dx);
+      }
+    };
+    const handleTouchMove = (event: TouchEvent) => {
+      const start = touchStart.current;
+      const touch = event.touches[0];
+      if (start === null || touch === undefined) {
+        return;
+      }
+      const dx = touch.pageX - start.x;
+      const dy = touch.pageY - start.y;
+      touchLastX.current = touch.pageX;
+      if (!touchDragging.current && Math.abs(dx) > 6 && Math.abs(dx) > Math.abs(dy)) {
+        touchDragging.current = true;
+        moved.current = true;
+        onDragStateChange(true);
+      }
+      if (touchDragging.current) {
+        event.preventDefault();
+        translateX.setValue(dx);
+      }
+    };
+    const finishTouch = () => {
+      const start = touchStart.current;
+      const wasDragging = touchDragging.current;
+      const dx = start === null || touchLastX.current === null ? 0 : touchLastX.current - start.x;
+      touchStart.current = null;
+      touchLastX.current = null;
+      touchDragging.current = false;
+      if (wasDragging) {
+        finishDrag(dx);
+      }
+    };
+    document.addEventListener("mousemove", handleMouseMove, { passive: false });
+    document.addEventListener("mouseup", handleMouseUp);
+    document.addEventListener("touchmove", handleTouchMove, { passive: false });
+    document.addEventListener("touchend", finishTouch);
+    document.addEventListener("touchcancel", finishTouch);
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+      document.removeEventListener("touchmove", handleTouchMove);
+      document.removeEventListener("touchend", finishTouch);
+      document.removeEventListener("touchcancel", finishTouch);
+    };
+  }, [finishDrag, onDragStateChange, translateX]);
+
   const responder = useMemo(() => PanResponder.create({
     onMoveShouldSetPanResponder: (_event, gesture) =>
+      onMove !== undefined && Math.abs(gesture.dx) > 6 && Math.abs(gesture.dx) > Math.abs(gesture.dy),
+    onMoveShouldSetPanResponderCapture: (_event, gesture) =>
       onMove !== undefined && Math.abs(gesture.dx) > 6 && Math.abs(gesture.dx) > Math.abs(gesture.dy),
     onPanResponderGrant: () => {
       moved.current = false;
@@ -1327,42 +1454,34 @@ function DraggableHandTile({
       translateX.setValue(gesture.dx);
     },
     onPanResponderRelease: (_event, gesture) => {
-      const targetIndex = Math.max(0, Math.min(tiles.length - 1, index + Math.round(gesture.dx / handTileExtent)));
-      const target = tiles[targetIndex];
-      if (target !== undefined && target.tileId !== tile.tileId) {
-        onMove?.(tile.tileId, target.tileId);
-      }
-      Animated.spring(translateX, { toValue: 0, useNativeDriver: true }).start();
-      onDragStateChange(false);
+      finishDrag(gesture.dx);
     },
-    onPanResponderTerminate: () => {
-      Animated.spring(translateX, { toValue: 0, useNativeDriver: true }).start();
-      onDragStateChange(false);
-    },
-  }), [index, onDragStateChange, onMove, tile.tileId, tiles, translateX]);
-
+    onPanResponderTerminate: cancelDrag,
+    onPanResponderTerminationRequest: () => false,
+  }), [cancelDrag, finishDrag, onDragStateChange, onMove, translateX]);
   return (
-    <Animated.View
-      {...responder.panHandlers}
+    <AnimatedPressable
+      {...(Platform.OS === "web" ? {} : responder.panHandlers)}
+      {...(Platform.OS === "web" ? { onMouseDown: handleMouseDown } : {})}
+      onTouchStart={Platform.OS === "web" ? handleTouchStart : undefined}
+      accessibilityRole="button"
+      accessibilityLabel={`${tileLabel(tile)}${selectable ? "，可出牌" : "，当前不可出；可拖动排序"}`}
+      onPress={() => {
+        if (!moved.current && selectable) {
+          onPress?.(tile);
+        }
+      }}
       style={[
         styles.draggableHandTile,
+        styles.handTileButton,
         Platform.OS === "web" && styles.draggableHandTileWeb,
-        { transform: [{ translateX }] },
+        !selectable && styles.handTileDisabled,
+        selected && styles.handTileSelected,
+        { transform: [{ translateX }, { translateY: selected ? -6 : 0 }] },
       ]}
     >
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`${tileLabel(tile)}${selectable ? "，可出牌" : "，当前不可出；可拖动排序"}`}
-        onPress={() => {
-          if (!moved.current && selectable) {
-            onPress?.(tile);
-          }
-        }}
-        style={[styles.handTileButton, !selectable && styles.handTileDisabled, selected && styles.handTileSelected]}
-      >
-        <TileFace tile={tile} />
-      </Pressable>
-    </Animated.View>
+      <TileFace tile={tile} />
+    </AnimatedPressable>
   );
 }
 
@@ -2166,7 +2285,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#CFE7D8",
     borderWidth: 2,
     borderColor: "#24704B",
-    transform: [{ translateY: -6 }],
   },
   coveredRow: {
     height: 42,

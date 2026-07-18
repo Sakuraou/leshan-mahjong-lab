@@ -16,13 +16,30 @@ Fill this in before each run:
 | APK URL | [Install version 0.2.0 build 1](https://expo.dev/artifacts/eas/RO_ovhmgw0dcbkEypy1Y2fyWB2xsjHXhHoQKWuhc9vg.apk) |
 | Artifact | 66.7 MiB Android internal APK; available through 2026-07-30 |
 | Web/PWA URL | [https://leshan-mahjong-play.expo.app](https://leshan-mahjong-play.expo.app) |
-| Server/client commit | `2485909` |
+| Server/client commit | `main` Web/PWA acceptance release (2026-07-18) |
 | WSS endpoint | `wss://leshan-mahjong-room-server.onrender.com/ws` |
 | Test date and network | |
 | Client A platform/browser | |
 | Client B platform/browser | |
 | Client C platform/browser | |
 | Client D platform/browser | |
+
+## Completed Web/PWA Baseline (2026-07-18)
+
+- [x] Four isolated production browser sessions joined room `WEBFINAL-Z9T7X4`,
+  occupied four distinct seats, readied, and started one authoritative round.
+- [x] All four clients submitted dingque and observed the same current phase,
+  wall count, dealer, seat readiness, and public state.
+- [x] Every client exposed its own 13/14 physical tiles while each opponent was
+  represented only by a concealed hand count.
+- [x] The host refreshed, restored its per-tab session, and recovered the same
+  seat, hand, room, and legal actions.
+- [x] A legal discard tile could be selected, and mouse drag reordered the local
+  hand without changing tile identity or sending a gameplay action.
+
+This is the automated browser baseline, not completion of every rule-specific
+scenario below. Voluntary ba gang, yao-ji exchange, multi-round settlement, and
+physical iPhone/Android layout checks still require the planned human run.
 
 ## Install And Security
 

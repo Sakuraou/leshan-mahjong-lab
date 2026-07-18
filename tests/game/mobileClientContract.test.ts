@@ -699,7 +699,17 @@ test("mobile transports complete a real authoritative draw and discard turn", as
     }
     assert.equal((await transports[0].startRound(0)).ok, true);
     for (const transport of transports) {
-      assert.equal((await transport.chooseMissingSuit("characters")).ok, true);
+      const dingqueView = await waitForTransport(transport, (state) =>
+        state.snapshot?.phase === "dingque" || state.snapshot?.phase === "discard"
+          ? state.snapshot
+          : null);
+      if (dingqueView.legalActions.includes("chooseMissingSuit")) {
+        assert.equal((await transport.chooseMissingSuit("characters")).ok, true);
+      } else {
+        const localSeatId = dingqueView.localSeatId;
+        assert.notEqual(localSeatId, null);
+        assert.notEqual(dingqueView.round?.players[localSeatId!]?.missingSuit, null);
+      }
     }
 
     const hostDiscardView = await waitForTransport(transports[0], (state) =>

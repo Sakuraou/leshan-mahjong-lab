@@ -1,5 +1,22 @@
 # Release Notes
 
+## 2026-07-18
+
+- Completed the first four-browser production acceptance against the Render WSS
+  service: create/join, four seats, four ready states, start, dingque, host
+  recovery, and per-client concealed-hand redaction all synchronized correctly.
+- Fixed Expo Web hand ordering so browser mouse movement is tracked outside the
+  tile after press, while Android/iOS continue using the native pan responder.
+  A drag changes only local order and a normal click still selects a legal tile.
+- Kept an already selected legal discard when a fresh authoritative snapshot
+  rotates its `actionId`; the confirmation uses the latest descriptor and still
+  rejects a tile that is no longer legal.
+- Published the verified Web/PWA build at
+  `https://leshan-mahjong-play.expo.app` with immutable deployment
+  `https://leshan-mahjong-play--mb044pj322.expo.app`.
+- Aligned the Expo SDK 57 patch dependencies and restored a clean 20/20 Expo
+  Doctor result before the final Android and Web exports.
+
 ## 2026-07-17
 
 - Published the production Expo Web/PWA client at

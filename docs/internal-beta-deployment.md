@@ -201,10 +201,14 @@ npx eas-cli deploy --prod --export-dir dist --environment production
 Current deployment:
 
 - Production URL: `https://leshan-mahjong-play.expo.app`
-- EAS deployment id: `019f6e54-7878-7252-9249-f9adb95e95fb`
-- Deployment identifier: `4vd837qgot`
+- Deployment identifier: `mb044pj322`
 - Immutable deployment URL:
-  `https://leshan-mahjong-play--4vd837qgot.expo.app`
+  `https://leshan-mahjong-play--mb044pj322.expo.app`
+
+The 2026-07-18 browser acceptance opened four isolated sessions against this
+production URL, completed create/join/seat/ready/start/dingque, verified
+per-session concealed hands, restored the host session, selected a legal tile,
+and reordered the local hand with a mouse drag.
 
 The manifest supports installation from compatible browsers. The app does not
 cache authoritative gameplay for offline use. Native recovery remains in

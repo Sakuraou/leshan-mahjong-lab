@@ -251,6 +251,9 @@ phone-first product.
   `https://leshan-mahjong-play.expo.app` and keep the Android APK available
 - [x] Add the exact EAS Web origin to the production WSS policy and cover both
   Android and Web origins in deployment regression tests
+- [x] Complete a four-session production browser baseline for room creation,
+  seats, readiness, start, dingque, redacted hands, recovery, legal-tile
+  selection, and mouse drag ordering
 - [ ] Complete and record the cross-platform four-client acceptance matrix for voluntary ba
   gang, delayed zero-point continuation, yao-ji exchange, reconnect, and
   multi-round cumulative settlement
