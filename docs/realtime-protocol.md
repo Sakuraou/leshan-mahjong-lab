@@ -64,6 +64,13 @@ their room membership, seat, hand, dingque, score ledger, and session token.
 Response-window deadlines continue to run, so an offline player is
 automatically treated as passing when the authoritative claim deadline expires.
 
+Normal turn timing is also authoritative. A safe `turnDeadline` snapshot field
+contains only `windowId`, `kind` (`dingque` or `discard`), the public current
+seat when applicable, `deadlineAt`, and `remainingMs`. It exposes no timer
+object, hidden hand, candidate calculation, or automatic tile choice. At 30
+seconds the core auto-selects unresolved dingque choices or one server-legal
+discard, and records the deadline id so repeated ticks cannot act twice.
+
 If the same session has already resumed on a newer connection, late `pong`,
 timeout, or `close` events from the old connection cannot mark the player
 offline. `connectionId`, `lastSeenAt`, heartbeat timer state, and session tokens
@@ -85,7 +92,7 @@ type RoomEvent =
   | { type: "roundStarted"; dealer: 0 | 1 | 2 | 3 }
   | { type: "nextDealerDecided"; completedRoundNumber: number; nextDealerSeatId: 0 | 1 | 2 | 3; reason: NextDealerReason }
   | { type: "gameFinished"; finishedBySeatId: 0 | 1 | 2 | 3; completedRoundCount: number }
-  | { type: "missingSuitChosen"; seatId: 0 | 1 | 2 | 3; suit: "bamboos" | "dots" | "characters" }
+  | { type: "missingSuitChosen"; seatId: 0 | 1 | 2 | 3; suit: "bamboos" | "dots" | "characters"; source?: "heavenly" | "timeout" }
   | { type: "tileDrawn"; seatId: 0 | 1 | 2 | 3; tile?: Tile }
   | { type: "tileDiscarded"; seatId: 0 | 1 | 2 | 3; tile: Tile }
   | { type: "huAvailable"; winners: HuCandidate[]; discardedBy?: 0 | 1 | 2 | 3 }

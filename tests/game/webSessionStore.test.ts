@@ -3,11 +3,12 @@ import test from "node:test";
 
 import type { PersistedRoomSession } from "@leshan-mahjong/client-core";
 import {
+  browserSessionStorage,
   createWebRoomSessionStore,
   type BrowserSessionStorage,
 } from "../../apps/mobile/src/webSessionStore.ts";
 
-test("browser room sessions stay isolated per tab and survive a same-tab reload", async () => {
+test("browser room sessions survive reload when backed by the same persistent storage", async () => {
   const firstTab = createStorage();
   const secondTab = createStorage();
   const firstStore = createWebRoomSessionStore(firstTab);
@@ -21,6 +22,26 @@ test("browser room sessions stay isolated per tab and survive a same-tab reload"
   assert.equal(await secondStore.load(), null);
   await firstStore.clear();
   assert.equal(await reloadedFirstStore.load(), null);
+});
+
+test("browser session storage prefers persistent localStorage over tab-only sessionStorage", () => {
+  const browser = globalThis as unknown as {
+    localStorage?: BrowserSessionStorage;
+    sessionStorage?: BrowserSessionStorage;
+  };
+  const local = createStorage();
+  const session = createStorage();
+  const originalLocal = browser.localStorage;
+  const originalSession = browser.sessionStorage;
+
+  Object.defineProperty(browser, "localStorage", { configurable: true, value: local });
+  Object.defineProperty(browser, "sessionStorage", { configurable: true, value: session });
+  try {
+    assert.equal(browserSessionStorage(), local);
+  } finally {
+    restoreStorage(browser, "localStorage", originalLocal);
+    restoreStorage(browser, "sessionStorage", originalSession);
+  }
 });
 
 test("browser room session parsing drops fields outside the public recovery contract", async () => {
@@ -49,6 +70,18 @@ function createStorage(): BrowserSessionStorage {
     setItem: (key, value) => entries.set(key, value),
     removeItem: (key) => entries.delete(key),
   };
+}
+
+function restoreStorage(
+  browser: { localStorage?: BrowserSessionStorage; sessionStorage?: BrowserSessionStorage },
+  key: "localStorage" | "sessionStorage",
+  value: BrowserSessionStorage | undefined,
+) {
+  if (value === undefined) {
+    delete browser[key];
+    return;
+  }
+  Object.defineProperty(browser, key, { configurable: true, value });
 }
 
 function persistedSession(sessionToken: string): PersistedRoomSession {

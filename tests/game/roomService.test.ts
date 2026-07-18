@@ -8,6 +8,7 @@ import {
   joinRoomSession,
   markSessionDisconnected,
   resumeRoomSession,
+  selectAutomaticMissingSuit,
   tickRoomDeadlines,
   type RoomServiceState,
   type RoomSession,
@@ -224,6 +225,48 @@ test("ticks authoritative room deadlines with an injected clock", () => {
   assert.equal(expired.service.room.phase, "draw");
   assert.equal(expired.events.some((event) => event.type === "responseWindowExpired"), true);
   assert.equal(tickRoomDeadlines(expired.service, 108_001).changed, false);
+});
+
+test("auto dingque ignores yao ji and chooses the least ordinary suit", () => {
+  assert.equal(selectAutomaticMissingSuit([
+    { suit: "bamboos", rank: 1 },
+    { suit: "dots", rank: 1 },
+    { suit: "dots", rank: 4 },
+    { suit: "characters", rank: 3 },
+    { suit: "characters", rank: 8 },
+  ]), "bamboos");
+});
+
+test("auto dingque and auto discard each settle once at the 30 second deadline", () => {
+  const filled = fillReadyService("service-turn-deadline-room");
+  const timedService: RoomServiceState = {
+    ...filled.service,
+    nowFactory: () => 100_000,
+    turnActionTimeoutMs: 30_000,
+  };
+  const started = handleOk(timedService, filled.sessions[0].sessionToken, { type: "startRound" });
+
+  assert.equal(started.service.room.turnDeadline?.kind, "dingque");
+  assert.equal(started.service.room.turnDeadline?.deadlineAt, 130_000);
+  assert.equal(tickRoomDeadlines(started.service, 129_999).changed, false);
+
+  const dingqueExpired = tickRoomDeadlines(started.service, 130_000);
+  assert.equal(dingqueExpired.changed, true);
+  assert.equal(dingqueExpired.service.room.phase, "discard");
+  assert.equal(dingqueExpired.service.room.round?.players.every((player) => player.missingSuit !== null), true);
+  assert.equal(
+    dingqueExpired.events.some((event) => event.type === "missingSuitChosen" && event.source === "timeout"),
+    true,
+  );
+  assert.equal(dingqueExpired.service.room.turnDeadline?.kind, "discard");
+  assert.equal(dingqueExpired.service.room.turnDeadline?.deadlineAt, 160_000);
+
+  const beforeDiscardCount = dingqueExpired.service.room.round?.players[0].discards.length ?? 0;
+  const discardExpired = tickRoomDeadlines(dingqueExpired.service, 160_000);
+  assert.equal(discardExpired.changed, true);
+  assert.equal(discardExpired.service.room.phase, "claim");
+  assert.equal(discardExpired.service.room.round?.players[0].discards.length, beforeDiscardCount + 1);
+  assert.equal(tickRoomDeadlines(discardExpired.service, 160_001).changed, false);
 });
 
 test("rejects service draw when dingque is missing, out of turn, or outside draw phase", () => {

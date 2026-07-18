@@ -16,8 +16,8 @@ The existing dev server keeps its root-path socket for browser compatibility;
   Native Android, plus an explicit missing-Origin policy for other native
   clients; wildcard production origins are rejected.
 - `/health/live` and `/health/ready`; readiness returns `503` while draining.
-- A 64 KiB default payload limit, guarded sends, ping/pong health, response
-  deadline ticks, and idempotent graceful shutdown.
+- A 64 KiB default payload limit, guarded sends, ping/pong health, response and
+  30-second turn deadline ticks, and idempotent graceful shutdown.
 - Structured startup/lifecycle logs that omit raw messages, snapshots, hands,
   session tokens, and undelivered recipient credentials.
 
@@ -563,8 +563,8 @@ pure room/service/adapter core and then routes only changed redacted snapshots.
 Window state contains serializable `windowId`, `deadlineAt`, and status fields;
 timer handles never enter room state or client snapshots. The server clears its
 polling interval during shutdown. Tests inject a fixed clock and timeout length,
-while the real dev server defaults to a 250 ms poll and a 15 second response
-window.
+while the real dev server defaults to a 250 ms poll, a 15-second response
+window, and a 30-second dingque/discard turn window.
 
 The old client-triggered `expireClaimWindow` protocol action has been removed.
 This prevents a valid session from ending another player's response time early.

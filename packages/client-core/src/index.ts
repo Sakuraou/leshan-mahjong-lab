@@ -7,6 +7,7 @@ export type {
   ClientVisibleMeld,
   ClientVisiblePlayerState,
   ClientVisibleResponseWindow,
+  ClientVisibleTurnDeadline,
   ClientVisibleRoomState,
   ClientVisibleSeatState,
   ClientYaoJiExchangeCandidate,

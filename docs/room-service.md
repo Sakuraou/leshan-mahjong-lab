@@ -46,6 +46,7 @@ type RoomServiceState = {
   sessionTokenFactory: SessionTokenFactory;
   nowFactory: NowFactory;
   responseWindowTimeoutMs: number;
+  turnActionTimeoutMs: number;
 };
 ```
 
@@ -69,7 +70,8 @@ last seen cursor.
 
 `nextPlayerNumber` provides stable in-room player ids. Session tokens are secure
 by default; tests inject `sessionTokenFactory`. `nowFactory` and
-`responseWindowTimeoutMs` make server deadlines deterministic under test.
+`responseWindowTimeoutMs` and `turnActionTimeoutMs` make response and ordinary
+turn deadlines deterministic under test.
 
 ## Public API
 

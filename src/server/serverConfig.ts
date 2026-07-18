@@ -11,6 +11,8 @@ export type ProductionServerConfig = {
   heartbeatIntervalMs: number;
   connectionTimeoutMs: number;
   deadlinePollIntervalMs: number;
+  responseWindowTimeoutMs: number;
+  turnActionTimeoutMs: number;
 };
 
 export function loadProductionServerConfig(
@@ -57,6 +59,18 @@ export function loadProductionServerConfig(
       "DEADLINE_POLL_INTERVAL_MS",
       50,
       60_000,
+    ),
+    responseWindowTimeoutMs: integerInRange(
+      env.RESPONSE_WINDOW_TIMEOUT_MS ?? "15000",
+      "RESPONSE_WINDOW_TIMEOUT_MS",
+      1_000,
+      120_000,
+    ),
+    turnActionTimeoutMs: integerInRange(
+      env.TURN_ACTION_TIMEOUT_MS ?? "30000",
+      "TURN_ACTION_TIMEOUT_MS",
+      1_000,
+      120_000,
     ),
   };
 }

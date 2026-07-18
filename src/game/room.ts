@@ -51,11 +51,25 @@ import type {
 
 const seatIds: PlayerId[] = [0, 1, 2, 3];
 export const DEFAULT_RESPONSE_WINDOW_TIMEOUT_MS = 15_000;
+export const DEFAULT_TURN_ACTION_TIMEOUT_MS = 30_000;
 
 export type ResponseWindowKind = "discardClaim" | "qiangGang";
 export type ResponseWindowStatus = "open" | "expired";
 export type ResponseWindowTiming = { now?: number; timeoutMs?: number };
 export type DiscardRoomTileOptions = ResponseWindowTiming & { tileId?: string };
+
+export type TurnDeadlineKind = "dingque" | "discard";
+
+export type TurnDeadlineState = {
+  windowId: string;
+  kind: TurnDeadlineKind;
+  seatId: PlayerId | null;
+  deadlineAt: number;
+};
+
+export type ClientVisibleTurnDeadline = TurnDeadlineState & {
+  remainingMs: number;
+};
 
 type ResponseWindowMetadata = {
   windowId: string;
@@ -335,7 +349,7 @@ export type RoomEvent =
       seatId: PlayerId;
       playerId: string;
       suit: Suit;
-      source?: "heavenly";
+      source?: "heavenly" | "timeout";
     }
   | { type: "tileDrawn"; seatId: PlayerId; playerId: string }
   | { type: "tileDiscarded"; seatId: PlayerId; playerId: string; tile: Tile }
@@ -449,6 +463,7 @@ export type RoomState = {
   gameEnd: GameEndState | null;
   selfDrawEligible: boolean;
   lastDrawnTileId: string | null;
+  turnDeadline: TurnDeadlineState | null;
   ruleOptions: RoomRuleOptions;
   members: RoomMember[];
   seats: SeatState[];
@@ -464,6 +479,7 @@ export type RoomState = {
   chaJiaoSettlementFacts: ChaJiaoSettlementFact[];
   resolvedSettlementIds: string[];
   resolvedWindowIds: string[];
+  resolvedTurnDeadlineIds: string[];
   eventLog: RoomEvent[];
 };
 
@@ -537,6 +553,7 @@ export type ClientVisibleRoomState = {
   settlementLedger: ClientVisibleSettlementLedgerEntry[];
   gangSettlements: ClientVisibleGangSettlementFact[];
   responseWindow: ClientVisibleResponseWindow | null;
+  turnDeadline: ClientVisibleTurnDeadline | null;
   eventLog: ClientRoomEvent[];
 };
 
@@ -807,6 +824,7 @@ export function createRoom(input: CreateRoomInput): RoomState {
     gameEnd: null,
     selfDrawEligible: false,
     lastDrawnTileId: null,
+    turnDeadline: null,
     ruleOptions: { yaoJiExchangeQiangGang: "disabled" },
     members: [],
     seats: seatIds.map((seatId) => ({
@@ -828,6 +846,7 @@ export function createRoom(input: CreateRoomInput): RoomState {
     chaJiaoSettlementFacts: [],
     resolvedSettlementIds: [],
     resolvedWindowIds: [],
+    resolvedTurnDeadlineIds: [],
     eventLog: [{ type: "roomCreated", roomId: input.id }],
   };
 }
@@ -1117,6 +1136,7 @@ function startRoundWithDealer(room: RoomState, dealer: PlayerId): RoomState {
     gameEnd: null,
     selfDrawEligible: true,
     lastDrawnTileId: startedRound.players[dealer].hand.at(-1)?.instanceId ?? null,
+    turnDeadline: null,
     round: { ...startedRound, players },
     claimWindow: null,
     baGangClaimWindow: null,
@@ -1128,6 +1148,7 @@ function startRoundWithDealer(room: RoomState, dealer: PlayerId): RoomState {
     chaJiaoSettlementFacts: [],
     resolvedSettlementIds: [],
     resolvedWindowIds: [],
+    resolvedTurnDeadlineIds: [],
     eventLog: [
       ...room.eventLog,
       { type: "roundStarted", dealer },
@@ -1149,7 +1170,12 @@ export function detectHeavenlyMissingSuit(hand: readonly Tile[]): Suit | null {
   return missingSuits.length === 1 ? missingSuits[0] : null;
 }
 
-export function chooseMissingSuit(room: RoomState, playerId: string, suit: Suit): ChooseMissingSuitResult {
+export function chooseMissingSuit(
+  room: RoomState,
+  playerId: string,
+  suit: Suit,
+  source?: "timeout",
+): ChooseMissingSuitResult {
   if (room.round === null) {
     return { ok: false, reason: "roundNotStarted" };
   }
@@ -1181,7 +1207,10 @@ export function chooseMissingSuit(room: RoomState, playerId: string, suit: Suit)
       status: allMissingSuitsChosen ? "playing" : "dingque",
       phase: allMissingSuitsChosen ? "discard" : "dingque",
       round: nextRound,
-      eventLog: [...room.eventLog, { type: "missingSuitChosen", seatId: seat.seatId, playerId, suit }],
+      eventLog: [
+        ...room.eventLog,
+        { type: "missingSuitChosen", seatId: seat.seatId, playerId, suit, ...(source === undefined ? {} : { source }) },
+      ],
     },
   };
 }
@@ -2065,7 +2094,11 @@ export function expireQiangGangWindow(
   return { ok: true, room: settledRoom };
 }
 
-export function tickRoomStateDeadlines(room: RoomState, now = Date.now()): TickRoomDeadlinesResult {
+export function tickRoomStateDeadlines(
+  room: RoomState,
+  now = Date.now(),
+  options: { turnActionTimeoutMs?: number; responseWindowTimeoutMs?: number } = {},
+): TickRoomDeadlinesResult {
   if (room.claimWindow !== null && now >= room.claimWindow.deadlineAt) {
     const result = expireClaimWindow(room, room.claimWindow.windowId, now);
     return result.ok
@@ -2080,7 +2113,156 @@ export function tickRoomStateDeadlines(room: RoomState, now = Date.now()): TickR
       : { room, changed: false, expiredWindowId: null };
   }
 
+  if (room.turnDeadline !== null && now >= room.turnDeadline.deadlineAt) {
+    const expiredWindowId = room.turnDeadline.windowId;
+
+    if (room.resolvedTurnDeadlineIds.includes(expiredWindowId)) {
+      return {
+        room: { ...room, turnDeadline: null },
+        changed: true,
+        expiredWindowId,
+      };
+    }
+
+    if (room.turnDeadline.kind === "dingque") {
+      let nextRoom = room;
+
+      for (const player of room.round?.players ?? []) {
+        if (player.missingSuit !== null) {
+          continue;
+        }
+        const playerId = room.seats[player.id]?.playerId;
+        if (playerId === null || playerId === undefined) {
+          continue;
+        }
+        const chosen = chooseMissingSuit(nextRoom, playerId, selectAutomaticMissingSuit(player.hand), "timeout");
+        if (chosen.ok) {
+          nextRoom = chosen.room;
+        }
+      }
+
+      nextRoom = {
+        ...nextRoom,
+        resolvedTurnDeadlineIds: appendResolvedWindowId(nextRoom.resolvedTurnDeadlineIds, expiredWindowId),
+      };
+      nextRoom = synchronizeRoomTurnDeadline(
+        room,
+        nextRoom,
+        now,
+        options.turnActionTimeoutMs ?? DEFAULT_TURN_ACTION_TIMEOUT_MS,
+      );
+      return { room: nextRoom, changed: true, expiredWindowId };
+    }
+
+    const seatId = room.turnDeadline.seatId;
+    const playerId = seatId === null ? null : room.seats[seatId]?.playerId;
+    const automaticTile = seatId === null ? null : selectAutomaticDiscard(room, seatId);
+
+    if (playerId === null || playerId === undefined || automaticTile === null) {
+      return {
+        room: {
+          ...room,
+          turnDeadline: null,
+          resolvedTurnDeadlineIds: appendResolvedWindowId(room.resolvedTurnDeadlineIds, expiredWindowId),
+        },
+        changed: true,
+        expiredWindowId,
+      };
+    }
+
+    const discarded = discardRoomTile(room, playerId, automaticTile, {
+      now,
+      timeoutMs: options.responseWindowTimeoutMs ?? DEFAULT_RESPONSE_WINDOW_TIMEOUT_MS,
+      tileId: automaticTile.instanceId,
+    });
+    if (!discarded.ok) {
+      return { room, changed: false, expiredWindowId: null };
+    }
+
+    const nextRoom = synchronizeRoomTurnDeadline(
+      room,
+      {
+        ...discarded.room,
+        resolvedTurnDeadlineIds: appendResolvedWindowId(discarded.room.resolvedTurnDeadlineIds, expiredWindowId),
+      },
+      now,
+      options.turnActionTimeoutMs ?? DEFAULT_TURN_ACTION_TIMEOUT_MS,
+    );
+    return { room: nextRoom, changed: true, expiredWindowId };
+  }
+
   return { room, changed: false, expiredWindowId: null };
+}
+
+export function synchronizeRoomTurnDeadline(
+  previousRoom: RoomState,
+  nextRoom: RoomState,
+  now = Date.now(),
+  timeoutMs = DEFAULT_TURN_ACTION_TIMEOUT_MS,
+): RoomState {
+  const target = turnDeadlineTarget(nextRoom);
+  if (target === null) {
+    return nextRoom.turnDeadline === null ? nextRoom : { ...nextRoom, turnDeadline: null };
+  }
+
+  const existing = nextRoom.turnDeadline ?? previousRoom.turnDeadline;
+  if (
+    existing !== null &&
+    existing.kind === target.kind &&
+    existing.seatId === target.seatId &&
+    !nextRoom.resolvedTurnDeadlineIds.includes(existing.windowId)
+  ) {
+    return nextRoom.turnDeadline === existing ? nextRoom : { ...nextRoom, turnDeadline: existing };
+  }
+
+  return {
+    ...nextRoom,
+    turnDeadline: {
+      windowId: `${nextRoom.id}:turn:${nextRoom.roundNumber}:${target.kind}:${target.seatId ?? "all"}:${nextRoom.eventLog.length}`,
+      kind: target.kind,
+      seatId: target.seatId,
+      deadlineAt: now + timeoutMs,
+    },
+  };
+}
+
+export function selectAutomaticMissingSuit(hand: readonly Tile[]): Suit {
+  const priority: Suit[] = ["bamboos", "dots", "characters"];
+  const counts = new Map<Suit, number>(priority.map((suit) => [suit, 0]));
+
+  for (const value of hand) {
+    if (!isYaoJi(value)) {
+      counts.set(value.suit, counts.get(value.suit)! + 1);
+    }
+  }
+
+  return priority.reduce((best, suit) => counts.get(suit)! < counts.get(best)! ? suit : best);
+}
+
+function turnDeadlineTarget(room: RoomState): { kind: TurnDeadlineKind; seatId: PlayerId | null } | null {
+  if (room.roundEnd !== null || room.round === null) {
+    return null;
+  }
+  if (room.phase === "dingque" && room.round.players.some((player) => player.missingSuit === null)) {
+    return { kind: "dingque", seatId: null };
+  }
+  if (room.phase === "discard") {
+    return { kind: "discard", seatId: room.round.currentPlayer };
+  }
+  return null;
+}
+
+function selectAutomaticDiscard(room: RoomState, seatId: PlayerId): PhysicalTile | null {
+  if (room.round === null || room.round.currentPlayer !== seatId) {
+    return null;
+  }
+
+  const hand = room.round.players[seatId].hand;
+  const legalTiles = hand.filter((candidate) => discardRoundTile(room.round!, seatId, candidate).ok);
+  const justDrawn = room.lastDrawnTileId === null
+    ? undefined
+    : legalTiles.find((candidate) => candidate.instanceId === room.lastDrawnTileId);
+  return justDrawn ?? legalTiles[0] ?? null;
 }
 
 export function toClientVisibleRoomState(
@@ -2177,6 +2359,9 @@ export function toClientVisibleRoomState(
     settlementLedger: room.settlementLedger.map(toClientVisibleSettlementEntry),
     gangSettlements: room.gangSettlementFacts.map(toClientVisibleGangSettlementFact),
     responseWindow: clientVisibleResponseWindow(room, localSeatId, now),
+    turnDeadline: room.turnDeadline === null
+      ? null
+      : { ...room.turnDeadline, remainingMs: Math.max(0, room.turnDeadline.deadlineAt - now) },
     eventLog: room.eventLog.map((event) => toClientVisibleRoomEvent(event, localSeatId)),
   };
 }
@@ -3541,6 +3726,7 @@ function finishRoundIfNeeded(room: RoomState): RoomState {
     phase: "ended",
     selfDrawEligible: false,
     lastDrawnTileId: null,
+    turnDeadline: null,
     roundEnd,
     chaJiao: null,
     chaJiaoSettlementFacts: [],

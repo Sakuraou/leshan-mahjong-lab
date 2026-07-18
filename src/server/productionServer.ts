@@ -33,6 +33,8 @@ export async function createRoomSocketProductionServer(
     heartbeatIntervalMs: config.heartbeatIntervalMs,
     connectionTimeoutMs: config.connectionTimeoutMs,
     deadlinePollIntervalMs: config.deadlinePollIntervalMs,
+    responseWindowTimeoutMs: options.responseWindowTimeoutMs ?? config.responseWindowTimeoutMs,
+    turnActionTimeoutMs: options.turnActionTimeoutMs ?? config.turnActionTimeoutMs,
     onLog: (entry) => writeLog(safeLogEntry(entry)),
     onUndelivered: (message) => writeLog({
       timestamp: new Date().toISOString(),

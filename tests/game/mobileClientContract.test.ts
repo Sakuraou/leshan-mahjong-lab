@@ -46,6 +46,20 @@ test("strict mobile parser projects a safe snapshot and rejects hidden fields", 
   assert.equal("wall" in (parsed.message.payload.view.round ?? {}), false);
   assert.equal(parsed.message.payload.view.round?.players[1].hand, null);
 
+  const withSafeDeadline = structuredClone(message);
+  withSafeDeadline.payload.view.turnDeadline = {
+    windowId: "ROOM:turn:1:dingque:all:1",
+    kind: "dingque",
+    seatId: null,
+    deadlineAt: 31_000,
+    remainingMs: 30_000,
+  };
+  const deadlineParsed = parseMobileRoomServerMessage(withSafeDeadline);
+  assert.equal(deadlineParsed.ok, true);
+  if (deadlineParsed.ok && deadlineParsed.message.type === "roomSnapshot") {
+    assert.deepEqual(deadlineParsed.message.payload.view.turnDeadline, withSafeDeadline.payload.view.turnDeadline);
+  }
+
   const withSeed = structuredClone(message) as typeof message & { payload: { view: ClientVisibleRoomState & { seed: string } } };
   withSeed.payload.view.seed = "leaked-seed";
   assert.deepEqual(parseMobileRoomServerMessage(withSeed), {

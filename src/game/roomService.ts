@@ -24,7 +24,9 @@ import {
   toggleReady,
   toClientVisibleRoomState,
   tickRoomStateDeadlines,
+  synchronizeRoomTurnDeadline,
   DEFAULT_RESPONSE_WINDOW_TIMEOUT_MS,
+  DEFAULT_TURN_ACTION_TIMEOUT_MS,
   type ClaimHuResult,
   type ClaimAnGangResult,
   type ClaimBaGangResult,
@@ -66,6 +68,7 @@ export type CreateRoomSessionOptions = {
   sessionTokenFactory?: SessionTokenFactory;
   nowFactory?: NowFactory;
   responseWindowTimeoutMs?: number;
+  turnActionTimeoutMs?: number;
 };
 
 export type RoomServiceState = {
@@ -76,6 +79,7 @@ export type RoomServiceState = {
   sessionTokenFactory: SessionTokenFactory;
   nowFactory: NowFactory;
   responseWindowTimeoutMs: number;
+  turnActionTimeoutMs: number;
 };
 
 export type CreateRoomSessionInput = {
@@ -191,6 +195,7 @@ export function createRoomSession(
   const sessionTokenFactory = options.sessionTokenFactory ?? createSecureSessionToken;
   const nowFactory = options.nowFactory ?? Date.now;
   const responseWindowTimeoutMs = options.responseWindowTimeoutMs ?? DEFAULT_RESPONSE_WINDOW_TIMEOUT_MS;
+  const turnActionTimeoutMs = options.turnActionTimeoutMs ?? DEFAULT_TURN_ACTION_TIMEOUT_MS;
   const sessionToken = issueSessionToken(sessionTokenFactory, []);
   const created = createRoom({ id: input.roomId, seed: input.seed });
   const joined = joinRoom(created, { playerId, displayName: input.displayName });
@@ -214,6 +219,7 @@ export function createRoomSession(
     sessionTokenFactory,
     nowFactory,
     responseWindowTimeoutMs,
+    turnActionTimeoutMs,
   };
 
   return {
@@ -274,7 +280,10 @@ export function handleRoomAction(
   }
 
   const now = service.nowFactory();
-  const deadlineResult = tickRoomStateDeadlines(service.room, now);
+  const deadlineResult = tickRoomStateDeadlines(service.room, now, {
+    turnActionTimeoutMs: service.turnActionTimeoutMs,
+    responseWindowTimeoutMs: service.responseWindowTimeoutMs,
+  });
   const currentService = deadlineResult.changed
     ? {
         ...service,
@@ -311,10 +320,16 @@ export function handleRoomAction(
     return { ok: false, reason: result.reason, service: currentService };
   }
 
-  const nextLastEventId = advanceEventId(currentService, result.room);
+  const synchronizedRoom = synchronizeRoomTurnDeadline(
+    currentService.room,
+    result.room,
+    now,
+    currentService.turnActionTimeoutMs,
+  );
+  const nextLastEventId = advanceEventId(currentService, synchronizedRoom);
   const nextService: RoomServiceState = {
     ...currentService,
-    room: result.room,
+    room: synchronizedRoom,
     sessions: updateSessionLastEventId(currentService.sessions, sessionToken, nextLastEventId),
     lastEventId: nextLastEventId,
   };
@@ -326,7 +341,10 @@ export function tickRoomDeadlines(
   service: RoomServiceState,
   now = service.nowFactory(),
 ): RoomDeadlineTickResult {
-  const result = tickRoomStateDeadlines(service.room, now);
+  const result = tickRoomStateDeadlines(service.room, now, {
+    turnActionTimeoutMs: service.turnActionTimeoutMs,
+    responseWindowTimeoutMs: service.responseWindowTimeoutMs,
+  });
 
   if (!result.changed) {
     return { service, changed: false, expiredWindowId: null, events: [] };

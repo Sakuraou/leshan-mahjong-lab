@@ -28,6 +28,12 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     },
     plugins: [
       [
+        "expo-screen-orientation",
+        {
+          initialOrientation: "DEFAULT",
+        },
+      ],
+      [
         "expo-build-properties",
         {
           android: {

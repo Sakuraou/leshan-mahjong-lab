@@ -212,7 +212,8 @@ and reordered the local hand with a mouse drag.
 
 The manifest supports installation from compatible browsers. The app does not
 cache authoritative gameplay for offline use. Native recovery remains in
-SecureStore; Web recovery uses the whitelisted per-tab `sessionStorage` record.
+SecureStore; Web recovery uses the whitelisted persistent `localStorage` record
+and automatically attempts `resumeSession` on launch.
 
 ## Local Preflight
 

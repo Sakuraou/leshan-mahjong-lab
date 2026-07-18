@@ -25,6 +25,7 @@ export type RoomSocketAdapterState = {
   sessionTokenFactory: SessionTokenFactory;
   nowFactory: NowFactory;
   responseWindowTimeoutMs: number;
+  turnActionTimeoutMs: number;
 };
 
 export type RoomSeedFactory = () => string;
@@ -34,6 +35,7 @@ export type RoomSocketAdapterOptions = {
   sessionTokenFactory?: SessionTokenFactory;
   nowFactory?: NowFactory;
   responseWindowTimeoutMs?: number;
+  turnActionTimeoutMs?: number;
 };
 
 export type RoomSocketRoomState = {
@@ -98,6 +100,7 @@ export function createRoomSocketAdapterState(options: RoomSocketAdapterOptions =
     sessionTokenFactory: options.sessionTokenFactory ?? createSecureSessionToken,
     nowFactory: options.nowFactory ?? Date.now,
     responseWindowTimeoutMs: options.responseWindowTimeoutMs ?? 15_000,
+    turnActionTimeoutMs: options.turnActionTimeoutMs ?? 30_000,
   };
 }
 
@@ -197,6 +200,7 @@ function handleCreateRoom(
       sessionTokenFactory: adapter.sessionTokenFactory,
       nowFactory: adapter.nowFactory,
       responseWindowTimeoutMs: adapter.responseWindowTimeoutMs,
+      turnActionTimeoutMs: adapter.turnActionTimeoutMs,
     },
   );
   const nextAdapter = upsertRoom(adapter, result.service);

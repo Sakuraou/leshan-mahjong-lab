@@ -41,6 +41,7 @@ export type ClientRoomViewModel = {
   hasRespondedByMe: boolean;
   responseByMe: ClientResponseChoice | null;
   responseWindow: ClientVisibleResponseWindow | null;
+  turnDeadline: ClientVisibleRoomState["turnDeadline"];
   seats: ClientSeatViewModel[];
 };
 
@@ -63,6 +64,7 @@ export function toClientRoomViewModel(view: ClientVisibleRoomState): ClientRoomV
     hasRespondedByMe: view.responseWindow?.hasRespondedByMe ?? false,
     responseByMe: view.responseWindow?.responseByMe ?? null,
     responseWindow: view.responseWindow === null ? null : { ...view.responseWindow },
+    turnDeadline: view.turnDeadline === null ? null : { ...view.turnDeadline },
     seats: view.seats.map((seat) => {
       const player = view.round?.players[seat.seatId];
       const score = view.scores.find((entry) => entry.seatId === seat.seatId)?.points ?? 0;

@@ -282,6 +282,14 @@ export type ClientVisibleResponseWindow = {
   responseByMe: ClientResponseChoice | null;
 };
 
+export type ClientVisibleTurnDeadline = {
+  windowId: string;
+  kind: "dingque" | "discard";
+  seatId: SeatId | null;
+  deadlineAt: number;
+  remainingMs: number;
+};
+
 export type ClientVisibleRoomState = {
   id: string;
   gameStatus: GameStatus;
@@ -304,6 +312,7 @@ export type ClientVisibleRoomState = {
     players: ClientVisiblePlayerState[];
   };
   responseWindow: ClientVisibleResponseWindow | null;
+  turnDeadline: ClientVisibleTurnDeadline | null;
   scores: Array<{ seatId: SeatId; playerId: string | null; points: number }>;
   roundEnd: MobileRoundEndState | null;
   settlementLedger: MobileSettlementSummary[];
@@ -558,7 +567,7 @@ function parseClientVisibleRoomState(value: unknown): { ok: true; value: ClientV
     "id", "gameStatus", "status", "phase", "roundNumber", "currentDealer", "dealerHistory",
     "nextDealerDecision", "roundHistory", "gameEnd", "legalActions", "actionDescriptors", "localSeatId", "members", "seats",
     "round", "claimWindow", "baGangClaimWindow", "gangDraw", "roundEnd", "chaJiao", "scores",
-    "settlementLedger", "gangSettlements", "responseWindow", "eventLog",
+    "settlementLedger", "gangSettlements", "responseWindow", "turnDeadline", "eventLog",
   ];
   if (!isRecord(value) || !hasOnlyKeys(value, allowedViewKeys) || !isNonEmptyString(value.id) ||
       !isGameStatus(value.gameStatus) || !isSafeInteger(value.roundNumber) || !isSeatId(value.currentDealer) ||
@@ -589,6 +598,10 @@ function parseClientVisibleRoomState(value: unknown): { ok: true; value: ClientV
   const responseWindow = value.responseWindow === null ? null : parseResponseWindow(value.responseWindow);
   if (responseWindow === undefined) {
     return invalid("响应窗口公开视图结构不合法");
+  }
+  const turnDeadline = value.turnDeadline === null ? null : parseTurnDeadline(value.turnDeadline);
+  if (turnDeadline === undefined) {
+    return invalid("回合倒计时公开视图结构不合法");
   }
 
   const roundEnd = value.roundEnd === null ? null : parseRoundEnd(value.roundEnd);
@@ -622,6 +635,7 @@ function parseClientVisibleRoomState(value: unknown): { ok: true; value: ClientV
       seats: seats as ClientVisibleSeatState[],
       round,
       responseWindow,
+      turnDeadline,
       scores: scores as Array<{ seatId: SeatId; playerId: string | null; points: number }>,
       roundEnd,
       settlementLedger,
@@ -818,6 +832,21 @@ function parseResponseWindow(value: unknown): ClientVisibleResponseWindow | unde
     pendingResponderCount: value.pendingResponderCount,
     hasRespondedByMe: value.hasRespondedByMe,
     responseByMe: value.responseByMe,
+  };
+}
+
+function parseTurnDeadline(value: unknown): ClientVisibleTurnDeadline | undefined {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["windowId", "kind", "seatId", "deadlineAt", "remainingMs"]) ||
+      !isNonEmptyString(value.windowId) || !(value.kind === "dingque" || value.kind === "discard") ||
+      !isSeatIdOrNull(value.seatId) || !isFiniteNumber(value.deadlineAt) || !isFiniteNumber(value.remainingMs)) {
+    return undefined;
+  }
+  return {
+    windowId: value.windowId,
+    kind: value.kind,
+    seatId: value.seatId,
+    deadlineAt: value.deadlineAt,
+    remainingMs: value.remainingMs,
   };
 }
 
@@ -1099,14 +1128,14 @@ function parseMobilePublicEvent(value: unknown, eventId: number): MobilePublicEv
   if (value.type === "missingSuitChosen") {
     const allowed = hasAllowedKeys(value, ["type", "seatId", "playerId", "suit", "source"]);
     return allowed && isSeatId(value.seatId) && isNonEmptyString(value.playerId) && isSuit(value.suit) &&
-      (value.source === undefined || value.source === "heavenly")
+      (value.source === undefined || value.source === "heavenly" || value.source === "timeout")
       ? {
           eventId,
           type: value.type,
           seatId: value.seatId,
           playerId: value.playerId,
           suit: value.suit,
-          automatic: value.source === "heavenly",
+          automatic: value.source === "heavenly" || value.source === "timeout",
         }
       : undefined;
   }

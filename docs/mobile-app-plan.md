@@ -120,16 +120,33 @@ parameterized action descriptors, public timeline, settlement DTOs, and
 production WSS endpoint as the native client. The default Vite mock table is not
 part of this deployment.
 
-The layout remains vertical below 960 px and becomes a control-sidebar plus
-table layout on wider desktop screens. The existing PanResponder hand ordering
-works with touch and mouse. Initial hands are sorted once; later tiles are
-inserted without rearranging the player's surviving local order.
+The lobby remains vertical below 960 px and becomes a control-sidebar plus
+preview layout on wider desktop screens. Once a round starts, the lobby controls
+are removed from view and the client enters a dedicated landscape-first table:
+three opponents are compact, the local hand spans the bottom, and dingque,
+discard, response, gang, and hu controls stay beside the table state. Native
+builds request landscape automatically; Web offers a user-gesture landscape /
+fullscreen control and remains usable when a browser refuses orientation lock.
+
+Tile faces use compact colored dot, bamboo, and character patterns modeled on
+common physical Mahjong tiles. One bamboo uses the conventional bird face and
+one dot uses the large-circle face. Their yao-ji meaning remains a rule-engine
+fact, so the UI adds no separate chicken badge.
+
+The existing PanResponder hand ordering works with touch and mouse. Initial
+hands are sorted once; later tiles are inserted without rearranging the player's
+surviving local order.
 
 Native clients keep recovery data in SecureStore. The Web client stores only
-the whitelisted `PersistedRoomSession` in `sessionStorage`, which isolates
-sessions by browser tab and survives a same-tab refresh. It never stores raw
-messages, other hands, wall order, seed, or private response arrays. A second
-tab therefore starts as a separate player unless it independently joins a room.
+the whitelisted `PersistedRoomSession` in `localStorage`, so a refresh, closed
+tab, or PWA relaunch can immediately attempt `resumeSession`. It never stores
+raw messages, other hands, wall order, seed, or private response arrays. Browser
+profiles that need two players should use separate private/profile sessions.
+
+The first Render service remains intentionally in-memory. A transient network
+loss recovers the same seat and hand through the stored token, but a service
+restart removes the room itself. That case is reported separately from an
+ordinary connection failure and durable room persistence remains future work.
 
 ## Architecture
 
@@ -270,8 +287,10 @@ npm run smoke:server:production
    including reconnect, multi-round totals, responsibility dealer, and finish.
 3. Generate the first iOS native internal build after Apple device registration;
    iPhone users can use the production Web/PWA before that native build exists.
-4. Add vibration/audio settings and accessibility labels for real tile artwork.
-5. Add durable room/session storage after the in-memory beta is stable.
+4. Validate the new landscape table, colored tile faces, 30-second dingque /
+   discard automation, and automatic session recovery on physical devices.
+5. Add vibration/audio settings and finish accessibility review for tile faces.
+6. Add durable room/session storage after the in-memory beta is stable.
 
 The provider-neutral server and EAS steps are documented in
 [internal-beta-deployment.md](internal-beta-deployment.md).

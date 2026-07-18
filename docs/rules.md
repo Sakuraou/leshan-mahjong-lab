@@ -65,6 +65,20 @@ After dingque:
 - If qing yi se is claimed, each laizi used in the winning structure must resolve
   into that pure suit.
 
+### Turn Timeout
+
+- Manual dingque has a 30-second server-authoritative deadline shared by the
+  four players. A player who already chose is not changed by the timeout.
+- At dingque timeout, each unresolved hand counts only ordinary tiles. Printed
+  `1 bamboo` and `1 dot` are excluded, and the suit with the fewest ordinary
+  tiles is selected. The deterministic MVP tie order is bamboo, then dots, then
+  characters.
+- Every discard phase has a 30-second server-authoritative deadline for the
+  current player. At timeout the server chooses only from its own legal discard
+  candidates, preferring the just-drawn tile when it is legal.
+- Automatic discard still obeys dingque-first and the ban on actively
+  discarding yao ji. A deadline id can settle only once.
+
 ## Win Rules
 
 - Self-draw is allowed.

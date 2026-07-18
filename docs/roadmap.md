@@ -254,6 +254,14 @@ phone-first product.
 - [x] Complete a four-session production browser baseline for room creation,
   seats, readiness, start, dingque, redacted hands, recovery, legal-tile
   selection, and mouse drag ordering
+- [x] Add 30-second server-authoritative dingque and discard deadlines with
+  yao-ji-aware automatic suit selection, legal automatic discard, and
+  idempotent deadline settlement
+- [x] Split active gameplay from the lobby into a landscape-first table and add
+  compact colored physical-style tile faces without extra yao-ji badges
+- [x] Persist the whitelisted Web session across tab/PWA relaunch, automatically
+  resume on startup, and distinguish an expired session from a restarted
+  in-memory room
 - [ ] Complete and record the cross-platform four-client acceptance matrix for voluntary ba
   gang, delayed zero-point continuation, yao-ji exchange, reconnect, and
   multi-round cumulative settlement

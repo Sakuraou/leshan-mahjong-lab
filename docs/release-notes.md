@@ -2,6 +2,20 @@
 
 ## 2026-07-18
 
+- Added authoritative 30-second dingque and discard deadlines. Timeout dingque
+  excludes physical one-bamboo/one-dot laizi and chooses the least ordinary
+  suit; timeout discard reuses the server's legal candidates and is idempotent.
+- Rebuilt the consumer round presentation as a dedicated landscape-first table
+  instead of leaving room configuration and ready controls above the game.
+  Native builds request landscape; mobile Web provides a fullscreen/landscape
+  gesture and a responsive fallback.
+- Replaced text-only tile labels with crisp colored character, dot, and bamboo
+  faces based on standard physical layouts. One bamboo and one dot retain their
+  normal faces with no extra chicken badge.
+- Changed the Web recovery record from tab-only storage to a persistent,
+  whitelisted browser record and automatically resumes it on page launch.
+  Invalid sessions and rooms lost after an in-memory Render restart now produce
+  distinct Chinese recovery guidance.
 - Completed the first four-browser production acceptance against the Render WSS
   service: create/join, four seats, four ready states, start, dingque, host
   recovery, and per-client concealed-hand redaction all synchronized correctly.
@@ -185,8 +199,9 @@ privacy, protocol, and portfolio debugging surface.
 
 - Gang-shang-hua and gang-shang-pao do not yet have distinct scoring/event
   labels beyond the existing authoritative hu flow.
-- The phone UI is functional but still needs real Mahjong artwork, audio,
-  vibration, accessibility review, and physical-device layout testing.
+- The phone UI now has conventional colored Mahjong faces and a landscape-first
+  table, but still needs audio, vibration, accessibility review, and broader
+  physical-device layout testing.
 - There is no login, durable server persistence, or replay system.
 - The Vite main room/table remains a mock-backed debug surface. The production
   browser gameplay path is now the Expo Web/PWA single-session client.
@@ -214,7 +229,7 @@ privacy, protocol, and portfolio debugging surface.
    browsers, then produce a native iOS build when Apple registration is ready.
 4. Add durable room/session persistence and production monitoring beyond the
    current single-instance `wss://` beta.
-5. Add real tile artwork, sound/vibration controls, and accessibility polish.
+5. Add sound/vibration controls and accessibility polish for the new tile faces.
 6. Add a clearer portfolio page or route for case-study presentation.
 
 ## 2026-07-15

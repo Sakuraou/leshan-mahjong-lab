@@ -23,8 +23,11 @@ export function createWebRoomSessionStore(storage: BrowserSessionStorage): RoomS
 }
 
 export function browserSessionStorage(): BrowserSessionStorage {
-  const storage = (globalThis as { sessionStorage?: BrowserSessionStorage }).sessionStorage;
-  return storage ?? createMemorySessionStorage();
+  const browser = globalThis as {
+    localStorage?: BrowserSessionStorage;
+    sessionStorage?: BrowserSessionStorage;
+  };
+  return browser.localStorage ?? browser.sessionStorage ?? createMemorySessionStorage();
 }
 
 function createMemorySessionStorage(): BrowserSessionStorage {

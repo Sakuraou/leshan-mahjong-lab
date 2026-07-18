@@ -5,7 +5,7 @@
     "slug": "leshan-mahjong",
     "version": "0.2.0",
     "scheme": "leshanmahjong",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {

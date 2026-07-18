@@ -65,6 +65,23 @@ physical iPhone/Android layout checks still require the planned human run.
   presence, score, discards, and public melds only.
 - [ ] Heavenly missing suits and manual dingque choices match on all devices.
 - [ ] Initial hands are sorted once by bamboo, dots, characters, and rank.
+- [ ] Starting the round removes the room/server form and opens the dedicated
+  game table; returning to the between-round state restores the result/lobby UI.
+- [ ] On Android, iPhone browser, and a narrow desktop window, rotate to
+  landscape and verify all 13/14 local tiles can be reached without hiding the
+  discard/response controls.
+- [ ] Verify character, dot, and bamboo faces are recognizable at hand size.
+  One bamboo and one dot must not show an extra `鸡` badge.
+
+## Authoritative Turn Timeout
+
+- [ ] Leave one manual dingque unanswered for 30 seconds. The server must ignore
+  one-bamboo/one-dot and choose that hand's least ordinary suit once.
+- [ ] Leave the current player in discard for 30 seconds. Exactly one legal tile
+  is discarded, dingque-first and no active yao ji discard still apply, and the
+  claim countdown opens for all clients.
+- [ ] Submit dingque or discard just before expiry and confirm the old deadline
+  cannot perform a second action in the new state.
 
 ## Hand Ordering
 
@@ -150,6 +167,9 @@ physical iPhone/Android layout checks still require the planned human run.
   states without exposing credentials.
 - [ ] Restart the in-memory server and try an old SecureStore session. The App
   must report that the room/session is gone and offer a clean re-entry path.
+- [ ] Refresh, close/reopen, and relaunch an installed Web/PWA while the server
+  remains alive. It should automatically resume the saved seat without pressing
+  the recovery button.
 
 ## Result Log
 

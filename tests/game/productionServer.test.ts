@@ -16,6 +16,8 @@ const productionEnv = {
   ALLOWED_ORIGINS: `${reactNativeAndroidOrigin},${easWebOrigin}`,
   ALLOW_MISSING_ORIGIN: "false",
   SHUTDOWN_GRACE_MS: "50",
+  RESPONSE_WINDOW_TIMEOUT_MS: "15000",
+  TURN_ACTION_TIMEOUT_MS: "30000",
 };
 
 test("production config validates port, origins, and native missing-origin policy", () => {
@@ -24,6 +26,8 @@ test("production config validates port, origins, and native missing-origin polic
   assert.throws(() => loadProductionServerConfig({ ...productionEnv, ALLOWED_ORIGINS: "", ALLOW_MISSING_ORIGIN: "false" }), /ALLOWED_ORIGINS/);
   assert.equal(loadProductionServerConfig({ ...productionEnv, ALLOW_MISSING_ORIGIN: "true" }).allowMissingOrigin, true);
   assert.deepEqual(loadProductionServerConfig(productionEnv).allowedOrigins, [reactNativeAndroidOrigin, easWebOrigin]);
+  assert.equal(loadProductionServerConfig(productionEnv).turnActionTimeoutMs, 30_000);
+  assert.throws(() => loadProductionServerConfig({ ...productionEnv, TURN_ACTION_TIMEOUT_MS: "0" }), /TURN_ACTION_TIMEOUT_MS/);
 });
 
 test("production server exposes health, rejects an untrusted Origin, and closes idempotently", async () => {

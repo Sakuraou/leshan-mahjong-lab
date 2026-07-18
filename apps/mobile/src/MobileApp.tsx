@@ -40,6 +40,7 @@ import {
   validateMobileServerUrl,
 } from "@leshan-mahjong/client-core";
 import NetInfo from "@react-native-community/netinfo";
+import * as ScreenOrientation from "expo-screen-orientation";
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import {
   Animated,
@@ -107,8 +108,7 @@ const initialReconnectState: ReconnectState = {
 };
 
 export function MobileApp() {
-  const { width: viewportWidth } = useWindowDimensions();
-  const wideLayout = Platform.OS === "web" && viewportWidth >= 960;
+  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
   const [serverMode, setServerMode] = useState<MobileServerMode>(initialMobileServerConfig.mode);
   const [developmentTarget, setDevelopmentTarget] = useState<MobileDevelopmentTarget>(
     initialMobileServerConfig.developmentTarget,
@@ -159,6 +159,10 @@ export function MobileApp() {
     }
     return model;
   }, [snapshot, handOrderIds]);
+  const roundInProgress = snapshot?.gameStatus === "playingRound" && snapshot.round !== null;
+  const landscape = viewportWidth > viewportHeight;
+  const gameWideLayout = roundInProgress && viewportWidth >= 680;
+  const wideLayout = !roundInProgress && Platform.OS === "web" && viewportWidth >= 960;
   reconnectAttemptRef.current = performReconnectAttempt;
   if (reconnectCoordinatorRef.current === null) {
     reconnectCoordinatorRef.current = createReconnectCoordinator({
@@ -199,12 +203,23 @@ export function MobileApp() {
       setServerMode(inferMobileServerMode(record.serverUrl));
       setDevelopmentTarget(inferMobileDevelopmentTarget(record.serverUrl));
       setRoomId(record.roomId);
-      setStatusText("发现可恢复的安全会话");
+      setStatusText("发现已保存会话，正在自动恢复");
+      requestImmediateReconnect("startup", "牌局会话已自动恢复");
     }).catch(() => {
       setConnectionStatus("error");
       setStatusText("无法读取本机安全会话，请重新加入房间");
     });
   }, []);
+
+  useEffect(() => {
+    if (Platform.OS === "web") {
+      return;
+    }
+    const lock = roundInProgress
+      ? ScreenOrientation.OrientationLock.LANDSCAPE
+      : ScreenOrientation.OrientationLock.PORTRAIT_UP;
+    void ScreenOrientation.lockAsync(lock).catch(() => undefined);
+  }, [roundInProgress]);
 
   useEffect(() => {
     const coordinator = reconnectCoordinatorRef.current!;
@@ -235,7 +250,9 @@ export function MobileApp() {
     }
     if (reconnectState.phase === "failed") {
       setConnectionStatus("failed");
-      setStatusText("自动重连失败，请检查网络或手动重新连接");
+      setStatusText(reconnectState.lastError === null
+        ? "自动重连失败，请检查网络或手动重新连接"
+        : actionFailureText(reconnectState.lastError));
       return;
     }
     if (reconnectState.phase === "online") {
@@ -246,13 +263,18 @@ export function MobileApp() {
   }, [countdownNow, reconnectActive, reconnectState]);
 
   useEffect(() => {
-    if (!reconnectActive || reconnectState.phase !== "waiting") {
+    const hasVisibleDeadline = (
+      snapshot?.turnDeadline !== null && snapshot?.turnDeadline !== undefined
+    ) || (
+      snapshot?.responseWindow !== null && snapshot?.responseWindow !== undefined
+    );
+    if ((!reconnectActive || reconnectState.phase !== "waiting") && !hasVisibleDeadline) {
       return;
     }
     setCountdownNow(Date.now());
     const timer = setInterval(() => setCountdownNow(Date.now()), 250);
     return () => clearInterval(timer);
-  }, [reconnectActive, reconnectState.phase, reconnectState.nextRetryAt]);
+  }, [reconnectActive, reconnectState.phase, reconnectState.nextRetryAt, snapshot?.turnDeadline, snapshot?.responseWindow]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener("change", (nextState) => {
@@ -865,11 +887,26 @@ export function MobileApp() {
     autoDrawInFlight.current = null;
   }
 
+  async function requestLandscapeMode() {
+    if (Platform.OS !== "web") {
+      await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => undefined);
+      return;
+    }
+
+    const browser = globalThis as {
+      document?: { documentElement?: { requestFullscreen?: () => Promise<void> } };
+      screen?: { orientation?: { lock?: (orientation: "landscape") => Promise<void> } };
+    };
+    await browser.document?.documentElement?.requestFullscreen?.().catch(() => undefined);
+    await browser.screen?.orientation?.lock?.("landscape").catch(() => undefined);
+    setStatusText("牌桌已适配横屏；若浏览器未自动旋转，请将手机横过来");
+  }
+
   return (
     <SafeAreaView style={styles.safeArea} edges={["top", "right", "bottom", "left"]}>
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
         <View style={styles.pageShell}>
-        <View style={styles.header}>
+        <View style={[styles.header, roundInProgress && styles.headerGame]}>
           <View>
             <Text style={styles.brand}>乐山麻将</Text>
             <Text style={styles.subtitle}>八鸡联机桌</Text>
@@ -877,7 +914,7 @@ export function MobileApp() {
           <StatusBadge status={connectionStatus} />
         </View>
 
-        <View style={styles.statusBand}>
+        <View style={[styles.statusBand, roundInProgress && styles.statusBandGame]}>
           <Text style={styles.statusText}>{statusText}</Text>
         </View>
         {pendingConfirmation === null ? null : (
@@ -889,14 +926,23 @@ export function MobileApp() {
           </View>
         )}
 
-        <RoundResultSection snapshot={snapshot} />
-        <RoundIntermissionSection
-          snapshot={snapshot}
-          busy={actionBusy}
-          onAction={(action, actionId) => void runIntermissionAction(action, actionId)}
-        />
+        {roundInProgress ? null : (
+          <>
+            <RoundResultSection snapshot={snapshot} />
+            <RoundIntermissionSection
+              snapshot={snapshot}
+              busy={actionBusy}
+              onAction={(action, actionId) => void runIntermissionAction(action, actionId)}
+            />
+          </>
+        )}
 
-        <View style={[styles.primaryLayout, wideLayout && styles.primaryLayoutWide]}>
+        <View style={[
+          styles.primaryLayout,
+          wideLayout && styles.primaryLayoutWide,
+          roundInProgress && styles.primaryLayoutGame,
+        ]}>
+          {roundInProgress ? null : (
           <View style={[styles.controlColumn, wideLayout && styles.controlColumnWide]}>
         <Section title="服务器与房间">
           {productionWebClient ? (
@@ -1005,22 +1051,16 @@ export function MobileApp() {
           </View>
         </Section>
 
-        {canUseAction(viewModel, "chooseMissingSuit") ? (
-          <Section title="定缺">
-            <View style={styles.segmentedControl}>
-              {suits.map((suit) => (
-                <Pressable key={suit} disabled={actionBusy} style={({ pressed }) => [styles.segment, actionBusy && styles.disabled, pressed && !actionBusy && styles.pressed]} onPress={() => void chooseSuit(suit)} accessibilityRole="button">
-                  <Text style={styles.segmentText}>缺{suitLabel(suit)}</Text>
-                </Pressable>
-              ))}
-            </View>
-          </Section>
-        ) : null}
           </View>
+          )}
 
-          <View style={[styles.tableColumn, wideLayout && styles.tableColumnWide]}>
+          <View style={[
+            styles.tableColumn,
+            wideLayout && styles.tableColumnWide,
+            roundInProgress && styles.tableColumnGame,
+          ]}>
 
-        <Section title="牌桌预览" trailing={phaseText(viewModel)}>
+        <Section title={roundInProgress ? `第 ${snapshot?.roundNumber ?? 1} 局` : "牌桌预览"} trailing={phaseText(viewModel)} variant={roundInProgress ? "game" : "default"}>
           {viewModel === null || snapshot?.round === null ? (
             <View style={styles.emptyState}>
               <Text style={styles.emptyTitle}>等待牌局开始</Text>
@@ -1028,15 +1068,47 @@ export function MobileApp() {
             </View>
           ) : (
             <>
+              {roundInProgress && !landscape ? (
+                <View style={styles.landscapePrompt}>
+                  <View style={styles.landscapePromptCopy}>
+                    <Text style={styles.landscapePromptTitle}>横屏可完整看到手牌</Text>
+                    <Text style={styles.landscapePromptText}>将手机横过来，或点击右侧按钮尝试进入横屏。</Text>
+                  </View>
+                  <Pressable accessibilityRole="button" style={styles.landscapeButton} onPress={() => void requestLandscapeMode()}>
+                    <Text style={styles.landscapeButtonText}>进入横屏</Text>
+                  </Pressable>
+                </View>
+              ) : null}
               <View style={styles.tableMetaRow}>
                 <MetaItem label="牌墙" value={`${viewModel.wallCount ?? 0} 张`} />
                 <MetaItem label="当前座位" value={`${(snapshot?.round?.currentPlayer ?? 0) + 1}`} />
-                <MetaItem label="可用动作" value={`${viewModel.legalActions.length}`} />
+                <MetaItem label="本步剩余" value={deadlineLabel(viewModel, countdownNow)} />
               </View>
-              {viewModel.seats.map((seat) => (
+              {viewModel.turnDeadline === null ? null : (
+                <View style={styles.deadlineBand}>
+                  <Text style={styles.deadlineTitle}>{turnDeadlineTitle(viewModel, countdownNow)}</Text>
+                  <Text style={styles.deadlineMeta}>{turnDeadlineHint(viewModel)}</Text>
+                </View>
+              )}
+              {canUseAction(viewModel, "chooseMissingSuit") ? (
+                <View style={styles.dingqueBand}>
+                  <Text style={styles.turnActionTitle}>请选择定缺花色</Text>
+                  <View style={styles.segmentedControl}>
+                    {suits.map((suit) => (
+                      <Pressable key={suit} disabled={actionBusy} style={({ pressed }) => [styles.segment, actionBusy && styles.disabled, pressed && !actionBusy && styles.pressed]} onPress={() => void chooseSuit(suit)} accessibilityRole="button">
+                        <Text style={styles.segmentText}>缺{suitLabel(suit)}</Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+              ) : null}
+              <View style={[styles.tableSeats, gameWideLayout && styles.gameSeatGrid]}>
+              {orderedTableSeats(viewModel.seats).map((seat) => (
                 <TableSeat
                   key={seat.seatId}
                   seat={seat}
+                  gameMode={roundInProgress}
+                  wideGameMode={gameWideLayout}
                   legalDiscardTiles={seat.isLocal ? legalTilesForAction(viewModel, "discardTile") : []}
                   selectedDiscard={seat.isLocal ? selectedDiscard?.tile ?? null : null}
                   onSelectDiscard={seat.isLocal ? (tile) => {
@@ -1051,6 +1123,7 @@ export function MobileApp() {
                   } : undefined}
                 />
               ))}
+              </View>
               {canUseAction(viewModel, "discardTile") ? (
                 <View style={styles.turnActionBand}>
                   <Text style={styles.turnActionTitle}>
@@ -1083,7 +1156,8 @@ export function MobileApp() {
                   </Text>
                   <Text style={styles.responseMeta}>
                     剩余 {viewModel.pendingResponderCount} 人待响应
-                    {viewModel.hasRespondedByMe ? " · 你的选择已提交" : " · 其他玩家的选择暂不公开"}
+                    {` · ${remainingSeconds(viewModel.responseWindow.deadlineAt, countdownNow)} 秒`}
+                    {viewModel.hasRespondedByMe ? " · 你的选择已提交" : ""}
                   </Text>
                 </View>
               )}
@@ -1092,18 +1166,10 @@ export function MobileApp() {
                 busy={actionBusy}
                 run={(action, callback) => void runRoomAction(action, callback)}
               />
-              <View style={styles.legalActionBand}>
-                <Text style={styles.legalActionTitle}>服务端可用动作</Text>
-                <Text style={styles.legalActionText}>
-                  {viewModel.legalActions.length === 0
-                    ? "等待其他玩家"
-                    : viewModel.legalActions.map(actionLabel).join(" · ")}
-                </Text>
-              </View>
             </>
           )}
         </Section>
-        <RoundTimelineSection events={publicEvents} snapshot={snapshot} />
+        {roundInProgress ? null : <RoundTimelineSection events={publicEvents} snapshot={snapshot} />}
           </View>
         </View>
         </View>
@@ -1138,17 +1204,21 @@ export function MobileApp() {
 function Section({
   title,
   trailing,
+  variant = "default",
   children,
 }: {
   title: string;
   trailing?: string;
+  variant?: "default" | "game";
   children: React.ReactNode;
 }) {
   return (
-    <View style={styles.section}>
+    <View style={[styles.section, variant === "game" && styles.gameSection]}>
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>{title}</Text>
-        {trailing === undefined ? null : <Text style={styles.sectionTrailing}>{trailing}</Text>}
+        <Text style={[styles.sectionTitle, variant === "game" && styles.gameSectionTitle]}>{title}</Text>
+        {trailing === undefined ? null : (
+          <Text style={[styles.sectionTrailing, variant === "game" && styles.gameSectionTrailing]}>{trailing}</Text>
+        )}
       </View>
       {children}
     </View>
@@ -1233,12 +1303,16 @@ function SeatCard({
 
 function TableSeat({
   seat,
+  gameMode,
+  wideGameMode,
   legalDiscardTiles,
   selectedDiscard,
   onSelectDiscard,
   onMoveHandTile,
 }: {
   seat: ClientSeatViewModel;
+  gameMode: boolean;
+  wideGameMode: boolean;
   legalDiscardTiles: ClientOwnedTile[];
   selectedDiscard: ClientOwnedTile | null;
   onSelectDiscard?: (tile: ClientOwnedTile) => void;
@@ -1246,7 +1320,13 @@ function TableSeat({
 }) {
   const [dragging, setDragging] = useState(false);
   return (
-    <View style={[styles.tableSeat, seat.isLocal && styles.tableSeatLocal]}>
+    <View style={[
+      styles.tableSeat,
+      seat.isLocal && styles.tableSeatLocal,
+      gameMode && styles.gameTableSeat,
+      wideGameMode && seat.isLocal && styles.gameLocalSeat,
+      wideGameMode && !seat.isLocal && styles.gameOpponentSeat,
+    ]}>
       <View style={styles.tableSeatHeader}>
         <View>
           <Text style={styles.tableSeatName}>
@@ -1260,8 +1340,8 @@ function TableSeat({
       </View>
       {seat.hand === null ? (
         <View style={styles.coveredRow} accessibilityLabel={`对手手牌 ${seat.handCount} 张`}>
-          {Array.from({ length: Math.min(seat.handCount, 10) }, (_, index) => (
-            <View key={index} style={styles.coveredTile} />
+          {Array.from({ length: Math.min(seat.handCount, wideGameMode ? 7 : 10) }, (_, index) => (
+            <View key={index} style={[styles.coveredTile, wideGameMode && styles.coveredTileCompact]} />
           ))}
         </View>
       ) : (
@@ -1297,7 +1377,7 @@ function TableSeat({
   );
 }
 
-const handTileExtent = 45;
+const handTileExtent = 41;
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 function DraggableHandTile({
@@ -1687,6 +1767,42 @@ function localSeat(viewModel: ClientRoomViewModel | null): ClientSeatViewModel |
   return viewModel?.seats.find((seat) => seat.isLocal) ?? null;
 }
 
+function orderedTableSeats(seats: ClientSeatViewModel[]): ClientSeatViewModel[] {
+  return [...seats].sort((left, right) => Number(left.isLocal) - Number(right.isLocal));
+}
+
+function remainingSeconds(deadlineAt: number, now: number): number {
+  return Math.max(0, Math.ceil((deadlineAt - now) / 1_000));
+}
+
+function deadlineLabel(viewModel: ClientRoomViewModel, now: number): string {
+  const deadlineAt = viewModel.turnDeadline?.deadlineAt ?? viewModel.responseWindow?.deadlineAt;
+  return deadlineAt === undefined ? "--" : `${remainingSeconds(deadlineAt, now)} 秒`;
+}
+
+function turnDeadlineTitle(viewModel: ClientRoomViewModel, now: number): string {
+  const deadline = viewModel.turnDeadline;
+  if (deadline === null) {
+    return "";
+  }
+  const seconds = remainingSeconds(deadline.deadlineAt, now);
+  if (deadline.kind === "dingque") {
+    return `定缺倒计时 ${seconds} 秒`;
+  }
+  return deadline.seatId === viewModel.localSeatId
+    ? `请在 ${seconds} 秒内出牌`
+    : `座位 ${(deadline.seatId ?? 0) + 1} 思考中 · ${seconds} 秒`;
+}
+
+function turnDeadlineHint(viewModel: ClientRoomViewModel): string {
+  if (viewModel.turnDeadline?.kind === "dingque") {
+    return "超时后服务端会排除一条、一筒，自动选择普通牌最少的花色。";
+  }
+  return viewModel.turnDeadline?.seatId === viewModel.localSeatId
+    ? "超时后服务端会优先打出刚摸且合法的牌。"
+    : "该玩家超时后由服务端自动出牌。";
+}
+
 function sameTile(left: Tile, right: Tile): boolean {
   return left.suit === right.suit && left.rank === right.rank;
 }
@@ -1746,7 +1862,7 @@ function actionFailureText(reason: string): string {
     closed: "连接已关闭",
     staleAction: "这个操作已经过期，已按服务器最新牌局刷新",
     invalidSession: "保存的会话已失效，请重新加入房间",
-    roomNotFound: "房间已不存在，请重新创建或加入其他房间",
+    roomNotFound: "服务器已重启或房间已结束，原房间已不存在，请重新创建房间",
     invalidAddress: "服务器地址格式不正确，请输入 ws:// 或 wss:// 地址",
     insecureProductionUrl: "生产服务器必须使用 wss:// 加密连接",
     tlsError: "安全连接失败，请检查证书、域名和设备时间",
@@ -1833,6 +1949,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-start",
   },
+  primaryLayoutGame: {
+    flex: 1,
+    backgroundColor: "#18523E",
+  },
   controlColumn: {
     width: "100%",
   },
@@ -1848,6 +1968,11 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
+  tableColumnGame: {
+    flex: 1,
+    minWidth: 0,
+    backgroundColor: "#18523E",
+  },
   header: {
     minHeight: 92,
     paddingHorizontal: 20,
@@ -1856,6 +1981,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+  },
+  headerGame: {
+    minHeight: 62,
+    paddingVertical: 9,
   },
   brand: {
     color: "#FFFFFF",
@@ -1897,6 +2026,10 @@ const styles = StyleSheet.create({
     backgroundColor: "#DCE8E1",
     borderBottomWidth: 1,
     borderBottomColor: "#C4D2C9",
+  },
+  statusBandGame: {
+    minHeight: 36,
+    paddingVertical: 6,
   },
   statusText: {
     color: "#29463A",
@@ -2024,6 +2157,13 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#D9DDD5",
   },
+  gameSection: {
+    flex: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 0,
+    backgroundColor: "#18523E",
+  },
   sectionHeader: {
     minHeight: 30,
     flexDirection: "row",
@@ -2037,10 +2177,16 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     fontWeight: "800",
   },
+  gameSectionTitle: {
+    color: "#FFFFFF",
+  },
   sectionTrailing: {
     color: "#667068",
     fontSize: 12,
     lineHeight: 18,
+  },
+  gameSectionTrailing: {
+    color: "#D2E8DD",
   },
   field: {
     marginBottom: 10,
@@ -2209,6 +2355,46 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 10,
   },
+  landscapePrompt: {
+    minHeight: 58,
+    marginBottom: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
+    backgroundColor: "#FFF3CF",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  landscapePromptCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  landscapePromptTitle: {
+    color: "#624817",
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: "800",
+  },
+  landscapePromptText: {
+    color: "#765E30",
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  landscapeButton: {
+    minWidth: 84,
+    minHeight: 42,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+    backgroundColor: "#8A651D",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  landscapeButtonText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "800",
+  },
   metaItem: {
     flex: 1,
     minHeight: 58,
@@ -2216,6 +2402,40 @@ const styles = StyleSheet.create({
     backgroundColor: "#E4ECE7",
     paddingHorizontal: 10,
     justifyContent: "center",
+  },
+  deadlineBand: {
+    minHeight: 48,
+    marginBottom: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 6,
+    backgroundColor: "#F1DFAB",
+  },
+  deadlineTitle: {
+    color: "#5C4314",
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: "900",
+  },
+  deadlineMeta: {
+    color: "#705A2E",
+    fontSize: 11,
+    lineHeight: 16,
+  },
+  dingqueBand: {
+    marginBottom: 8,
+    padding: 10,
+    borderRadius: 6,
+    backgroundColor: "#E9F0EB",
+  },
+  tableSeats: {
+    width: "100%",
+  },
+  gameSeatGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    alignItems: "stretch",
   },
   metaLabel: {
     color: "#637069",
@@ -2237,6 +2457,25 @@ const styles = StyleSheet.create({
     backgroundColor: "#EFF6F1",
     marginHorizontal: -8,
     paddingHorizontal: 8,
+  },
+  gameTableSeat: {
+    marginBottom: 6,
+    paddingHorizontal: 9,
+    borderTopWidth: 0,
+    borderRadius: 6,
+    backgroundColor: "rgba(255,255,255,0.92)",
+  },
+  gameOpponentSeat: {
+    width: "32.5%",
+    minHeight: 96,
+  },
+  gameLocalSeat: {
+    width: "100%",
+    minHeight: 112,
+    marginHorizontal: 0,
+    borderWidth: 2,
+    borderColor: "#E9C85E",
+    backgroundColor: "#F8FBF7",
   },
   tableSeatHeader: {
     flexDirection: "row",
@@ -2264,9 +2503,9 @@ const styles = StyleSheet.create({
     paddingRight: 8,
   },
   handTileButton: {
-    minWidth: 42,
-    minHeight: 58,
-    marginRight: 3,
+    minWidth: 39,
+    minHeight: 56,
+    marginRight: 2,
     borderRadius: 5,
     alignItems: "center",
     justifyContent: "flex-end",
@@ -2299,6 +2538,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#234D3B",
     backgroundColor: "#3C735D",
+  },
+  coveredTileCompact: {
+    width: 15,
+    height: 27,
+    marginRight: 2,
   },
   meldText: {
     color: "#59645E",

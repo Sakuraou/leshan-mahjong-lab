@@ -3196,6 +3196,7 @@ function serviceForRoom(room: RoomState): RoomServiceState {
     sessionTokenFactory: () => "unused-session",
     nowFactory: () => 1_000,
     responseWindowTimeoutMs: 5_000,
+    turnActionTimeoutMs: 30_000,
   };
 }
 

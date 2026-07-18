@@ -44,10 +44,17 @@ existing Android `0.2.0` internal APK, without removing the Vite debug table:
   `EXPO_PUBLIC_ROOM_SERVER_URL`; room session tokens remain in SecureStore.
 - EAS Hosting publishes the production Expo Web export at
   `https://leshan-mahjong-play.expo.app`. Desktop browsers use a two-column
-  layout; narrow screens use the same phone-first vertical layout.
-- Web recovery stores only the whitelisted single-session record in per-tab
-  `sessionStorage`. It does not persist raw messages, wall state, other hands,
-  or private response choices.
+  lobby; an active round switches to a separate landscape-first game table.
+- The active table uses compact colored character, dot, and bamboo faces based
+  on conventional physical Mahjong layouts. One bamboo is the bird-style tile
+  and one dot is the large-circle tile; neither receives an extra chicken badge.
+- Dingque and discard turns have a 30-second authoritative deadline. Dingque
+  timeout ignores one-bamboo/one-dot laizi and selects the least ordinary suit;
+  discard timeout submits one server-legal tile exactly once.
+- Web recovery stores only the whitelisted single-session record in persistent
+  `localStorage` (falling back safely when unavailable) and automatically tries
+  `resumeSession` on launch. It does not persist raw messages, wall state, other
+  hands, or private response choices.
 - `npm run smoke:server:remote` drives four strict mobile transports through a
   real hosted create/join/seat/ready/dingque/draw/discard/resume flow and probes
   Origin rejection, payload limits, healthy heartbeat, authoritative response
@@ -88,7 +95,9 @@ See the
 - Hosting: Render Free, Singapore, one instance
 
 Keep the service at one instance: rooms are still in memory, so restarts clear
-active matches and multiple replicas would split state.
+active matches and multiple replicas would split state. A short network loss can
+resume the same seat; a Render restart cannot recover that in-memory room yet and
+the client now explains that a new room is required.
 
 ## Web/PWA Deployment
 
@@ -352,7 +361,8 @@ uses server legal actions for every command, auto-requests eligible draws,
 keeps hu as a player choice, survives weak-network reconnects, merges a bounded
 public event timeline, preserves cumulative scores, re-readies all four players,
 and renders final scores plus hu/chicken/gang/cha-jiao payments. Native session
-tokens stay in Expo SecureStore; Web sessions use a per-tab storage adapter.
+ tokens stay in Expo SecureStore; Web sessions use a persistent, whitelisted
+ browser storage adapter.
 Sockets are closed and resumed across AppState or browser connection changes. See
 [docs/mobile-app-plan.md](docs/mobile-app-plan.md) for run addresses, privacy
 boundaries, and the Android/iOS roadmap.
