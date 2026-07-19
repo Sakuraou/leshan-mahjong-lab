@@ -95,6 +95,11 @@ type SelectedGang =
 
 const seatIds: PlayerId[] = [0, 1, 2, 3];
 const suits: Suit[] = ["bamboos", "dots", "characters"];
+const lobbyTileSamples: Tile[] = [
+  { suit: "bamboos", rank: 1 },
+  { suit: "dots", rank: 1 },
+  { suit: "characters", rank: 8 },
+];
 const serverModes: MobileServerMode[] = ["development", "lan", "production"];
 const productionWebClient = Platform.OS === "web" && initialMobileServerConfig.mode === "production";
 const initialReconnectState: ReconnectState = {
@@ -909,14 +914,25 @@ export function MobileApp() {
         <View style={styles.pageShell}>
         <View style={[
           styles.header,
+          !roundInProgress && styles.lobbyHeader,
           roundInProgress && styles.headerGame,
           compactLandscapeGame && styles.headerGameCompact,
         ]}>
-          <View>
-            <Text style={[styles.brand, compactLandscapeGame && styles.brandGameCompact]}>乐山麻将</Text>
-            {compactLandscapeGame ? null : <Text style={styles.subtitle}>八鸡联机桌</Text>}
+          <View style={styles.brandLockup}>
+            {roundInProgress ? null : (
+              <View style={styles.brandStamp}>
+                <Text style={styles.brandStampText}>乐</Text>
+              </View>
+            )}
+            <View>
+              <Text style={[styles.brand, compactLandscapeGame && styles.brandGameCompact]}>乐山麻将</Text>
+              {compactLandscapeGame ? null : <Text style={styles.subtitle}>八鸡好友房</Text>}
+            </View>
           </View>
-          <StatusBadge status={connectionStatus} />
+          <View style={styles.headerStatusGroup}>
+            {!roundInProgress && wideLayout ? <Text style={styles.headerEdition}>四人实时联机</Text> : null}
+            <StatusBadge status={connectionStatus} />
+          </View>
         </View>
 
         {compactLandscapeGame ? null : (
@@ -951,13 +967,13 @@ export function MobileApp() {
         ]}>
           {roundInProgress ? null : (
           <View style={[styles.controlColumn, wideLayout && styles.controlColumnWide]}>
-        <Section title="服务器与房间">
+        <Section title="进入好友房" trailing="四人联机">
           {productionWebClient ? (
             <View style={styles.productionServerSummary}>
               <View style={styles.productionServerDot} />
               <View style={styles.productionServerCopy}>
-                <Text style={styles.productionServerTitle}>生产联机服务器</Text>
-                <Text style={styles.productionServerAddress}>{serverUrl}</Text>
+                <Text style={styles.productionServerTitle}>安全联机服务已就绪</Text>
+                <Text style={styles.productionServerAddress}>生产服务器 · WSS</Text>
               </View>
             </View>
           ) : (
@@ -1018,7 +1034,7 @@ export function MobileApp() {
             </View>
           </View>
           <View style={styles.actionRow}>
-            <CommandButton label="创建房间" onPress={() => void createOrJoinRoom("create")} disabled={actionBusy || isConnectionBusy(connectionStatus)} />
+            <CommandButton label="创建新房" onPress={() => void createOrJoinRoom("create")} disabled={actionBusy || isConnectionBusy(connectionStatus)} />
             <CommandButton label="加入房间" onPress={() => void createOrJoinRoom("join")} disabled={actionBusy || isConnectionBusy(connectionStatus)} tone="secondary" />
           </View>
           <View style={styles.actionRow}>
@@ -1035,29 +1051,7 @@ export function MobileApp() {
             <CommandButton label="清除会话" onPress={() => void clearStoredSession()} disabled={storedSession === null || actionBusy} tone="danger" />
           </View>
         </Section>
-
-        <Section title="四人座位" trailing={viewModel === null ? "未进入房间" : `房间 ${viewModel.roomId}`}>
-          <View style={styles.seatGrid}>
-            {seatIds.map((seatId) => (
-              <SeatCard
-                key={seatId}
-                seat={viewModel?.seats[seatId] ?? null}
-                seatId={seatId}
-                canTakeSeat={canUseAction(viewModel, "takeSeat") && !actionBusy}
-                onTakeSeat={() => void runRoomAction("takeSeat", (activeGateway) => activeGateway.takeSeat(seatId))}
-              />
-            ))}
-          </View>
-          <View style={styles.actionRow}>
-            {canUseAction(viewModel, "toggleReady") ? (
-              <CommandButton label={localSeat(viewModel)?.ready ? "取消准备" : "准备"} onPress={() => void runRoomAction("toggleReady", (activeGateway) => activeGateway.toggleReady())} disabled={actionBusy} />
-            ) : null}
-            {canUseAction(viewModel, "startRound") ? (
-              <CommandButton label="开始牌局" onPress={() => void runRoomAction("startRound", (activeGateway) => activeGateway.startRound())} disabled={actionBusy} tone="secondary" />
-            ) : null}
-          </View>
-        </Section>
-
+        <RoundTimelineSection events={publicEvents} snapshot={snapshot} />
           </View>
           )}
 
@@ -1068,12 +1062,21 @@ export function MobileApp() {
           ]}>
 
         <Section
-          title={roundInProgress ? `第 ${snapshot?.roundNumber ?? 1} 局` : "牌桌预览"}
-          trailing={phaseText(viewModel)}
+          title={roundInProgress ? `第 ${snapshot?.roundNumber ?? 1} 局` : "四人好友房"}
+          trailing={roundInProgress ? phaseText(viewModel) : viewModel === null ? "等待加入" : `房间 ${viewModel.roomId}`}
           variant={roundInProgress ? "game" : "default"}
           compact={compactLandscapeGame}
         >
-          {viewModel === null || snapshot?.round === null ? (
+          {!roundInProgress ? (
+            <LobbyTable
+              viewModel={viewModel}
+              wide={wideLayout}
+              busy={actionBusy}
+              onTakeSeat={(seatId) => void runRoomAction("takeSeat", (activeGateway) => activeGateway.takeSeat(seatId))}
+              onToggleReady={() => void runRoomAction("toggleReady", (activeGateway) => activeGateway.toggleReady())}
+              onStartRound={() => void runRoomAction("startRound", (activeGateway) => activeGateway.startRound())}
+            />
+          ) : viewModel === null || snapshot?.round === null ? (
             <View style={styles.emptyState}>
               <Text style={styles.emptyTitle}>等待牌局开始</Text>
               <Text style={styles.emptyMeta}>牌墙与手牌将在服务端开局后显示</Text>
@@ -1182,7 +1185,6 @@ export function MobileApp() {
             </>
           )}
         </Section>
-        {roundInProgress ? null : <RoundTimelineSection events={publicEvents} snapshot={snapshot} />}
           </View>
         </View>
         </View>
@@ -1296,32 +1298,200 @@ function CommandButton({
   );
 }
 
-function SeatCard({
+function LobbyTable({
+  viewModel,
+  wide,
+  busy,
+  onTakeSeat,
+  onToggleReady,
+  onStartRound,
+}: {
+  viewModel: ClientRoomViewModel | null;
+  wide: boolean;
+  busy: boolean;
+  onTakeSeat: (seatId: PlayerId) => void;
+  onToggleReady: () => void;
+  onStartRound: () => void;
+}) {
+  const seats = seatIds.map((seatId) => viewModel?.seats[seatId] ?? null);
+  const joinedCount = seats.filter((seat) => seat?.playerId != null).length;
+  const readyCount = seats.filter((seat) => seat?.ready).length;
+  const canTakeSeat = canUseAction(viewModel, "takeSeat") && !busy;
+
+  return (
+    <View style={[styles.lobbyTableArea, wide && styles.lobbyTableAreaWide]}>
+      <View style={[styles.lobbyTableSurface, wide && styles.lobbyTableSurfaceWide]}>
+        <View style={styles.lobbyTopSeat}>
+          <LobbySeatSpot
+            seat={seats[2]}
+            seatId={2}
+            horizontal
+            wide={wide}
+            canTakeSeat={canTakeSeat}
+            onTakeSeat={() => onTakeSeat(2)}
+          />
+        </View>
+
+        <View style={styles.lobbyMiddleRow}>
+          <LobbySeatSpot
+            seat={seats[3]}
+            seatId={3}
+            wide={wide}
+            canTakeSeat={canTakeSeat}
+            onTakeSeat={() => onTakeSeat(3)}
+          />
+
+          <View style={[styles.lobbyTableCenter, wide && styles.lobbyTableCenterWide]}>
+            <View style={styles.lobbyTileStrip}>
+              {lobbyTileSamples.map((tile) => (
+                <View key={`${tile.suit}-${tile.rank}`} style={[styles.lobbySampleTile, !wide && styles.lobbySampleTileCompact]}>
+                  <View style={!wide && styles.lobbySampleTileFaceCompact}>
+                    <TileFace tile={tile} />
+                  </View>
+                </View>
+              ))}
+            </View>
+            <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.72} style={styles.lobbyRoomName}>
+              {viewModel === null ? "乐山八鸡" : viewModel.roomId}
+            </Text>
+            <Text style={styles.lobbyRoomMeta}>{joinedCount}/4 入座 · {readyCount}/4 准备</Text>
+          </View>
+
+          <LobbySeatSpot
+            seat={seats[1]}
+            seatId={1}
+            wide={wide}
+            canTakeSeat={canTakeSeat}
+            onTakeSeat={() => onTakeSeat(1)}
+          />
+        </View>
+
+        <View style={styles.lobbyBottomSeat}>
+          <LobbySeatSpot
+            seat={seats[0]}
+            seatId={0}
+            horizontal
+            wide={wide}
+            canTakeSeat={canTakeSeat}
+            onTakeSeat={() => onTakeSeat(0)}
+          />
+        </View>
+      </View>
+
+      <View style={[styles.lobbyActionDock, wide && styles.lobbyActionDockWide]}>
+        <View style={styles.lobbyActionSummary}>
+          <Text style={styles.lobbyActionTitle}>
+            {viewModel === null ? "尚未进入房间" : localSeat(viewModel) === null ? "请选择一个空位" : localSeat(viewModel)?.ready ? "你已准备" : "等待准备"}
+          </Text>
+          <Text style={styles.lobbyActionMeta}>
+            {viewModel === null ? "创建或加入好友房" : `${joinedCount} 人已入座 · ${readyCount} 人已准备`}
+          </Text>
+        </View>
+        <View style={[styles.lobbyActionButtons, wide && styles.lobbyActionButtonsWide]}>
+          {canUseAction(viewModel, "toggleReady") ? (
+            <CommandButton
+              label={localSeat(viewModel)?.ready ? "取消准备" : "准备"}
+              onPress={onToggleReady}
+              disabled={busy}
+            />
+          ) : null}
+          {canUseAction(viewModel, "startRound") ? (
+            <CommandButton label="开始牌局" onPress={onStartRound} disabled={busy} tone="secondary" />
+          ) : null}
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function LobbySeatSpot({
   seat,
   seatId,
+  horizontal = false,
+  wide,
   canTakeSeat,
   onTakeSeat,
 }: {
   seat: ClientSeatViewModel | null;
   seatId: PlayerId;
+  horizontal?: boolean;
+  wide: boolean;
   canTakeSeat: boolean;
   onTakeSeat: () => void;
 }) {
   const empty = seat?.playerId == null;
-
-  return (
-    <View style={[styles.seatCard, seat?.isLocal && styles.localSeat, seat?.isCurrentPlayer && styles.currentSeat]}>
-      <View style={styles.seatTopLine}>
-        <Text style={styles.seatName}>{empty ? `座位 ${seatId + 1}` : seat?.displayName}</Text>
-        {seat?.isLocal ? <Text style={styles.meBadge}>我</Text> : null}
+  const content = (
+    <>
+      <View style={[
+        styles.lobbySeatTopLine,
+        horizontal && styles.lobbySeatTopLineHorizontal,
+        wide && styles.lobbySeatTopLineWide,
+      ]}>
+        <View style={[
+          styles.lobbyAvatar,
+          seat?.isLocal && styles.lobbyAvatarLocal,
+          empty && styles.lobbyAvatarEmpty,
+        ]}>
+          <Text style={[styles.lobbyAvatarText, empty && styles.lobbyAvatarTextEmpty]}>
+            {empty ? `${seatId + 1}` : seat?.displayName.slice(0, 1)}
+          </Text>
+        </View>
+        <View style={styles.lobbySeatCopy}>
+          <View style={styles.lobbySeatNameRow}>
+            <Text numberOfLines={1} style={styles.lobbySeatName}>
+              {empty ? `座位 ${seatId + 1}` : seat?.displayName}
+            </Text>
+            {seat?.isLocal ? <Text style={styles.lobbyMeBadge}>我</Text> : null}
+          </View>
+          <View style={styles.lobbySeatStatusRow}>
+            <View style={[
+              styles.lobbySeatStatusDot,
+              empty
+                ? styles.lobbySeatStatusDotEmpty
+                : seat?.ready
+                  ? styles.lobbySeatStatusDotReady
+                  : seat?.connected
+                    ? styles.lobbySeatStatusDotOnline
+                    : styles.lobbySeatStatusDotOffline,
+            ]} />
+            <Text numberOfLines={1} style={styles.lobbySeatStatusText}>
+              {empty
+                ? canTakeSeat ? "可入座" : "空位"
+                : seat?.ready ? "已准备" : seat?.connected ? "在线" : "离线"}
+            </Text>
+          </View>
+        </View>
       </View>
-      <Text style={styles.seatMeta}>
-        {empty ? "空位" : `${seat?.connected ? "在线" : "离线"} · ${seat?.ready ? "已准备" : "未准备"}`}
-      </Text>
-      <Text style={styles.seatScore}>{seat?.score ?? 0} 分</Text>
-      {empty && canTakeSeat ? <CommandButton label="坐这里" onPress={onTakeSeat} tone="quiet" /> : null}
-    </View>
+      {empty ? (
+        canTakeSeat ? <Text style={styles.lobbyTakeSeatText}>+ 坐下</Text> : null
+      ) : (
+        <Text style={styles.lobbySeatScore}>{seat?.score ?? 0} 分</Text>
+      )}
+    </>
   );
+  const seatStyles = [
+    styles.lobbySeat,
+    horizontal && styles.lobbySeatHorizontal,
+    wide && styles.lobbySeatWide,
+    wide && horizontal && styles.lobbySeatHorizontalWide,
+    seat?.isLocal && styles.lobbySeatLocal,
+    empty && canTakeSeat && styles.lobbySeatAvailable,
+  ];
+
+  if (empty && canTakeSeat) {
+    return (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`坐到座位 ${seatId + 1}`}
+        onPress={onTakeSeat}
+        style={({ pressed }) => [seatStyles, pressed && styles.pressed]}
+      >
+        {content}
+      </Pressable>
+    );
+  }
+
+  return <View style={seatStyles}>{content}</View>;
 }
 
 function TableSeat({
@@ -1956,29 +2126,30 @@ function createInitialRoomId(): string {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: "#173A2C",
+    backgroundColor: "#12362B",
   },
   scrollView: {
     flex: 1,
-    backgroundColor: "#F4F5F0",
+    backgroundColor: "#F3F0E8",
   },
   page: {
     flexGrow: 1,
     paddingBottom: 32,
-    backgroundColor: "#F4F5F0",
+    backgroundColor: "#F3F0E8",
   },
   pageShell: {
     width: "100%",
     maxWidth: 1280,
     alignSelf: "center",
-    backgroundColor: "#F4F5F0",
+    backgroundColor: "#F3F0E8",
   },
   primaryLayout: {
     width: "100%",
   },
   primaryLayoutWide: {
-    flexDirection: "row",
-    alignItems: "flex-start",
+    flexDirection: "row-reverse",
+    alignItems: "stretch",
+    minHeight: 650,
   },
   primaryLayoutGame: {
     flex: 1,
@@ -1986,14 +2157,16 @@ const styles = StyleSheet.create({
   },
   controlColumn: {
     width: "100%",
+    backgroundColor: "#FBFAF6",
   },
   controlColumnWide: {
-    width: 390,
-    borderRightWidth: 1,
-    borderRightColor: "#D9DDD5",
+    width: 360,
+    borderLeftWidth: 1,
+    borderLeftColor: "#D8D6CD",
   },
   tableColumn: {
     width: "100%",
+    backgroundColor: "#F3F0E8",
   },
   tableColumnWide: {
     flex: 1,
@@ -2008,10 +2181,15 @@ const styles = StyleSheet.create({
     minHeight: 92,
     paddingHorizontal: 20,
     paddingVertical: 18,
-    backgroundColor: "#173A2C",
+    backgroundColor: "#12362B",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+  },
+  lobbyHeader: {
+    minHeight: 88,
+    borderBottomWidth: 1,
+    borderBottomColor: "#2C5144",
   },
   headerGame: {
     minHeight: 62,
@@ -2033,9 +2211,41 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
   subtitle: {
-    color: "#CFE0D6",
+    color: "#C9DDD3",
     fontSize: 13,
     lineHeight: 18,
+  },
+  brandLockup: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 11,
+  },
+  brandStamp: {
+    width: 46,
+    height: 46,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#E0C266",
+    backgroundColor: "#F6F0DE",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  brandStampText: {
+    color: "#A43832",
+    fontSize: 25,
+    lineHeight: 30,
+    fontWeight: "900",
+  },
+  headerStatusGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  headerEdition: {
+    color: "#D7C681",
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: "700",
   },
   statusBadge: {
     minHeight: 32,
@@ -2063,9 +2273,9 @@ const styles = StyleSheet.create({
     minHeight: 44,
     paddingHorizontal: 20,
     justifyContent: "center",
-    backgroundColor: "#DCE8E1",
+    backgroundColor: "#E4ECE6",
     borderBottomWidth: 1,
-    borderBottomColor: "#C4D2C9",
+    borderBottomColor: "#CBD6CE",
   },
   statusBandGame: {
     minHeight: 36,
@@ -2139,14 +2349,11 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   productionServerSummary: {
-    minHeight: 58,
-    marginBottom: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderWidth: 1,
-    borderColor: "#BED1C5",
-    borderRadius: 6,
-    backgroundColor: "#E6F0E9",
+    minHeight: 42,
+    marginBottom: 14,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E0DED5",
     flexDirection: "row",
     alignItems: "center",
   },
@@ -2162,7 +2369,7 @@ const styles = StyleSheet.create({
     minWidth: 0,
   },
   productionServerTitle: {
-    color: "#174A36",
+    color: "#21483A",
     fontSize: 13,
     lineHeight: 18,
     fontWeight: "800",
@@ -2195,7 +2402,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 18,
     borderBottomWidth: 1,
-    borderBottomColor: "#D9DDD5",
+    borderBottomColor: "#D8D6CD",
+    backgroundColor: "#FBFAF6",
   },
   gameSection: {
     flex: 1,
@@ -2264,9 +2472,9 @@ const styles = StyleSheet.create({
   input: {
     minHeight: 48,
     borderWidth: 1,
-    borderColor: "#C8CEC7",
+    borderColor: "#C8C7BE",
     borderRadius: 6,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#FFFEFA",
     color: "#1E2823",
     paddingHorizontal: 12,
     fontSize: 15,
@@ -2285,13 +2493,13 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   buttonPrimary: {
-    backgroundColor: "#1F5A43",
+    backgroundColor: "#1D684C",
   },
   buttonSecondary: {
-    backgroundColor: "#2F6073",
+    backgroundColor: "#2F6676",
   },
   buttonQuiet: {
-    backgroundColor: "#52615A",
+    backgroundColor: "#5A655F",
   },
   buttonDanger: {
     backgroundColor: "#9F3E3E",
@@ -2308,61 +2516,269 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.78,
   },
-  seatGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
+  lobbyTableArea: {
+    width: "100%",
+    alignSelf: "center",
   },
-  seatCard: {
-    width: "48%",
-    minHeight: 132,
-    borderWidth: 1,
-    borderColor: "#CDD2CC",
-    borderRadius: 8,
-    backgroundColor: "#FFFFFF",
+  lobbyTableAreaWide: {
+    maxWidth: 820,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+  },
+  lobbyTableSurface: {
+    width: "100%",
+    minHeight: 360,
     padding: 12,
+    borderWidth: 1,
+    borderColor: "#2C7358",
+    borderRadius: 24,
+    backgroundColor: "#185B46",
+    justifyContent: "space-between",
+    shadowColor: "#0C2D22",
+    shadowOpacity: 0.2,
+    shadowRadius: 9,
+    shadowOffset: { width: 0, height: 5 },
+    elevation: 4,
   },
-  localSeat: {
-    borderColor: "#24704B",
-    borderWidth: 2,
+  lobbyTableSurfaceWide: {
+    minHeight: 500,
+    paddingHorizontal: 24,
+    paddingVertical: 18,
   },
-  currentSeat: {
-    backgroundColor: "#EEF7F1",
+  lobbyTopSeat: {
+    alignItems: "center",
   },
-  seatTopLine: {
-    minHeight: 24,
+  lobbyBottomSeat: {
+    alignItems: "center",
+  },
+  lobbyMiddleRow: {
+    width: "100%",
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    gap: 8,
   },
-  seatName: {
+  lobbyTableCenter: {
     flex: 1,
-    color: "#1F2924",
-    fontSize: 15,
-    lineHeight: 20,
-    fontWeight: "800",
+    minWidth: 0,
+    minHeight: 112,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  meBadge: {
+  lobbyTableCenterWide: {
+    minHeight: 176,
+  },
+  lobbyTileStrip: {
+    height: 56,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 3,
+    marginBottom: 7,
+  },
+  lobbySampleTile: {
+    width: 38,
+    height: 54,
+  },
+  lobbySampleTileCompact: {
+    width: 27,
+    height: 40,
+  },
+  lobbySampleTileFaceCompact: {
+    width: 38,
+    height: 54,
+    transform: [{ translateX: -5 }, { translateY: -7 }, { scale: 0.72 }],
+  },
+  lobbyRoomName: {
     color: "#FFFFFF",
-    backgroundColor: "#24704B",
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    fontSize: 11,
-    fontWeight: "800",
-  },
-  seatMeta: {
-    color: "#677068",
-    fontSize: 12,
-    lineHeight: 18,
-    marginTop: 4,
-  },
-  seatScore: {
-    color: "#2F6073",
     fontSize: 16,
     lineHeight: 22,
+    fontWeight: "900",
+    textAlign: "center",
+  },
+  lobbyRoomMeta: {
+    color: "#D5E7DF",
+    fontSize: 11,
+    lineHeight: 17,
+    textAlign: "center",
+    marginTop: 2,
+  },
+  lobbySeat: {
+    width: "29%",
+    minHeight: 88,
+    padding: 8,
+    borderWidth: 1,
+    borderColor: "#D4D1C6",
+    borderRadius: 8,
+    backgroundColor: "#FFFEFA",
+    justifyContent: "space-between",
+  },
+  lobbySeatHorizontal: {
+    width: "56%",
+  },
+  lobbySeatWide: {
+    width: 154,
+    minHeight: 102,
+    padding: 11,
+  },
+  lobbySeatHorizontalWide: {
+    width: 224,
+  },
+  lobbySeatLocal: {
+    borderWidth: 2,
+    borderColor: "#E0BD4D",
+    backgroundColor: "#FFF9E6",
+  },
+  lobbySeatAvailable: {
+    borderStyle: "dashed",
+    borderColor: "#7DA692",
+    backgroundColor: "#F2F8F4",
+  },
+  lobbySeatTopLine: {
+    alignItems: "flex-start",
+    gap: 5,
+  },
+  lobbySeatTopLineHorizontal: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+  },
+  lobbySeatTopLineWide: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+  },
+  lobbyAvatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "#2F6676",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  lobbyAvatarLocal: {
+    backgroundColor: "#A83F38",
+  },
+  lobbyAvatarEmpty: {
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: "#9CA49D",
+    backgroundColor: "#EEF0EC",
+  },
+  lobbyAvatarText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    lineHeight: 19,
+    fontWeight: "900",
+  },
+  lobbyAvatarTextEmpty: {
+    color: "#69736C",
+  },
+  lobbySeatCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  lobbySeatNameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  lobbySeatName: {
+    flexShrink: 1,
+    color: "#1C2B24",
+    fontSize: 13,
+    lineHeight: 18,
     fontWeight: "800",
-    marginVertical: 6,
+  },
+  lobbyMeBadge: {
+    color: "#FFFFFF",
+    backgroundColor: "#A83F38",
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: 3,
+    fontSize: 9,
+    lineHeight: 12,
+    fontWeight: "900",
+  },
+  lobbySeatStatusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 2,
+  },
+  lobbySeatStatusDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+  },
+  lobbySeatStatusDotEmpty: {
+    backgroundColor: "#A7AEA8",
+  },
+  lobbySeatStatusDotReady: {
+    backgroundColor: "#D19B2A",
+  },
+  lobbySeatStatusDotOnline: {
+    backgroundColor: "#2E8A5E",
+  },
+  lobbySeatStatusDotOffline: {
+    backgroundColor: "#B04A43",
+  },
+  lobbySeatStatusText: {
+    flexShrink: 1,
+    color: "#66716A",
+    fontSize: 10,
+    lineHeight: 15,
+  },
+  lobbySeatScore: {
+    color: "#2F6676",
+    fontSize: 14,
+    lineHeight: 19,
+    fontWeight: "900",
+    marginTop: 6,
+  },
+  lobbyTakeSeatText: {
+    color: "#246348",
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: "800",
+    marginTop: 7,
+  },
+  lobbyActionDock: {
+    marginTop: 16,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: "#D8D6CD",
+  },
+  lobbyActionDockWide: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 18,
+  },
+  lobbyActionSummary: {
+    flex: 1,
+    minWidth: 0,
+  },
+  lobbyActionTitle: {
+    color: "#1C2B24",
+    fontSize: 15,
+    lineHeight: 21,
+    fontWeight: "900",
+  },
+  lobbyActionMeta: {
+    color: "#6B746E",
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 2,
+  },
+  lobbyActionButtons: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 10,
+  },
+  lobbyActionButtonsWide: {
+    minWidth: 260,
+    marginTop: 0,
   },
   segmentedControl: {
     flexDirection: "row",

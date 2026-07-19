@@ -2,6 +2,15 @@
 
 ## 2026-07-19
 
+- Rebuilt the waiting-room home screen around the actual four-player table:
+  four seat positions now surround physical-style Mahjong faces, while room
+  entry, connection recovery, readiness, scores, and recent events have a clear
+  operational hierarchy.
+- Verified the refreshed lobby at `1280 x 800`, `390 x 844`, and `320 x 800`.
+  All controls keep at least a 48-pixel touch target and the narrow layouts have
+  no horizontal overflow.
+- Published the lobby redesign at `https://leshan-mahjong-play.expo.app` with
+  immutable deployment `https://leshan-mahjong-play--1uenifx0gg.expo.app`.
 - Promoted Render commit `ec5239f` and verified the new safe `turnDeadline`
   snapshot contract against the production WebSocket service.
 - Completed a remote four-client smoke covering room setup, dingque, draw,

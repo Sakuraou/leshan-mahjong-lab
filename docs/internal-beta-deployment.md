@@ -201,9 +201,9 @@ npx eas-cli deploy --prod --export-dir dist --environment production
 Current deployment:
 
 - Production URL: `https://leshan-mahjong-play.expo.app`
-- Deployment identifier: `frdvp38pw4`
+- Deployment identifier: `1uenifx0gg`
 - Immutable deployment URL:
-  `https://leshan-mahjong-play--frdvp38pw4.expo.app`
+  `https://leshan-mahjong-play--1uenifx0gg.expo.app`
 
 The 2026-07-19 browser acceptance opened four isolated sessions against this
 production URL, completed create/join/seat/ready/start/dingque, verified
@@ -211,6 +211,10 @@ per-session concealed hands, restored the host session, selected a legal tile,
 and reordered the local hand with a mouse drag. A separate short-landscape pass
 verified that all 13 local tiles fit inside an `844 x 390` first viewport, with
 room for the dealer's fourteenth tile and no page overflow.
+
+The 2026-07-19 lobby redesign pass additionally verified the production build
+at `1280 x 800`, `390 x 844`, and `320 x 800`: the four seats remain visibly
+arranged around the table and no home-screen control crosses the viewport edge.
 
 The manifest supports installation from compatible browsers. The app does not
 cache authoritative gameplay for offline use. Native recovery remains in

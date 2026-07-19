@@ -43,8 +43,11 @@ existing Android `0.2.0` internal APK, without removing the Vite debug table:
   APK, and production profiles. The public WebSocket URL is supplied through
   `EXPO_PUBLIC_ROOM_SERVER_URL`; room session tokens remain in SecureStore.
 - EAS Hosting publishes the production Expo Web export at
-  `https://leshan-mahjong-play.expo.app`. Desktop browsers use a two-column
-  lobby; an active round switches to a separate landscape-first game table.
+  `https://leshan-mahjong-play.expo.app`. The waiting-room home screen now puts
+  a four-seat Mahjong table at the center, with room controls and recent events
+  in a compact desktop rail. Phones keep create/join controls first and stack
+  the same table below without horizontal overflow. An active round still
+  switches to the separate landscape-first game table.
 - The active table uses compact colored character, dot, and bamboo faces based
   on conventional physical Mahjong layouts. One bamboo is the bird-style tile
   and one dot is the large-circle tile; neither receives an extra chicken badge.

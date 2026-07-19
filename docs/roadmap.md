@@ -259,6 +259,8 @@ phone-first product.
   idempotent deadline settlement
 - [x] Split active gameplay from the lobby into a landscape-first table and add
   compact colored physical-style tile faces without extra yao-ji badges
+- [x] Rebuild the waiting-room home screen around a four-seat table, with a
+  compact desktop room rail and overflow-free phone layout
 - [x] Persist the whitelisted Web session across tab/PWA relaunch, automatically
   resume on startup, and distinguish an expired session from a restarted
   in-memory room
