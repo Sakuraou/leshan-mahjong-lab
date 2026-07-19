@@ -1,5 +1,18 @@
 # Release Notes
 
+## 2026-07-19
+
+- Promoted Render commit `ec5239f` and verified the new safe `turnDeadline`
+  snapshot contract against the production WebSocket service.
+- Completed a remote four-client smoke covering room setup, dingque, draw,
+  discard, claim timeout, heartbeat stability, and session recovery.
+- Tightened the active table for short phone landscapes. At `844 x 390`, all
+  13 local tiles render in the first viewport from `y=251` to `y=307`, leaving
+  enough horizontal room for a dealer's fourteenth tile without page overflow.
+- Published the compact landscape fix at
+  `https://leshan-mahjong-play.expo.app` with immutable deployment
+  `https://leshan-mahjong-play--frdvp38pw4.expo.app`.
+
 ## 2026-07-18
 
 - Added authoritative 30-second dingque and discard deadlines. Timeout dingque
@@ -27,7 +40,7 @@
   rejects a tile that is no longer legal.
 - Published the verified Web/PWA build at
   `https://leshan-mahjong-play.expo.app` with immutable deployment
-  `https://leshan-mahjong-play--5tsri5nbuh.expo.app`.
+  `https://leshan-mahjong-play--frdvp38pw4.expo.app`.
 - Aligned the Expo SDK 57 patch dependencies and restored a clean 20/20 Expo
   Doctor result before the final Android and Web exports.
 

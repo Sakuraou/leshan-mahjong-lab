@@ -162,6 +162,7 @@ export function MobileApp() {
   const roundInProgress = snapshot?.gameStatus === "playingRound" && snapshot.round !== null;
   const landscape = viewportWidth > viewportHeight;
   const gameWideLayout = roundInProgress && viewportWidth >= 680;
+  const compactLandscapeGame = gameWideLayout && viewportHeight <= 500;
   const wideLayout = !roundInProgress && Platform.OS === "web" && viewportWidth >= 960;
   reconnectAttemptRef.current = performReconnectAttempt;
   if (reconnectCoordinatorRef.current === null) {
@@ -906,17 +907,23 @@ export function MobileApp() {
     <SafeAreaView style={styles.safeArea} edges={["top", "right", "bottom", "left"]}>
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
         <View style={styles.pageShell}>
-        <View style={[styles.header, roundInProgress && styles.headerGame]}>
+        <View style={[
+          styles.header,
+          roundInProgress && styles.headerGame,
+          compactLandscapeGame && styles.headerGameCompact,
+        ]}>
           <View>
-            <Text style={styles.brand}>乐山麻将</Text>
-            <Text style={styles.subtitle}>八鸡联机桌</Text>
+            <Text style={[styles.brand, compactLandscapeGame && styles.brandGameCompact]}>乐山麻将</Text>
+            {compactLandscapeGame ? null : <Text style={styles.subtitle}>八鸡联机桌</Text>}
           </View>
           <StatusBadge status={connectionStatus} />
         </View>
 
-        <View style={[styles.statusBand, roundInProgress && styles.statusBandGame]}>
-          <Text style={styles.statusText}>{statusText}</Text>
-        </View>
+        {compactLandscapeGame ? null : (
+          <View style={[styles.statusBand, roundInProgress && styles.statusBandGame]}>
+            <Text style={styles.statusText}>{statusText}</Text>
+          </View>
+        )}
         {pendingConfirmation === null ? null : (
           <View style={styles.pendingConfirmationBand}>
             <Text style={styles.pendingConfirmationTitle}>操作结果待确认</Text>
@@ -1060,7 +1067,12 @@ export function MobileApp() {
             roundInProgress && styles.tableColumnGame,
           ]}>
 
-        <Section title={roundInProgress ? `第 ${snapshot?.roundNumber ?? 1} 局` : "牌桌预览"} trailing={phaseText(viewModel)} variant={roundInProgress ? "game" : "default"}>
+        <Section
+          title={roundInProgress ? `第 ${snapshot?.roundNumber ?? 1} 局` : "牌桌预览"}
+          trailing={phaseText(viewModel)}
+          variant={roundInProgress ? "game" : "default"}
+          compact={compactLandscapeGame}
+        >
           {viewModel === null || snapshot?.round === null ? (
             <View style={styles.emptyState}>
               <Text style={styles.emptyTitle}>等待牌局开始</Text>
@@ -1079,13 +1091,13 @@ export function MobileApp() {
                   </Pressable>
                 </View>
               ) : null}
-              <View style={styles.tableMetaRow}>
-                <MetaItem label="牌墙" value={`${viewModel.wallCount ?? 0} 张`} />
-                <MetaItem label="当前座位" value={`${(snapshot?.round?.currentPlayer ?? 0) + 1}`} />
-                <MetaItem label="本步剩余" value={deadlineLabel(viewModel, countdownNow)} />
+              <View style={[styles.tableMetaRow, compactLandscapeGame && styles.tableMetaRowCompact]}>
+                <MetaItem label="牌墙" value={`${viewModel.wallCount ?? 0} 张`} compact={compactLandscapeGame} />
+                <MetaItem label="当前座位" value={`${(snapshot?.round?.currentPlayer ?? 0) + 1}`} compact={compactLandscapeGame} />
+                <MetaItem label="本步剩余" value={deadlineLabel(viewModel, countdownNow)} compact={compactLandscapeGame} />
               </View>
               {viewModel.turnDeadline === null ? null : (
-                <View style={styles.deadlineBand}>
+                <View style={[styles.deadlineBand, compactLandscapeGame && styles.deadlineBandCompact]}>
                   <Text style={styles.deadlineTitle}>{turnDeadlineTitle(viewModel, countdownNow)}</Text>
                   <Text style={styles.deadlineMeta}>{turnDeadlineHint(viewModel)}</Text>
                 </View>
@@ -1109,6 +1121,7 @@ export function MobileApp() {
                   seat={seat}
                   gameMode={roundInProgress}
                   wideGameMode={gameWideLayout}
+                  compactGameMode={compactLandscapeGame}
                   legalDiscardTiles={seat.isLocal ? legalTilesForAction(viewModel, "discardTile") : []}
                   selectedDiscard={seat.isLocal ? selectedDiscard?.tile ?? null : null}
                   onSelectDiscard={seat.isLocal ? (tile) => {
@@ -1205,19 +1218,29 @@ function Section({
   title,
   trailing,
   variant = "default",
+  compact = false,
   children,
 }: {
   title: string;
   trailing?: string;
   variant?: "default" | "game";
+  compact?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <View style={[styles.section, variant === "game" && styles.gameSection]}>
-      <View style={styles.sectionHeader}>
-        <Text style={[styles.sectionTitle, variant === "game" && styles.gameSectionTitle]}>{title}</Text>
+    <View style={[styles.section, variant === "game" && styles.gameSection, compact && styles.gameSectionCompact]}>
+      <View style={[styles.sectionHeader, compact && styles.sectionHeaderCompact]}>
+        <Text style={[
+          styles.sectionTitle,
+          variant === "game" && styles.gameSectionTitle,
+          compact && styles.gameSectionTitleCompact,
+        ]}>{title}</Text>
         {trailing === undefined ? null : (
-          <Text style={[styles.sectionTrailing, variant === "game" && styles.gameSectionTrailing]}>{trailing}</Text>
+          <Text style={[
+            styles.sectionTrailing,
+            variant === "game" && styles.gameSectionTrailing,
+            compact && styles.gameSectionTrailingCompact,
+          ]}>{trailing}</Text>
         )}
       </View>
       {children}
@@ -1305,6 +1328,7 @@ function TableSeat({
   seat,
   gameMode,
   wideGameMode,
+  compactGameMode,
   legalDiscardTiles,
   selectedDiscard,
   onSelectDiscard,
@@ -1313,6 +1337,7 @@ function TableSeat({
   seat: ClientSeatViewModel;
   gameMode: boolean;
   wideGameMode: boolean;
+  compactGameMode: boolean;
   legalDiscardTiles: ClientOwnedTile[];
   selectedDiscard: ClientOwnedTile | null;
   onSelectDiscard?: (tile: ClientOwnedTile) => void;
@@ -1326,8 +1351,10 @@ function TableSeat({
       gameMode && styles.gameTableSeat,
       wideGameMode && seat.isLocal && styles.gameLocalSeat,
       wideGameMode && !seat.isLocal && styles.gameOpponentSeat,
+      compactGameMode && seat.isLocal && styles.compactGameLocalSeat,
+      compactGameMode && !seat.isLocal && styles.compactGameOpponentSeat,
     ]}>
-      <View style={styles.tableSeatHeader}>
+      <View style={[styles.tableSeatHeader, compactGameMode && styles.tableSeatHeaderCompact]}>
         <View>
           <Text style={styles.tableSeatName}>
             {seat.displayName}{seat.isDealer ? " · 庄" : ""}{seat.hasWon ? " · 已胡" : ""}
@@ -1341,7 +1368,11 @@ function TableSeat({
       {seat.hand === null ? (
         <View style={styles.coveredRow} accessibilityLabel={`对手手牌 ${seat.handCount} 张`}>
           {Array.from({ length: Math.min(seat.handCount, wideGameMode ? 7 : 10) }, (_, index) => (
-            <View key={index} style={[styles.coveredTile, wideGameMode && styles.coveredTileCompact]} />
+            <View key={index} style={[
+              styles.coveredTile,
+              wideGameMode && styles.coveredTileCompact,
+              compactGameMode && styles.coveredTileLandscapeCompact,
+            ]} />
           ))}
         </View>
       ) : (
@@ -1724,9 +1755,9 @@ function selectedGangNotice(selection: SelectedGang): string {
   return `${source}。${payment}确认后先进入抢杠胡窗口；无人抢杠才正式成立并补牌。`;
 }
 
-function MetaItem({ label, value }: { label: string; value: string }) {
+function MetaItem({ label, value, compact = false }: { label: string; value: string; compact?: boolean }) {
   return (
-    <View style={styles.metaItem}>
+    <View style={[styles.metaItem, compact && styles.metaItemCompact]}>
       <Text style={styles.metaLabel}>{label}</Text>
       <Text style={styles.metaValue}>{value}</Text>
     </View>
@@ -1986,11 +2017,20 @@ const styles = StyleSheet.create({
     minHeight: 62,
     paddingVertical: 9,
   },
+  headerGameCompact: {
+    minHeight: 40,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+  },
   brand: {
     color: "#FFFFFF",
     fontSize: 24,
     lineHeight: 30,
     fontWeight: "800",
+  },
+  brandGameCompact: {
+    fontSize: 18,
+    lineHeight: 22,
   },
   subtitle: {
     color: "#CFE0D6",
@@ -2164,12 +2204,20 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0,
     backgroundColor: "#18523E",
   },
+  gameSectionCompact: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
   sectionHeader: {
     minHeight: 30,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     marginBottom: 10,
+  },
+  sectionHeaderCompact: {
+    minHeight: 22,
+    marginBottom: 4,
   },
   sectionTitle: {
     color: "#1F2924",
@@ -2180,6 +2228,10 @@ const styles = StyleSheet.create({
   gameSectionTitle: {
     color: "#FFFFFF",
   },
+  gameSectionTitleCompact: {
+    fontSize: 15,
+    lineHeight: 19,
+  },
   sectionTrailing: {
     color: "#667068",
     fontSize: 12,
@@ -2187,6 +2239,10 @@ const styles = StyleSheet.create({
   },
   gameSectionTrailing: {
     color: "#D2E8DD",
+  },
+  gameSectionTrailingCompact: {
+    fontSize: 11,
+    lineHeight: 15,
   },
   field: {
     marginBottom: 10,
@@ -2355,6 +2411,10 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 10,
   },
+  tableMetaRowCompact: {
+    gap: 4,
+    marginBottom: 4,
+  },
   landscapePrompt: {
     minHeight: 58,
     marginBottom: 10,
@@ -2403,6 +2463,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     justifyContent: "center",
   },
+  metaItemCompact: {
+    minHeight: 38,
+    paddingHorizontal: 8,
+  },
   deadlineBand: {
     minHeight: 48,
     marginBottom: 8,
@@ -2410,6 +2474,12 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     borderRadius: 6,
     backgroundColor: "#F1DFAB",
+  },
+  deadlineBandCompact: {
+    minHeight: 38,
+    marginBottom: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
   },
   deadlineTitle: {
     color: "#5C4314",
@@ -2477,11 +2547,26 @@ const styles = StyleSheet.create({
     borderColor: "#E9C85E",
     backgroundColor: "#F8FBF7",
   },
+  compactGameOpponentSeat: {
+    minHeight: 64,
+    marginBottom: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 5,
+  },
+  compactGameLocalSeat: {
+    minHeight: 86,
+    marginBottom: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 5,
+  },
   tableSeatHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 8,
+  },
+  tableSeatHeaderCompact: {
+    marginBottom: 2,
   },
   tableSeatName: {
     color: "#1F2924",
@@ -2542,6 +2627,11 @@ const styles = StyleSheet.create({
   coveredTileCompact: {
     width: 15,
     height: 27,
+    marginRight: 2,
+  },
+  coveredTileLandscapeCompact: {
+    width: 13,
+    height: 22,
     marginRight: 2,
   },
   meldText: {
